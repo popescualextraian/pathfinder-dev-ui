@@ -18,6 +18,16 @@ interface Seen {
   body: string;
 }
 
+// A port nothing listens on: bind an ephemeral port, then release it. (Port 1 is not safe: with
+// WSL mirrored networking, connects to it hang instead of being refused.)
+async function closedPortUrl(): Promise<string> {
+  const probe = createServer();
+  await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r));
+  const { port } = probe.address() as AddressInfo;
+  await new Promise<void>((r) => probe.close(() => r()));
+  return `http://127.0.0.1:${port}`;
+}
+
 function event(seq: number): BridgeEvent {
   return { seq, ts: '2026-10-16T10:00:00Z', task: 'T-1', session: null, agent: 'claude', type: 'message', data: { n: seq } };
 }
@@ -163,13 +173,13 @@ describe('BridgeClient', () => {
     reply = () => ({ status: 401, body: { error: { code: 'unauthorized', message: 'unauthorized' } } });
     const error = (await client().status().catch((e: unknown) => e)) as Error;
     expect(error.message + String(error.stack ?? '').split('\n')[0]).not.toContain(TOKEN);
-    const dead = new BridgeClient({ baseUrl: 'http://127.0.0.1:1', taskToken: TOKEN });
+    const dead = new BridgeClient({ baseUrl: await closedPortUrl(), taskToken: TOKEN });
     const unreachable = (await dead.status().catch((e: unknown) => e)) as Error;
     expect(JSON.stringify(unreachable.message)).not.toContain(TOKEN);
   });
 
   it('maps connection refused to BridgeUnreachableError', async () => {
-    const dead = new BridgeClient({ baseUrl: 'http://127.0.0.1:1', taskToken: TOKEN });
+    const dead = new BridgeClient({ baseUrl: await closedPortUrl(), taskToken: TOKEN });
     await expect(dead.status()).rejects.toBeInstanceOf(BridgeUnreachableError);
   });
 
@@ -235,7 +245,7 @@ describe('BridgeClient', () => {
     });
 
     it('rejects with BridgeUnreachableError when nothing listens', async () => {
-      const dead = new BridgeClient({ baseUrl: 'http://127.0.0.1:1', taskToken: TOKEN });
+      const dead = new BridgeClient({ baseUrl: await closedPortUrl(), taskToken: TOKEN });
       const run = async () => { for await (const e of dead.eventStream(0)) void e; };
       await expect(run()).rejects.toBeInstanceOf(BridgeUnreachableError);
     });
