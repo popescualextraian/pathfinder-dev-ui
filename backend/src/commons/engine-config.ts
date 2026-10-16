@@ -9,6 +9,8 @@ export interface EngineConfig {
   dockerNetwork: string;
   dataDir: string;
   repoUrl: string;
+  // Hosts a task's repoUrl may point to: the host of repoUrl plus ENGINE_ALLOWED_REPO_HOSTS (lower case).
+  allowedRepoHosts: string[];
   project: string;
   maxRunning: number;
   claudeCodeOauthToken: string;
@@ -23,6 +25,23 @@ export class EngineConfigError extends Error {
   constructor(readonly problems: string[]) {
     super(`Invalid engine configuration: ${problems.join('; ')}`);
     this.name = 'EngineConfigError';
+  }
+}
+
+// Set by the engine itself; ENGINE_TASK_EXTRA_ENV must not replace them. (AGENTIC_REPO_URL and
+// others stay allowed: the Docker tests use them.)
+const MANAGED_ENV = new Set([
+  'AGENTIC_TASK_TOKEN', 'AGENTIC_AGENT_TOKEN', 'AGENTIC_TASK_ID', 'AGENTIC_PROJECT', 'AGENTIC_TASK_DIR',
+  'AGENTIC_REPO_REF', 'AGENTIC_PROMPT', 'AGENTIC_MODEL', 'AGENTIC_ALLOWED_ACTIONS', 'AGENTIC_WORKTREE',
+  'AGENTIC_BRANCH', 'AGENTIC_BRIDGE_HOSTS', 'CLAUDE_CODE_OAUTH_TOKEN', 'GH_TOKEN',
+]);
+const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function parseUrl(raw: string): URL | undefined {
+  try {
+    return new URL(raw);
+  } catch {
+    return undefined; // a local path (test hook)
   }
 }
 
@@ -43,6 +62,16 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
   const dataDir = required('ENGINE_DATA_DIR');
   if (dataDir && !isAbsolute(dataDir)) problems.push('ENGINE_DATA_DIR must be an absolute path');
   const repoUrl = required('ENGINE_REPO_URL');
+  const parsedRepo = repoUrl ? parseUrl(repoUrl) : undefined;
+  if (parsedRepo && (parsedRepo.username !== '' || parsedRepo.password !== '')) {
+    problems.push('ENGINE_REPO_URL must not contain credentials');
+  }
+  const allowedRepoHosts: string[] = [];
+  if (parsedRepo?.hostname) allowedRepoHosts.push(parsedRepo.hostname.toLowerCase());
+  for (const host of (value('ENGINE_ALLOWED_REPO_HOSTS') ?? '').split(',')) {
+    const h = host.trim().toLowerCase();
+    if (h && !allowedRepoHosts.includes(h)) allowedRepoHosts.push(h);
+  }
   const project = required('ENGINE_PROJECT');
   const claudeCodeOauthToken = required('CLAUDE_CODE_OAUTH_TOKEN');
   const ghToken = required('GH_TOKEN');
@@ -65,6 +94,10 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
       ? (parsed as Record<string, string>)
       : undefined,
   );
+  for (const key of Object.keys(taskExtraEnv)) {
+    if (!ENV_KEY.test(key)) problems.push('ENGINE_TASK_EXTRA_ENV has a key that is not a valid variable name');
+    else if (MANAGED_ENV.has(key)) problems.push(`ENGINE_TASK_EXTRA_ENV must not set ${key}; the engine manages it`);
+  }
   const taskExtraBinds = parseJson('ENGINE_TASK_EXTRA_BINDS', value('ENGINE_TASK_EXTRA_BINDS'), [], problems, (parsed) =>
     Array.isArray(parsed) && parsed.every((v) => typeof v === 'string' && BIND.test(v))
       ? (parsed as string[])
@@ -72,7 +105,7 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
   );
 
   if (problems.length > 0) throw new EngineConfigError(problems);
-  return { launcher, image, dockerNetwork, dataDir, repoUrl, project, maxRunning, claudeCodeOauthToken, ghToken, taskExtraEnv, taskExtraBinds };
+  return { launcher, image, dockerNetwork, dataDir, repoUrl, allowedRepoHosts, project, maxRunning, claudeCodeOauthToken, ghToken, taskExtraEnv, taskExtraBinds };
 }
 
 const SHAPES: Record<string, string> = {

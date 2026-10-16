@@ -36,6 +36,7 @@ describe('loadEngineConfig', () => {
       maxRunning: 2,
       claudeCodeOauthToken: TOKEN,
       ghToken: GH,
+      allowedRepoHosts: ['github.com'],
       taskExtraEnv: {},
       taskExtraBinds: [],
     });
@@ -106,5 +107,41 @@ describe('loadEngineConfig', () => {
     delete missingOne.ENGINE_IMAGE;
     expect(errorOf(missingOne).message).not.toContain(TOKEN);
     expect(errorOf({ ...missingOne, ENGINE_TASK_EXTRA_ENV: `{"A":1,"T":"${TOKEN}"}` }).message).not.toContain(TOKEN);
+  });
+
+  describe('repository hosts and credentials', () => {
+    it('allows the host of ENGINE_REPO_URL plus ENGINE_ALLOWED_REPO_HOSTS, lower-cased', () => {
+      const config = loadEngineConfig({ ...validEnv(), ENGINE_ALLOWED_REPO_HOSTS: ' GitLab.com, git.example.org ,,' });
+      expect(config.allowedRepoHosts).toEqual(['github.com', 'gitlab.com', 'git.example.org']);
+    });
+
+    it('allows a local path as ENGINE_REPO_URL and then no host by default', () => {
+      expect(loadEngineConfig({ ...validEnv(), ENGINE_REPO_URL: '/seed/repo' }).allowedRepoHosts).toEqual([]);
+    });
+
+    it('rejects credentials in ENGINE_REPO_URL, naming the variable but not the value', () => {
+      const error = errorOf({ ...validEnv(), ENGINE_REPO_URL: 'https://x:ghp_secret@github.com/o/r.git' });
+      expect(error.message).toContain('ENGINE_REPO_URL');
+      expect(error.message).not.toContain('ghp_secret');
+    });
+  });
+
+  describe('ENGINE_TASK_EXTRA_ENV keys', () => {
+    it.each(['AGENTIC_TASK_TOKEN', 'AGENTIC_AGENT_TOKEN', 'AGENTIC_TASK_ID', 'AGENTIC_BRIDGE_HOSTS', 'AGENTIC_TASK_DIR',
+      'GH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'AGENTIC_BRANCH', 'AGENTIC_WORKTREE', 'AGENTIC_ALLOWED_ACTIONS'])(
+      'refuses the engine-managed key %s', (key) => {
+        const error = errorOf({ ...validEnv(), ENGINE_TASK_EXTRA_ENV: JSON.stringify({ [key]: 'v-secret' }) });
+        expect(error.message).toContain(key);
+        expect(error.message).not.toContain('v-secret');
+      });
+
+    it.each(['', 'A=B', '1X', 'a-b'])('refuses the malformed key %j', (key) => {
+      expect(errorOf({ ...validEnv(), ENGINE_TASK_EXTRA_ENV: JSON.stringify({ [key]: 'v' }) }).message).toContain('ENGINE_TASK_EXTRA_ENV');
+    });
+
+    it('still allows AGENTIC_REPO_URL and AGENTIC_ACP_CMD', () => {
+      const extra = { AGENTIC_REPO_URL: '/seed/repo', AGENTIC_ACP_CMD: 'x' };
+      expect(loadEngineConfig({ ...validEnv(), ENGINE_TASK_EXTRA_ENV: JSON.stringify(extra) }).taskExtraEnv).toEqual(extra);
+    });
   });
 });

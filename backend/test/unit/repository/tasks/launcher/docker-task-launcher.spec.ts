@@ -14,6 +14,7 @@ const config: EngineConfig = {
   dockerNetwork: 'agentic-net',
   dataDir: '/data',
   repoUrl: 'https://github.com/o/default.git',
+  allowedRepoHosts: ['github.com'],
   project: 'proj',
   maxRunning: 2,
   claudeCodeOauthToken: OAUTH,
