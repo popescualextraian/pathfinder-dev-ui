@@ -1,6 +1,6 @@
 import Docker from 'dockerode';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -11,25 +11,26 @@ import { TASK_LAUNCHER, TaskLauncher } from '../../src/repository/tasks/launcher
 import { TasksService, TaskView } from '../../src/service/tasks/tasks.service';
 import { until } from '../helpers/local-process-launcher';
 import { FAKE_GH_TOKEN, FAKE_OAUTH_TOKEN } from '../helpers/test-env';
+import { HelperContainer, InNetworkBridgeClient } from './in-network-bridge';
 
-// Real Docker, real task image, real bridge, fake agent. WRITTEN BUT NOT YET RUN: the container
-// this was developed in has no Docker. Run it with `npm run test:docker`; it needs
+// Real Docker, real task image, real bridge, fake agent: TasksService and DockerTaskLauncher run in
+// this process and drive the Docker API. Run with `npm run test:docker`; it needs
+//   ENGINE_IMAGE    the task image built with `agentic build`
 //   FAKE_AGENT_DIR  directory with agentic-dev-base's bridge/test/fake-agent.mjs (the file itself
 //                   directly inside), mounted read-only into the task as /fake
-//   ENGINE_IMAGE    the task image built with `agentic build`
-//   a reachable Docker daemon (DOCKER_HOST or the default socket)
-// It must run on a Linux host: the test process (not a container on the Docker network) reaches
-// the bridge at the container's IP address on its bridge network, which Linux hosts route.
-// The test creates and removes its own Docker network.
-
-const BRIDGE_PORT = 8765;
+//   a reachable Docker daemon (DOCKER_HOST or the default socket): Linux Docker or Docker Desktop
+// Without them the suite is skipped with a message on stderr.
+// The test process never connects to a container IP (Docker Desktop cannot route to them): bridge
+// requests run in a helper container from ENGINE_IMAGE on the test network and reach the task by
+// its container name, as the UI does in production (see in-network-bridge.ts). The suite creates
+// its own network, helper container and temp directories and removes them, and every task
+// container and volume, in afterAll, also after a failure.
 
 function skipReason(): string | undefined {
   const dir = process.env.FAKE_AGENT_DIR;
   if (!dir) return 'FAKE_AGENT_DIR is not set';
   if (!existsSync(join(dir, 'fake-agent.mjs'))) return `FAKE_AGENT_DIR has no fake-agent.mjs: ${dir}`;
   if (!process.env.ENGINE_IMAGE) return 'ENGINE_IMAGE is not set';
-  if (process.platform !== 'linux') return 'needs a Linux host (container IPs must be routable)';
   const info = spawnSync('docker', ['info'], { stdio: 'ignore' });
   if (info.error || info.status !== 0) return 'Docker is not reachable (docker info failed)';
   return undefined;
@@ -68,28 +69,27 @@ function makeSeed(root: string): string {
 
 describeWithDocker('TasksService against real Docker', () => {
   const docker = new Docker();
-  const networkName = `agentic-ui-test-${Date.now().toString(36)}`;
-  const taskIds: string[] = [];
-  let root: string;
+  const suffix = `${Date.now().toString(36)}-${process.pid}`;
+  const networkName = `agentic-ui-test-${suffix}`;
+  const helperName = `agentic-ui-test-helper-${suffix}`;
+  const taskIds = new Set<string>();
+  let networkCreated = false;
+  let root: string | undefined;
   let dataDir: string;
-  let moduleRef: TestingModule;
+  let helper: HelperContainer | undefined;
+  let moduleRef: TestingModule | undefined;
   let tasks: TasksService;
-  let launcher: TaskLauncher;
+  let launcher: TaskLauncher | undefined;
   let task: TaskView;
 
-  // Host to container IP on the test network (sync, because a BridgeClientFactory is sync);
-  // Host header stays the container name, which the bridge allows via AGENTIC_BRIDGE_HOSTS.
+  // Bridge requests go through the helper container (by container name, inside the network).
+  // A name that does not resolve yet (container not attached yet) is "unreachable", which the
+  // service's wait for the bridge retries.
   const bridgeFactory: BridgeClientFactory = (record) => {
     if (!record.bridgeUrl) throw new Error('Task has no bridge URL yet');
-    const name = new URL(record.bridgeUrl).hostname;
-    const inspect = spawnSync(
-      'docker',
-      ['inspect', '-f', `{{with index .NetworkSettings.Networks "${networkName}"}}{{.IPAddress}}{{end}}`, name],
-      { encoding: 'utf8' },
-    );
-    const ip = inspect.status === 0 ? inspect.stdout.trim() : '';
-    if (!ip) throw new Error(`No IP address for ${name} on ${networkName}`);
-    return new BridgeClient({ baseUrl: `http://${ip}:${BRIDGE_PORT}`, taskToken: record.taskToken, hostHeader: `${name}:${BRIDGE_PORT}` });
+    if (!helper) throw new Error('Bridge helper container is not running');
+    const running = helper;
+    return new InNetworkBridgeClient(record.bridgeUrl, record.taskToken, (request) => running.exec(request)) as unknown as BridgeClient;
   };
 
   beforeAll(async () => {
@@ -98,6 +98,9 @@ describeWithDocker('TasksService against real Docker', () => {
     mkdirSync(dataDir);
     const seed = makeSeed(root);
     await docker.createNetwork({ Name: networkName, Labels: { 'agentic-ui.kind': 'test' } });
+    networkCreated = true;
+    helper = await HelperContainer.create(docker, { image: process.env.ENGINE_IMAGE!, network: networkName, name: helperName });
+    await helper.waitUntilReady();
 
     Object.assign(process.env, {
       ENGINE_LAUNCHER: 'docker',
@@ -128,23 +131,61 @@ describeWithDocker('TasksService against real Docker', () => {
     launcher = moduleRef.get<TaskLauncher>(TASK_LAUNCHER);
   });
 
+  // Every step on its own: a failed test or a beforeAll that threw part-way must not leave
+  // containers, volumes, the network or temp directories behind.
   afterAll(async () => {
-    for (const id of taskIds) await launcher?.remove(id).catch(() => undefined);
-    await moduleRef?.close();
-    await docker?.getNetwork(networkName).remove().catch(() => undefined);
-    if (root) rmSync(root, { recursive: true, force: true });
+    const step = async (what: string, fn: () => Promise<unknown>) => {
+      try {
+        await fn();
+      } catch (error) {
+        process.stderr.write(`docker suite cleanup: ${what} failed: ${String(error)}\n`);
+      }
+    };
+    const removeTask = async (name: string) => {
+      await docker.getContainer(name).remove({ force: true, v: true }).catch((e: { statusCode?: number }) => {
+        if (e.statusCode !== 404) throw e;
+      });
+      await docker.getVolume(name).remove().catch((e: { statusCode?: number }) => {
+        if (e.statusCode !== 404) throw e;
+      });
+    };
+    // Tasks: the ids the tests saw, the records on disk (a start that failed late), and any task
+    // container on the test network.
+    if (dataDir && existsSync(dataDir)) {
+      for (const file of readdirSync(dataDir)) if (file.endsWith('.json')) taskIds.add(file.slice(0, -'.json'.length));
+    }
+    const names = new Set([...taskIds].map((id) => `agentic-ui-task-${id}`));
+    await step('listing task containers', async () => {
+      const listed = await docker.listContainers({ all: true, filters: { network: [networkName], label: ['agentic-ui.kind=task'] } });
+      for (const c of listed) for (const n of c.Names) names.add(n.replace(/^\//, ''));
+    });
+    for (const name of names) await step(`removing ${name}`, () => removeTask(name));
+    await step('closing the app', async () => moduleRef?.close());
+    await step('removing the helper container', () =>
+      docker.getContainer(helperName).remove({ force: true }).catch((e: { statusCode?: number }) => {
+        if (e.statusCode !== 404) throw e;
+      }),
+    );
+    if (networkCreated) await step('removing the network', () => docker.getNetwork(networkName).remove());
+    if (root) {
+      const dir = root;
+      await step('removing temp directories', async () => rmSync(dir, { recursive: true, force: true }));
+    }
   });
 
-  async function inState(state: string): Promise<TaskView> {
+  async function inState(state: string, timeoutMs = 120_000): Promise<TaskView> {
     return until(
       `state ${state}`,
       async () => {
         const view = await tasks.get(task.id);
         return view.state === state ? view : undefined;
       },
-      120_000,
+      timeoutMs,
     );
   }
+
+  const echoed = (text: string) =>
+    until(`echo of "${text}"`, async () => (await tasks.events(task.id, 0)).some((e) => mentions(e, `echo: ${text}`)), 60_000);
 
   const gone = async (get: () => Promise<unknown>) =>
     get().then(
@@ -153,25 +194,46 @@ describeWithDocker('TasksService against real Docker', () => {
     );
 
   it('starts a task that clones the seed repository, reaches idle and echoes the first prompt', async () => {
-    task = await tasks.start({ prompt: 'start working' });
-    taskIds.push(task.id);
+    // start() waits up to 60 s for the bridge; clone plus bridge boot may take longer on a slow
+    // host. Then it answers 502 but keeps the task, which we keep waiting for.
+    task = await tasks.start({ prompt: 'start working' }).catch(async (error: { getStatus?: () => number }) => {
+      if (error.getStatus?.() !== 502) throw error;
+      const [created] = await tasks.list();
+      if (!created) throw error;
+      return created;
+    });
+    taskIds.add(task.id);
     const view = await inState('idle');
     expect(view.branch).toBe(`agentic/${task.id}`);
-    const inspection = await launcher.inspect(task.id);
-    expect(inspection).toMatchObject({ exists: true, running: true });
-    await until('first echo', async () => (await tasks.events(task.id, 0)).some((e) => mentions(e, 'echo: start working')), 60_000);
+    expect(await launcher!.inspect(task.id)).toMatchObject({ exists: true, running: true });
+    await echoed('start working');
   });
 
   it('prompts and sees the echo event', async () => {
     await tasks.prompt(task.id, 'hello docker');
-    await until('echo', async () => (await tasks.events(task.id, 0)).some((e) => mentions(e, 'echo: hello docker')), 60_000);
+    await echoed('hello docker');
     await inState('idle');
   });
 
-  it('stops, removes, and leaves neither container nor volume', async () => {
+  it('wakes a container stopped with docker stop when prompted', async () => {
+    await docker.getContainer(`agentic-ui-task-${task.id}`).stop({ t: 10 });
+    expect((await tasks.get(task.id)).state).toBe('suspended');
+    await tasks.prompt(task.id, 'after docker stop');
+    expect((await launcher!.inspect(task.id)).running).toBe(true);
+    await echoed('after docker stop');
+    await inState('idle');
+  });
+
+  it('stops; a stopped task refuses prompts at once without starting; removes and leaves nothing', async () => {
     const stopped = await tasks.stop(task.id);
     expect(stopped.state).toBe('stopped');
-    expect((await launcher.inspect(task.id)).running).toBe(false);
+    expect((await launcher!.inspect(task.id)).running).toBe(false);
+
+    const startedAt = Date.now();
+    await expect(tasks.prompt(task.id, 'too late')).rejects.toThrow(/task is stopped/);
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect((await launcher!.inspect(task.id)).running).toBe(false);
+
     await tasks.remove(task.id);
     const name = `agentic-ui-task-${task.id}`;
     expect(await gone(() => docker.getContainer(name).inspect())).toBe(true);

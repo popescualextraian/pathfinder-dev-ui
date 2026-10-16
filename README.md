@@ -131,6 +131,12 @@ Docker host, not to the UI container.
 Warning: access to the Docker socket is root on the host. Whoever controls this container, or can
 call its API, can control the host. Run it only where that is acceptable.
 
+Secrets in container environments: each task container gets `CLAUDE_CODE_OAUTH_TOKEN`, `GH_TOKEN`,
+its task token and its agent token as environment variables, so anyone who can run `docker inspect`
+on it (anyone with Docker socket access, i.e. root-equivalent anyway) can read them; the same holds
+for `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` in the `ui` container's environment (from `.env`). This
+is accepted for now; API responses and container labels never contain them.
+
 The Docker parts (`Dockerfile`, `compose.yaml`, `npm run test:docker`) were written without a Docker
 daemon available and have not been run yet; `docker compose config` accepts the compose file.
 
@@ -141,7 +147,7 @@ daemon available and have not been run yet; `docker compose config` accepts the 
 | `npm test` | Jest unit tests: backend (`backend/test/unit/`) and frontend (`frontend/test/`, jsdom + React Testing Library) |
 | `npm run test:e2e` | Backend e2e tests (`backend/test/e2e/`, Jest + supertest; REST API with a fake launcher and a fake bridge). Needs a prior `npm run build` for the frontend tests. |
 | `npm run test:bridge` | `backend/test/bridge/`: the real `agentic-bridge` as a local process with a fake agent (`backend/test/fixtures/fake-agent.mjs`), driven through the bridge client and the task service. Skipped with a message on stderr where `agentic-bridge` is not on PATH. |
-| `npm run test:docker` | `backend/test/docker/`: real Docker, real task image, fake agent: start a task, reach idle, prompt and see the echo, stop, remove, check container and volume are gone. Linux host only (the test reaches the bridge at the container's IP on its network). Needs `FAKE_AGENT_DIR` (directory holding agentic-dev-base's `bridge/test/fake-agent.mjs`, mounted at `/fake`), `ENGINE_IMAGE` and a reachable Docker daemon; otherwise skipped with a message on stderr. It creates a temporary network and a local git repository (bound into the task and cloned from there, no GitHub needed) and cleans up after itself. Example: `FAKE_AGENT_DIR=/path/to/agentic-dev-base/bridge/test ENGINE_IMAGE=agentic-pathfinder-dev-ui:local npm run test:docker` |
+| `npm run test:docker` | `backend/test/docker/`: real Docker, real task image, fake agent: start a task, reach idle, prompt and see the echo, wake it after `docker stop`, stop it (a prompt is then refused with 409 without starting it), remove, check container and volume are gone. Needs both `ENGINE_IMAGE` (the task image) and `FAKE_AGENT_DIR` (directory holding agentic-dev-base's `bridge/test/fake-agent.mjs`, mounted at `/fake`), and a reachable Docker daemon (Linux Docker or Docker Desktop); otherwise skipped with a message on stderr. The test process never connects to container IPs: bridge requests run in a helper container from `ENGINE_IMAGE` on the test network (`node` with a small built-ins-only script, `backend/test/docker/bridge-request.cjs`) and reach the task by container name, as the UI does. It creates a temporary network, the helper container and a local git repository (bound into the task and cloned from there, no GitHub needed), and removes all of them, task containers and volumes in `afterAll`, also after a failure. Example: `ENGINE_IMAGE=agentic-pathfinder-dev-ui:local FAKE_AGENT_DIR=/path/to/agentic-dev-base/bridge/test npm run test:docker` |
 | `npm run test:ui` | Playwright (`e2e/`). Builds and starts the app on port 3100, uses the Chromium under `PLAYWRIGHT_BROWSERS_PATH` if set. |
 | `npm run lint` | ESLint for `backend/src/` and `backend/test/` |
 
