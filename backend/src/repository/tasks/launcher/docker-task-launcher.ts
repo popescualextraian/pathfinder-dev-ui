@@ -1,5 +1,6 @@
 import Docker from 'dockerode';
 import { EngineConfig } from '../../../commons/engine-config';
+import { gitCredentialEnv } from './git-credential-env';
 import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from './task-launcher';
 
 const BRIDGE_PORT = 8765;
@@ -8,7 +9,7 @@ const KIND_LABEL = 'agentic-ui.kind=task';
 
 type LauncherConfig = Pick<
   EngineConfig,
-  'image' | 'dockerNetwork' | 'project' | 'claudeCodeOauthToken' | 'ghToken' | 'taskExtraEnv' | 'taskExtraBinds'
+  'image' | 'dockerNetwork' | 'project' | 'claudeCodeOauthToken' | 'ghToken' | 'gitName' | 'gitEmail' | 'taskExtraEnv' | 'taskExtraBinds'
 >;
 
 function hasStatus(error: unknown, ...codes: number[]): boolean {
@@ -124,6 +125,11 @@ export class DockerTaskLauncher implements TaskLauncher {
       AGENTIC_BRIDGE_HOSTS: name,
       CLAUDE_CODE_OAUTH_TOKEN: this.config.claudeCodeOauthToken,
       GH_TOKEN: this.config.ghToken,
+      GIT_AUTHOR_NAME: this.config.gitName,
+      GIT_AUTHOR_EMAIL: this.config.gitEmail,
+      GIT_COMMITTER_NAME: this.config.gitName,
+      GIT_COMMITTER_EMAIL: this.config.gitEmail,
+      ...gitCredentialEnv(spec.repoUrl),
       ...this.config.taskExtraEnv,
     };
     return Object.entries(env).map(([key, value]) => `${key}=${value}`);

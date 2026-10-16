@@ -109,6 +109,8 @@ describeWithDocker('TasksService against real Docker', () => {
       ENGINE_REPO_URL: '/seed/repo',
       ENGINE_PROJECT: 'docker-test',
       ENGINE_MAX_RUNNING: '2',
+      ENGINE_GIT_NAME: 'Docker Test Bot',
+      ENGINE_GIT_EMAIL: 'docker-test-bot@example.invalid',
       GH_TOKEN: FAKE_GH_TOKEN,
       CLAUDE_CODE_OAUTH_TOKEN: FAKE_OAUTH_TOKEN,
       // Test hooks: the fake agent and the seed repository (cloned from /seed/repo by the
@@ -207,6 +209,15 @@ describeWithDocker('TasksService against real Docker', () => {
     expect(view.branch).toBe(`agentic/${task.id}`);
     expect(await launcher!.inspect(task.id)).toMatchObject({ exists: true, running: true });
     await echoed('start working');
+  });
+
+  it('gives the task container the commit identity', async () => {
+    const info = await docker.getContainer(`agentic-ui-task-${task.id}`).inspect();
+    const env = info.Config.Env ?? [];
+    for (const name of ['GIT_AUTHOR', 'GIT_COMMITTER']) {
+      expect(env).toContain(`${name}_NAME=Docker Test Bot`);
+      expect(env).toContain(`${name}_EMAIL=docker-test-bot@example.invalid`);
+    }
   });
 
   it('prompts and sees the echo event', async () => {

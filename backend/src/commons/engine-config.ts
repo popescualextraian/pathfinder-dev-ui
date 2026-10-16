@@ -15,6 +15,9 @@ export interface EngineConfig {
   maxRunning: number;
   claudeCodeOauthToken: string;
   ghToken: string;
+  // Commit author and committer identity of task containers.
+  gitName: string;
+  gitEmail: string;
   // Test hooks: extra environment variables and binds for task containers.
   taskExtraEnv: Record<string, string>;
   taskExtraBinds: string[];
@@ -34,7 +37,10 @@ const MANAGED_ENV = new Set([
   'AGENTIC_TASK_TOKEN', 'AGENTIC_AGENT_TOKEN', 'AGENTIC_TASK_ID', 'AGENTIC_PROJECT', 'AGENTIC_TASK_DIR',
   'AGENTIC_REPO_REF', 'AGENTIC_PROMPT', 'AGENTIC_MODEL', 'AGENTIC_ALLOWED_ACTIONS', 'AGENTIC_WORKTREE',
   'AGENTIC_BRANCH', 'AGENTIC_BRIDGE_HOSTS', 'CLAUDE_CODE_OAUTH_TOKEN', 'GH_TOKEN',
+  'GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL', 'GIT_CONFIG_COUNT',
 ]);
+// GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n carry the push credential setup.
+const MANAGED_ENV_PATTERN = /^GIT_CONFIG_(KEY|VALUE)_\d+$/;
 const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function parseUrl(raw: string): URL | undefined {
@@ -75,6 +81,8 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
   const project = required('ENGINE_PROJECT');
   const claudeCodeOauthToken = required('CLAUDE_CODE_OAUTH_TOKEN');
   const ghToken = required('GH_TOKEN');
+  const gitName = required('ENGINE_GIT_NAME');
+  const gitEmail = required('ENGINE_GIT_EMAIL');
 
   let maxRunning = 2;
   const rawMax = value('ENGINE_MAX_RUNNING');
@@ -96,7 +104,7 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
   );
   for (const key of Object.keys(taskExtraEnv)) {
     if (!ENV_KEY.test(key)) problems.push('ENGINE_TASK_EXTRA_ENV has a key that is not a valid variable name');
-    else if (MANAGED_ENV.has(key)) problems.push(`ENGINE_TASK_EXTRA_ENV must not set ${key}; the engine manages it`);
+    else if (MANAGED_ENV.has(key) || MANAGED_ENV_PATTERN.test(key)) problems.push(`ENGINE_TASK_EXTRA_ENV must not set ${key}; the engine manages it`);
   }
   const taskExtraBinds = parseJson('ENGINE_TASK_EXTRA_BINDS', value('ENGINE_TASK_EXTRA_BINDS'), [], problems, (parsed) =>
     Array.isArray(parsed) && parsed.every((v) => typeof v === 'string' && BIND.test(v))
@@ -105,7 +113,7 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
   );
 
   if (problems.length > 0) throw new EngineConfigError(problems);
-  return { launcher, image, dockerNetwork, dataDir, repoUrl, allowedRepoHosts, project, maxRunning, claudeCodeOauthToken, ghToken, taskExtraEnv, taskExtraBinds };
+  return { launcher, image, dockerNetwork, dataDir, repoUrl, allowedRepoHosts, project, maxRunning, claudeCodeOauthToken, ghToken, gitName, gitEmail, taskExtraEnv, taskExtraBinds };
 }
 
 const SHAPES: Record<string, string> = {

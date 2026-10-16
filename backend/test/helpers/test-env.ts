@@ -17,6 +17,8 @@ export function setTestEnv(maxRunning = 2): string {
     ENGINE_REPO_URL: 'https://github.com/acme/default.git',
     ENGINE_PROJECT: 'made-up-project',
     ENGINE_MAX_RUNNING: String(maxRunning),
+    ENGINE_GIT_NAME: 'Made Up Bot',
+    ENGINE_GIT_EMAIL: 'made-up-bot@example.invalid',
     GH_TOKEN: FAKE_GH_TOKEN,
     CLAUDE_CODE_OAUTH_TOKEN: FAKE_OAUTH_TOKEN,
   });

@@ -4,7 +4,7 @@
 # Before `docker compose up --build`:
 #   1. Build the TASK image with `agentic build` (agentic-dev-base); its tag is ENGINE_IMAGE.
 #      It is a different image from the one built by ./Dockerfile (that one is only this UI).
-#   2. Copy .env.example to .env and fill it in (secrets, ENGINE_IMAGE, ENGINE_REPO_URL, ENGINE_PROJECT).
+#   2. Copy .env.example to .env and fill it in (secrets, ENGINE_IMAGE, ENGINE_REPO_URL, ENGINE_PROJECT, ENGINE_GIT_NAME, ENGINE_GIT_EMAIL).
 #   3. Set DOCKER_GID to the numeric group id of the host's Docker socket: either
 #        DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up --build
 #      or write the number (from `stat -c %g /var/run/docker.sock`) into .env.

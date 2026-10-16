@@ -1,6 +1,7 @@
 import Docker from 'dockerode';
 import { EngineConfig } from '../../../../../src/commons/engine-config';
 import { DockerTaskLauncher } from '../../../../../src/repository/tasks/launcher/docker-task-launcher';
+import { gitCredentialEnv } from '../../../../../src/repository/tasks/launcher/git-credential-env';
 import { LaunchSpec } from '../../../../../src/repository/tasks/launcher/task-launcher';
 
 const OAUTH = 'made-up-oauth-token-xxxx';
@@ -19,6 +20,8 @@ const config: EngineConfig = {
   maxRunning: 2,
   claudeCodeOauthToken: OAUTH,
   ghToken: GH,
+  gitName: 'Made Up Bot',
+  gitEmail: 'made-up-bot@example.invalid',
   taskExtraEnv: {},
   taskExtraBinds: [],
 };
@@ -107,7 +110,23 @@ describe('DockerTaskLauncher.launch', () => {
       AGENTIC_BRIDGE_HOSTS: 'agentic-ui-task-T-20261016-ab12',
       CLAUDE_CODE_OAUTH_TOKEN: OAUTH,
       GH_TOKEN: GH,
+      GIT_AUTHOR_NAME: 'Made Up Bot',
+      GIT_AUTHOR_EMAIL: 'made-up-bot@example.invalid',
+      GIT_COMMITTER_NAME: 'Made Up Bot',
+      GIT_COMMITTER_EMAIL: 'made-up-bot@example.invalid',
+      ...gitCredentialEnv('https://github.com/o/r.git'),
     });
+  });
+
+  it('sets the git credential config for the host of the task repository, with the token only by reference', async () => {
+    const { launcher, docker } = setup();
+    await launcher.launch({ ...spec, repoUrl: 'https://git.example.org/o/r.git' });
+    const env = envOf(docker.createContainer.mock.calls[0][0]);
+    expect(env.GIT_CONFIG_COUNT).toBe('4');
+    expect(env.GIT_CONFIG_KEY_1).toBe('credential.https://git.example.org.helper');
+    expect(env.GIT_CONFIG_VALUE_1).toContain('${GH_TOKEN:-$GIT_TOKEN}');
+    const gitValues = Object.entries(env).filter(([k]) => k.startsWith('GIT_')).map(([, v]) => v).join('\n');
+    for (const secret of [OAUTH, GH, TASK_TOKEN, AGENT_TOKEN]) expect(gitValues).not.toContain(secret);
   });
 
   it('adds AGENTIC_REPO_REF and AGENTIC_MODEL only when set', async () => {

@@ -54,10 +54,12 @@ is missing or invalid, naming the variable, never printing a value.
 | `ENGINE_REPO_URL` | yes | Repository tasks clone when the request gives no `repoUrl`. Must not contain credentials. |
 | `ENGINE_ALLOWED_REPO_HOSTS` | no | Comma-separated hosts a request's `repoUrl` may use, in addition to the host of `ENGINE_REPO_URL` (which is always allowed). The host of a repository gets `GH_TOKEN` for the clone, so other hosts are refused with 400. |
 | `ENGINE_PROJECT` | yes | Project name passed to tasks (`AGENTIC_PROJECT`). |
+| `ENGINE_GIT_NAME` | yes | Commit author and committer name of task containers (`GIT_AUTHOR_NAME`, `GIT_COMMITTER_NAME`). |
+| `ENGINE_GIT_EMAIL` | yes | Commit author and committer email (`GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_EMAIL`). |
 | `ENGINE_MAX_RUNNING` | no, default `2` | Maximum running task containers (positive integer). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | yes, secret | Passed into task containers. |
 | `GH_TOKEN` | yes, secret | Passed into task containers; used for the clone and for push. |
-| `ENGINE_TASK_EXTRA_ENV` | no, test hook | JSON object of strings added to each task container's environment (keys must be valid variable names; keys the engine sets itself, such as the tokens, `GH_TOKEN`, `AGENTIC_TASK_ID`, `AGENTIC_BRANCH` or `AGENTIC_BRIDGE_HOSTS`, are refused at start-up). |
+| `ENGINE_TASK_EXTRA_ENV` | no, test hook | JSON object of strings added to each task container's environment (keys must be valid variable names; keys the engine sets itself, such as the tokens, `GH_TOKEN`, `AGENTIC_TASK_ID`, `AGENTIC_BRANCH`, `AGENTIC_BRIDGE_HOSTS`, the four `GIT_AUTHOR_*`/`GIT_COMMITTER_*` identity variables, `GIT_CONFIG_COUNT` and `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, are refused at start-up). |
 | `ENGINE_TASK_EXTRA_BINDS` | no, test hook | JSON array of `host:container[:mode]` binds added to each task container. |
 
 `PORT` (default 3000) sets the HTTP port. Docker itself is reached through the usual socket or
@@ -116,7 +118,7 @@ Two different images are involved:
 
 ```sh
 agentic build                       # the task image; note its tag for ENGINE_IMAGE
-cp .env.example .env                # fill in secrets, ENGINE_IMAGE, ENGINE_REPO_URL, ENGINE_PROJECT
+cp .env.example .env                # fill in secrets, ENGINE_IMAGE, ENGINE_REPO_URL, ENGINE_PROJECT, ENGINE_GIT_*
 DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up --build
 ```
 
@@ -130,6 +132,14 @@ Docker host, not to the UI container.
 
 Warning: access to the Docker socket is root on the host. Whoever controls this container, or can
 call its API, can control the host. Run it only where that is acceptable.
+
+Push credentials: the task image configures git credentials only for the clone host during its own
+start steps, so the engine also gives each task container the same git settings through
+`GIT_CONFIG_COUNT` and `GIT_CONFIG_KEY_0..3`/`GIT_CONFIG_VALUE_0..3` for the host of the task's
+repository (the same entries as `git_cred_env` in agentic-dev-base). Git then sends
+`${GH_TOKEN:-$GIT_TOKEN}` to `https://<host>` and rewrites `git@<host>:` and `ssh://git@<host>/` to https,
+so the agent can push without SSH keys. The values contain only the variable reference, never
+the token, and nothing is written to a file. Commits are made as `ENGINE_GIT_NAME <ENGINE_GIT_EMAIL>`.
 
 Secrets in container environments: each task container gets `CLAUDE_CODE_OAUTH_TOKEN`, `GH_TOKEN`,
 its task token and its agent token as environment variables, so anyone who can run `docker inspect`
