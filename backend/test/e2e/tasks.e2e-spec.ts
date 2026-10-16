@@ -198,6 +198,42 @@ describe('tasks REST API (e2e)', () => {
     });
   });
 
+  describe('a stopped task', () => {
+    it('refuses prompt and answer with 409 at once and does not start the container', async () => {
+      const { body: task } = await start();
+      await post(`/api/tasks/${task.id}/stop`);
+      const before = bridge.requests.length;
+      for (const res of [
+        await post(`/api/tasks/${task.id}/prompt`, { text: 'more' }),
+        await post(`/api/tasks/${task.id}/answer`, { text: 'yes' }),
+      ]) {
+        expect(res.status).toBe(409);
+        expect(res.body.message).toMatch(/task is stopped/);
+      }
+      expect(launcher.containers.get(task.id)?.running).toBe(false);
+      expect(bridge.requests.slice(before)).toEqual([]);
+    });
+
+    it('refuses a prompt with 409 when the running bridge says stopped', async () => {
+      const { body: task } = await start();
+      bridge.state = 'stopped';
+      const res = await post(`/api/tasks/${task.id}/prompt`, { text: 'more' });
+      expect(res.status).toBe(409);
+      expect(res.body.message).toMatch(/task is stopped/);
+      expect(bridge.requests.some((r) => r.url === '/prompt')).toBe(false);
+    });
+
+    it('still wakes a container stopped outside the engine (docker stop) while idle', async () => {
+      const { body: task } = await start();
+      launcher.containers.get(task.id)!.running = false; // docker stop
+      expect((await get(`/api/tasks/${task.id}`)).body.state).toBe('suspended');
+      const res = await post(`/api/tasks/${task.id}/prompt`, { text: 'more' });
+      expect(res.status).toBe(202);
+      expect(launcher.containers.get(task.id)?.running).toBe(true);
+      expect(bridge.requests.find((r) => r.url === '/prompt')?.body).toEqual({ text: 'more' });
+    });
+  });
+
   describe('events', () => {
     it('lists events as a JSON array, honouring since', async () => {
       const { body: task } = await start();
@@ -321,7 +357,7 @@ describe('tasks REST API (e2e)', () => {
 
     it('maps 400 from the bridge', async () => {
       const { body: task } = await start();
-      bridge.failNext = { status: 400, code: 'bad_request', message: 'text too long for bridge' };
+      bridge.failNext = { status: 400, code: 'bad_request', message: 'text too long for bridge', route: 'POST /prompt' };
       const res = await post(`/api/tasks/${task.id}/prompt`, { text: 'x' });
       expect(res.status).toBe(400);
       expect(res.body.message).toBe('text too long for bridge');
@@ -329,7 +365,7 @@ describe('tasks REST API (e2e)', () => {
 
     it('maps a rejected token (401) to 502 without detail', async () => {
       const { body: task } = await start();
-      bridge.failNext = { status: 401, code: 'unauthorized', message: 'bad token' };
+      bridge.failNext = { status: 401, code: 'unauthorized', message: 'bad token', route: 'POST /prompt' };
       const res = await post(`/api/tasks/${task.id}/prompt`, { text: 'x' });
       expect(res.status).toBe(502);
       expect(res.body.message).not.toMatch(/bad token/);

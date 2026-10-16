@@ -201,21 +201,42 @@ export class TasksService {
     }
   }
 
-  // Starts a container that is not running and waits for its bridge, so a prompt can be sent.
+  // Makes sure the task can take a prompt: a stopped task is refused at once (409) without
+  // starting its container; a container that is not running (suspended, or stopped with
+  // `docker stop` while the task was idle or suspended) is started and its bridge awaited.
+  // "Stopped" is the recorded last state, or what a reachable bridge says.
   private async wake(id: string): Promise<TaskRecord> {
     const record = await this.require(id);
+    if (record.lastState === 'stopped') throw stoppedConflict(id);
     const inspection = await this.launcher.inspect(id);
     if (!inspection.exists) {
       throw new ConflictException(`Task ${id} has no container any more; it cannot be woken`);
     }
-    if (!inspection.running) {
-      await this.exclusive(async () => {
-        if ((await this.launcher.countRunning()) >= this.config.maxRunning) {
-          throw new ConflictException(`At most ${this.config.maxRunning} tasks can run at once; stop one first`);
-        }
-        await this.launcher.start(id);
-      });
-      await this.waitFor(record, `Task ${id} was started but its bridge did not become ready`);
+    if (inspection.running) {
+      let live: BridgeStatus | undefined;
+      try {
+        live = await this.bridgeFor(record).status();
+      } catch {
+        live = undefined; // not answering now: the verb itself reports what goes wrong
+      }
+      if (live?.state === 'stopped') {
+        await this.records.update(id, { lastState: 'stopped', lastStatus: live });
+        throw stoppedConflict(id);
+      }
+      return record;
+    }
+    await this.exclusive(async () => {
+      if ((await this.launcher.countRunning()) >= this.config.maxRunning) {
+        throw new ConflictException(`At most ${this.config.maxRunning} tasks can run at once; stop one first`);
+      }
+      await this.launcher.start(id);
+    });
+    const woken = await this.waitFor(record, `Task ${id} was started but its bridge did not become ready`);
+    if (woken.state === 'stopped') {
+      // The bridge had stopped although the record did not know: put the container back down.
+      await this.launcher.stop(id).catch(() => undefined);
+      await this.records.update(id, { lastState: 'stopped', lastStatus: woken });
+      throw stoppedConflict(id);
     }
     return record;
   }
@@ -259,6 +280,10 @@ export class TasksService {
       if (!(await this.records.get(id))) return id;
     }
   }
+}
+
+function stoppedConflict(id: string): ConflictException {
+  return new ConflictException(`Task ${id} takes no prompts or answers: task is stopped`);
 }
 
 function token(): string {

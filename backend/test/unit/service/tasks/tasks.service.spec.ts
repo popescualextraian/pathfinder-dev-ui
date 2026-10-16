@@ -216,6 +216,58 @@ describe('TasksService verbs', () => {
     await expect(service.prompt(ID, 'x')).rejects.toBe(err);
   });
 
+  describe('a stopped task', () => {
+    const stoppedRecord = record({ lastState: 'stopped' });
+
+    it.each([
+      ['prompt', (svc: TasksService) => svc.prompt(ID, 'x')],
+      ['answer', (svc: TasksService) => svc.answer(ID, { text: 'yes' })],
+    ])('%s is 409 "task is stopped" at once, without starting the container', async (_n, call) => {
+      const { service, launcher, bridge } = setup({ records: [stoppedRecord], launcher: notRunning });
+      const error = await call(service).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as Error).message).toMatch(/task is stopped/i);
+      expect(launcher.start).not.toHaveBeenCalled();
+      expect(bridge.status).not.toHaveBeenCalled();
+      expect(bridge.prompt).not.toHaveBeenCalled();
+      expect(bridge.answer).not.toHaveBeenCalled();
+    });
+
+    it('prompt is 409 when the running bridge reports stopped, and records it', async () => {
+      const { service, bridge, records } = setup({ bridge: { status: jest.fn(async () => status({ state: 'stopped' })) } });
+      await expect(service.prompt(ID, 'x')).rejects.toThrow(/task is stopped/i);
+      expect(bridge.prompt).not.toHaveBeenCalled();
+      expect(records.map.get(ID)!.lastState).toBe('stopped');
+    });
+
+    it('prompt still goes through when the running bridge cannot be asked for its status', async () => {
+      const { service, bridge } = setup({ bridge: { status: jest.fn(async () => { throw new BridgeUnreachableError('x'); }) } });
+      await service.prompt(ID, 'x');
+      expect(bridge.prompt).toHaveBeenCalledWith('x');
+    });
+
+    it.each(['idle', 'suspended', 'running'])(
+      'a container stopped externally (last state %s) is still woken',
+      async (lastState) => {
+        const { service, launcher, bridge } = setup({ records: [record({ lastState })], launcher: notRunning });
+        await service.prompt(ID, 'more');
+        expect(launcher.start).toHaveBeenCalledWith(ID);
+        expect(bridge.prompt).toHaveBeenCalledWith('more');
+      },
+    );
+
+    it('a woken container whose bridge turns out stopped is stopped again and 409', async () => {
+      const { service, launcher, bridge, records } = setup({
+        launcher: notRunning, bridge: { status: jest.fn(async () => status({ state: 'stopped' })) },
+      });
+      await expect(service.prompt(ID, 'x')).rejects.toThrow(/task is stopped/i);
+      expect(launcher.start).toHaveBeenCalledWith(ID);
+      expect(launcher.stop).toHaveBeenCalledWith(ID);
+      expect(bridge.prompt).not.toHaveBeenCalled();
+      expect(records.map.get(ID)!.lastState).toBe('stopped');
+    });
+  });
+
   const q = (id: string, asked: string) => ({ id, source: 'ask' as const, text: 't', options: [], recommendation: null, asked });
 
   it('answer defaults to the oldest open question', async () => {

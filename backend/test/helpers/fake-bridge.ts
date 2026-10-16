@@ -10,8 +10,8 @@ export class FakeBridge {
   questions: BridgeQuestion[] = [];
   events: BridgeEvent[] = [];
   requests: { method: string; url: string; auth?: string; body: unknown }[] = [];
-  // When set, the next request answers with this error (once).
-  failNext?: { status: number; code: string; message: string };
+  // When set, the next request (to `route`, e.g. 'POST /prompt', if given) answers with this error (once).
+  failNext?: { status: number; code: string; message: string; route?: string };
   url = '';
 
   private server!: Server;
@@ -81,12 +81,12 @@ export class FakeBridge {
         res.end(typeof payload === 'string' ? payload : JSON.stringify(payload));
       };
       const fail = (status: number, code: string, message: string) => send(status, { error: { code, message } });
-      if (this.failNext) {
+      const route = `${req.method} ${url.pathname}`;
+      if (this.failNext && (this.failNext.route === undefined || this.failNext.route === route)) {
         const f = this.failNext;
         this.failNext = undefined;
         return fail(f.status, f.code, f.message);
       }
-      const route = `${req.method} ${url.pathname}`;
       switch (route) {
         case 'GET /status':
           return send(200, this.status());

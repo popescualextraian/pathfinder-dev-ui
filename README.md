@@ -22,9 +22,11 @@ agentic image with `agentic-bridge` as its command.
   accepts that Host header. Live bridge events (WebSocket) are passed on as Server-Sent Events.
 - Task records are one JSON file per task (mode 600) under `ENGINE_DATA_DIR`. They hold the tokens,
   which never leave the backend: no API response or container label contains one.
-- At most `ENGINE_MAX_RUNNING` task containers run at once; a start (or waking a stopped task) beyond
-  that is refused with 409. Prompting or answering a task whose container is not running starts it
-  first and waits for its bridge.
+- At most `ENGINE_MAX_RUNNING` task containers run at once; a start (or waking a suspended task)
+  beyond that is refused with 409. Prompting or answering a task whose container is not running
+  (suspended, or stopped outside the engine with `docker stop`) starts it first and waits for its
+  bridge. A task stopped with `POST /stop` (or whose bridge reports `stopped`) is final: prompt and
+  answer are refused with 409 ("task is stopped") at once, without starting its container.
 - Task container: image `ENGINE_IMAGE`, name and volume `agentic-ui-task-<id>` (volume mounted at
   `/task`), labels `agentic-ui.task=<id>` and `agentic-ui.kind=task`, all capabilities dropped,
   `no-new-privileges`. Removing a task deletes container, volume and record.
@@ -71,8 +73,8 @@ All under `/api`. A task view contains the task's fields without tokens: `id`, `
 | `POST /api/tasks` `{prompt, repoUrl?, repoRef?, model?}` | Starts a task and waits for its bridge. `repoUrl` must be https without credentials, on an allowed host (see `ENGINE_ALLOWED_REPO_HOSTS`), and defaults to `ENGINE_REPO_URL`. | 201 task |
 | `GET /api/tasks` | All tasks, with the last known state | 200 |
 | `GET /api/tasks/:id` | Task with live bridge status (state, reason, open questions, summary, branch) | 200 |
-| `POST /api/tasks/:id/prompt` `{text}` | Sends a prompt; wakes a stopped container first | 202 task |
-| `POST /api/tasks/:id/answer` `{text, question?}` | Answers a question; default is the oldest open one | 202 task |
+| `POST /api/tasks/:id/prompt` `{text}` | Sends a prompt; wakes a container that is not running first; 409 for a stopped task | 202 task |
+| `POST /api/tasks/:id/answer` `{text, question?}` | Answers a question; default is the oldest open one; wakes like prompt; 409 for a stopped task | 202 task |
 | `POST /api/tasks/:id/cancel` | Cancels the running turn | 202 task |
 | `POST /api/tasks/:id/stop` | Bridge `/stop`, then stops the container | 202 task |
 | `DELETE /api/tasks/:id` | Removes container, volume and record; 409 unless the task is stopped | 204 |
