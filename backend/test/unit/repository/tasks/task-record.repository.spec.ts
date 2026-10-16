@@ -91,4 +91,13 @@ describe('TaskRecordRepository', () => {
       await expect(repo.delete(id)).rejects.toThrow('Invalid task id');
     },
   );
+
+  it('survives many concurrent updates of the same record without losing any field', async () => {
+    const id = 'T-20261016-ab12';
+    await repo.create(record(id));
+    await Promise.all(Array.from({ length: 30 }, (_, n) => repo.update(id, { [`f${n}`]: n } as Partial<TaskRecord>)));
+    const stored = (await repo.get(id)) as unknown as Record<string, number>;
+    for (let n = 0; n < 30; n++) expect(stored[`f${n}`]).toBe(n);
+    expect(readdirSync(dataDir)).toEqual([`${id}.json`]);
+  });
 });

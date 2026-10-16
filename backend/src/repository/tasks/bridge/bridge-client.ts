@@ -112,7 +112,7 @@ export class BridgeClient {
   async events(since: number, limit?: number): Promise<BridgeEvent[]> {
     const query = `since=${since}${limit === undefined ? '' : `&limit=${limit}`}`;
     const text = await this.send('GET', `/events?${query}`);
-    return text.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line) as BridgeEvent);
+    return parseJson<BridgeEvent[]>(() => text.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line) as BridgeEvent));
   }
 
   // Backlog after `since`, then live events; ends when the bridge closes or the signal aborts.
@@ -176,7 +176,8 @@ export class BridgeClient {
   }
 
   private async json(method: string, path: string, body?: unknown): Promise<BridgeStatus> {
-    return JSON.parse(await this.send(method, path, body)) as BridgeStatus;
+    const text = await this.send(method, path, body);
+    return parseJson<BridgeStatus>(() => JSON.parse(text) as BridgeStatus);
   }
 
   private send(method: string, path: string, body?: unknown): Promise<string> {
@@ -217,6 +218,15 @@ export class BridgeClient {
       });
       req.end(payload);
     });
+  }
+}
+
+// A bridge that answers with something that is not JSON is as good as unreachable (502, not 500).
+function parseJson<T>(parse: () => T): T {
+  try {
+    return parse();
+  } catch {
+    throw new BridgeUnreachableError('invalid response');
   }
 }
 

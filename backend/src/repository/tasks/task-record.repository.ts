@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 
@@ -27,6 +28,8 @@ const ID = /^T-\d{8}-[a-z0-9]{4}$/;
 @Injectable()
 export class TaskRecordRepository {
   private readonly dir: string;
+  // Per id: the tail of the queue of read-modify-write updates, so none of them is lost.
+  private readonly updates = new Map<string, Promise<unknown>>();
 
   constructor(@Inject(ENGINE_CONFIG) config: Pick<EngineConfig, 'dataDir'>) {
     this.dir = config.dataDir;
@@ -66,7 +69,16 @@ export class TaskRecordRepository {
     return records.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   }
 
-  async update(id: string, patch: Partial<TaskRecord>): Promise<TaskRecord> {
+  update(id: string, patch: Partial<TaskRecord>): Promise<TaskRecord> {
+    const previous = this.updates.get(id) ?? Promise.resolve();
+    const run = previous.then(() => this.doUpdate(id, patch));
+    const tail = run.catch(() => undefined);
+    this.updates.set(id, tail);
+    void tail.then(() => { if (this.updates.get(id) === tail) this.updates.delete(id); });
+    return run;
+  }
+
+  private async doUpdate(id: string, patch: Partial<TaskRecord>): Promise<TaskRecord> {
     const current = await this.get(id);
     if (!current) throw new Error(`Task record ${id} not found`);
     const updated = { ...current, ...patch, id, updatedAt: new Date().toISOString() };
@@ -87,7 +99,7 @@ export class TaskRecordRepository {
   private async write(record: TaskRecord): Promise<void> {
     const file = this.file(record.id);
     await mkdir(this.dir, { recursive: true, mode: 0o700 });
-    const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
     try {
       await writeFile(temp, JSON.stringify(record, null, 2), { mode: 0o600 });
       await rename(temp, file);

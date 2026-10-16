@@ -272,4 +272,16 @@ describe('BridgeClient', () => {
       await expect(waitForStatus(client(), { timeoutMs: 100, intervalMs: 10 })).rejects.toThrow(/did not answer/);
     });
   });
+
+  describe('malformed payloads', () => {
+    it('status with a non-JSON 200 body is BridgeUnreachableError', async () => {
+      reply = () => ({ status: 200, raw: '<html>oops</html>' });
+      await expect(new BridgeClient({ baseUrl, taskToken: TOKEN }).status()).rejects.toBeInstanceOf(BridgeUnreachableError);
+    });
+
+    it('events with a malformed line is BridgeUnreachableError', async () => {
+      reply = () => ({ status: 200, raw: '{"seq":1}\nnot json\n' });
+      await expect(new BridgeClient({ baseUrl, taskToken: TOKEN }).events(0)).rejects.toBeInstanceOf(BridgeUnreachableError);
+    });
+  });
 });
