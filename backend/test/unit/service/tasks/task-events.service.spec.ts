@@ -44,4 +44,19 @@ describe('TaskEventsService', () => {
     const service = new TaskEventsService(fakeRecords([]) as never, (() => fakeBridge()) as never);
     await expect(service.stream('T-20260101-abcd', 0)).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  describe('assertExists', () => {
+    it('resolves for a known task', async () => {
+      const service = new TaskEventsService(fakeRecords([record()]) as never, (() => fakeBridge()) as never);
+      await expect(service.assertExists('T-20260101-abcd')).resolves.toBeUndefined();
+    });
+
+    it('throws NotFoundException for an unknown or malformed id', async () => {
+      const records = fakeRecords([record()]);
+      const service = new TaskEventsService(records as never, (() => fakeBridge()) as never);
+      await expect(service.assertExists('T-20260101-zzzz')).rejects.toThrow(NotFoundException);
+      records.get.mockRejectedValueOnce(new Error('invalid id'));
+      await expect(service.assertExists('../x')).rejects.toThrow(NotFoundException);
+    });
+  });
 });
