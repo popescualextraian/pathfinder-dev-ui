@@ -119,6 +119,8 @@ export class LocalProcessLauncher implements TaskLauncher {
     const child = spawn('agentic-bridge', [], { env: task.env, cwd: task.dir, stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.on('data', (d: Buffer) => { task.log += d.toString(); });
     child.stderr.on('data', (d: Buffer) => { task.log += d.toString(); });
+    // A missing or non-executable agentic-bridge: keep the reason in the log, let the test fail on it.
+    child.on('error', (error) => { task.log += `spawn failed: ${error.message}\n`; });
     task.child = child;
   }
 
@@ -129,7 +131,10 @@ export class LocalProcessLauncher implements TaskLauncher {
   private async kill(task: LocalTask): Promise<void> {
     const child = task.child;
     if (!child || !this.alive(task)) return;
-    const exited = new Promise<void>((done) => child.once('exit', () => done()));
+    const exited = new Promise<void>((done) => {
+      child.once('exit', () => done());
+      if (child.exitCode !== null || child.signalCode !== null) done(); // exited since the alive() check
+    });
     child.kill('SIGTERM');
     const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
     await exited;

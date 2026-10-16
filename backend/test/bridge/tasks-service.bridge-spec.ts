@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs';
 import { ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { firstValueFrom } from 'rxjs';
@@ -20,9 +21,10 @@ describeWithBridge('TasksService against the real bridge', () => {
   let tasks: TasksService;
   let events: TaskEventsService;
   let task: TaskView;
+  let dataDir: string;
 
   beforeAll(async () => {
-    setTestEnv(2);
+    dataDir = setTestEnv(2);
     moduleRef = await Test.createTestingModule({ imports: [AppModule] }).overrideProvider(TASK_LAUNCHER).useValue(launcher).compile();
     await moduleRef.init();
     tasks = moduleRef.get(TasksService);
@@ -32,6 +34,7 @@ describeWithBridge('TasksService against the real bridge', () => {
   afterAll(async () => {
     await moduleRef?.close();
     await launcher.dispose();
+    rmSync(dataDir, { recursive: true, force: true });
   });
 
   async function inState(state: string): Promise<TaskView> {

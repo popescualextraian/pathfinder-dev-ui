@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { rmSync } from 'node:fs';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
@@ -35,5 +36,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<TestApp
   configureApp(app);
   await app.init();
   await app.listen(0, '127.0.0.1');
+  // The data directory goes away with the app.
+  const close = app.close.bind(app);
+  app.close = async () => {
+    await close();
+    rmSync(dataDir, { recursive: true, force: true });
+  };
   return { app, dataDir, launcher };
 }
