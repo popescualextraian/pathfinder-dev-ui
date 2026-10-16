@@ -1,0 +1,125 @@
+import { createServer, IncomingMessage, Server, ServerResponse } from 'node:http';
+import { AddressInfo } from 'node:net';
+import { WebSocket, WebSocketServer } from 'ws';
+import { BridgeEvent, BridgeQuestion, BridgeState } from '../../src/repository/tasks/bridge/bridge-client';
+
+// A small stateful stand-in for ONE task bridge (HTTP + WebSocket, API v1), started on a free
+// loopback port. Enough behaviour for the REST e2e tests; not a copy of the real bridge.
+export class FakeBridge {
+  state: BridgeState = 'idle';
+  questions: BridgeQuestion[] = [];
+  events: BridgeEvent[] = [];
+  requests: { method: string; url: string; auth?: string; body: unknown }[] = [];
+  // When set, the next request answers with this error (once).
+  failNext?: { status: number; code: string; message: string };
+  url = '';
+
+  private server!: Server;
+  private wss!: WebSocketServer;
+  private live = new Set<WebSocket>();
+
+  constructor(private readonly taskId = 'T-fake') {}
+
+  async start(): Promise<void> {
+    this.server = createServer((req, res) => this.handle(req, res));
+    this.wss = new WebSocketServer({ noServer: true });
+    this.server.on('upgrade', (req, socket, head) => {
+      this.wss.handleUpgrade(req, socket, head, (ws) => {
+        const since = Number(new URL(req.url ?? '', 'http://x').searchParams.get('since') ?? 0);
+        this.events.filter((e) => e.seq > since).forEach((e) => ws.send(JSON.stringify(e)));
+        this.live.add(ws);
+        ws.on('close', () => this.live.delete(ws));
+      });
+    });
+    await new Promise<void>((resolve) => this.server.listen(0, '127.0.0.1', resolve));
+    this.url = `http://127.0.0.1:${(this.server.address() as AddressInfo).port}`;
+  }
+
+  async stop(): Promise<void> {
+    this.live.forEach((ws) => ws.terminate());
+    this.server.closeAllConnections();
+    await new Promise<void>((resolve) => this.server.close(() => resolve()));
+  }
+
+  get liveClients(): number {
+    return this.live.size;
+  }
+
+  // Appends an event and pushes it to live WebSocket clients.
+  emit(type: BridgeEvent['type'], data: Record<string, unknown> = {}): BridgeEvent {
+    const event: BridgeEvent = {
+      seq: this.events.length + 1, ts: new Date().toISOString(), task: this.taskId, session: null, agent: 'fake', type, data,
+    };
+    this.events.push(event);
+    this.live.forEach((ws) => ws.send(JSON.stringify(event)));
+    return event;
+  }
+
+  ask(id: string, text: string, asked: string): void {
+    this.questions.push({ id, source: 'ask', text, options: [], recommendation: null, asked });
+    this.state = 'waiting';
+    this.emit('question', { id, text });
+  }
+
+  private status() {
+    return {
+      task: this.taskId, state: this.state, reason: '', branch: `agentic/${this.taskId}`, summary: 'fake summary',
+      seq: this.events.length, allowed_actions: ['push'], questions: this.questions,
+    };
+  }
+
+  private handle(req: IncomingMessage, res: ServerResponse): void {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString();
+      const body: Record<string, unknown> = raw ? JSON.parse(raw) : {};
+      const url = new URL(req.url ?? '/', 'http://x');
+      this.requests.push({ method: req.method ?? '', url: req.url ?? '', auth: req.headers.authorization, body });
+      const send = (status: number, payload: unknown, type = 'application/json') => {
+        res.writeHead(status, { 'content-type': type });
+        res.end(typeof payload === 'string' ? payload : JSON.stringify(payload));
+      };
+      const fail = (status: number, code: string, message: string) => send(status, { error: { code, message } });
+      if (this.failNext) {
+        const f = this.failNext;
+        this.failNext = undefined;
+        return fail(f.status, f.code, f.message);
+      }
+      const route = `${req.method} ${url.pathname}`;
+      switch (route) {
+        case 'GET /status':
+          return send(200, this.status());
+        case 'POST /prompt':
+          if (this.state === 'stopped' || this.state === 'starting') return fail(409, 'conflict', `Cannot prompt in state ${this.state}`);
+          this.state = 'running';
+          this.emit('message', { text: body.text });
+          return send(202, this.status());
+        case 'POST /answer': {
+          if (this.questions.length === 0) return fail(409, 'conflict', 'No open question');
+          const index = this.questions.findIndex((q) => q.id === body.question);
+          if (index < 0) return fail(404, 'not_found', `Unknown question ${String(body.question)}`);
+          this.questions.splice(index, 1);
+          this.state = this.questions.length > 0 ? 'waiting' : 'running';
+          this.emit('answer', { question: body.question, text: body.text });
+          return send(202, this.status());
+        }
+        case 'POST /cancel':
+          if (this.state !== 'running') return fail(409, 'conflict', 'No turn to cancel');
+          this.state = 'idle';
+          this.emit('state', { state: 'idle' });
+          return send(202, this.status());
+        case 'POST /stop':
+          this.state = 'stopped';
+          this.emit('state', { state: 'stopped' });
+          return send(202, this.status());
+        case 'GET /events': {
+          const since = Number(url.searchParams.get('since') ?? 0);
+          return send(200, this.events.filter((e) => e.seq > since).map((e) => JSON.stringify(e)).join('\n') + '\n', 'application/x-ndjson');
+        }
+        default:
+          return fail(404, 'not_found', 'No such route');
+      }
+    });
+  }
+}
