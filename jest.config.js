@@ -8,5 +8,12 @@ module.exports = {
       testRegex: '.*\\.spec\\.ts$',
       transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/../tsconfig.spec.json' }] },
     },
+    {
+      displayName: 'frontend',
+      testEnvironment: 'jsdom',
+      rootDir: 'frontend/src',
+      testRegex: '.*\\.spec\\.tsx?$',
+      transform: { '^.+\\.tsx?$': ['ts-jest', { tsconfig: '<rootDir>/../tsconfig.jest.json' }] },
+    },
   ],
 };
