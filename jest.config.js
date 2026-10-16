@@ -4,14 +4,14 @@ module.exports = {
     {
       displayName: 'backend',
       testEnvironment: 'node',
-      rootDir: 'src',
+      rootDir: 'backend/test/unit',
       testRegex: '.*\\.spec\\.ts$',
-      transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/../tsconfig.spec.json' }] },
+      transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/../../tsconfig.spec.json' }] },
     },
     {
       displayName: 'frontend',
       testEnvironment: 'jsdom',
-      rootDir: 'frontend/src',
+      rootDir: 'frontend/test',
       testRegex: '.*\\.spec\\.tsx?$',
       transform: { '^.+\\.tsx?$': ['ts-jest', { tsconfig: '<rootDir>/../tsconfig.jest.json' }] },
     },

@@ -26,28 +26,36 @@ run `npm start` and, in a second terminal, `npm run dev:frontend` (Vite proxies 
 
 | Command | What |
 |---|---|
-| `npm test` | Jest unit tests: backend (`src/**/*.spec.ts`) and frontend (`frontend/src/**/*.spec.ts(x)`, jsdom + React Testing Library) |
-| `npm run test:e2e` | Backend e2e tests (`test/`, Jest + supertest). Needs a prior `npm run build` for the frontend tests. |
+| `npm test` | Jest unit tests: backend (`backend/test/unit/`) and frontend (`frontend/test/`, jsdom + React Testing Library) |
+| `npm run test:e2e` | Backend e2e tests (`backend/test/e2e/`, Jest + supertest). Needs a prior `npm run build` for the frontend tests. |
 | `npm run test:ui` | Playwright (`e2e/`). Builds and starts the app on port 3100, uses the Chromium under `PLAYWRIGHT_BROWSERS_PATH` if set. |
-| `npm run lint` | ESLint for `src/` and `test/` |
+| `npm run lint` | ESLint for `backend/src/` and `backend/test/` |
 
 ## Layout
 
 ```
-src/
-  main.ts, app.setup.ts   bootstrap; global prefix /api, pipe, interceptor, filters
-  app.module.ts           imports the api modules and serves dist/frontend
-  api/<area>/             controllers (HTTP only, no business logic)
-  service/<area>/         business logic
-  repository/<area>/      data access (here: package.json)
-  commons/                validation pipe, logging interceptor, exception filters, shared utilities
-test/                     backend e2e tests
-frontend/src/
-  api/                    the only code that calls the backend
-  state/                  hooks holding the data
-  views/                  components; they use state, never api/
-e2e/                      Playwright tests
+backend/
+  src/
+    main.ts, app.setup.ts   bootstrap; global prefix /api, pipe, interceptor, filters
+    app.module.ts           imports the api modules and serves dist/frontend
+    api/<area>/             controllers (HTTP only, no business logic)
+    service/<area>/         business logic
+    repository/<area>/      data access (here: package.json)
+    commons/                validation pipe, logging interceptor, exception filters, shared utilities
+  test/
+    unit/                   unit tests, mirroring src/
+    e2e/                    Nest + supertest tests and their Jest config
+frontend/
+  src/
+    api/                    the only code that calls the backend
+    state/                  hooks holding the data
+    views/                  components; they use state, never api/
+  test/                     unit tests, mirroring src/
+e2e/                        Playwright tests (whole app)
+package.json                one, at the root
 ```
+
+Build output: `dist/backend` (Nest) and `dist/frontend` (Vite).
 
 ## Layer rules
 
