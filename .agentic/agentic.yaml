@@ -28,4 +28,3 @@ setup:
   - add mcp playwright -- mcp-server-playwright --headless
   - add marketplace /opt/agentic/marketplace
   - add plugin cost@agentic
-  - volume npm /home/dev/.npm
