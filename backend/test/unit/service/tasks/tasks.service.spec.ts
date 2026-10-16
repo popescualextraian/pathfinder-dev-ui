@@ -1,4 +1,4 @@
-import { BadGatewayException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { BridgeError, BridgeUnreachableError } from '../../../../src/repository/tasks/bridge/bridge-client';
 import { TasksService } from '../../../../src/service/tasks/tasks.service';
 import { AGENT_TOKEN, TASK_TOKEN, config, fakeBridge, fakeLauncher, fakeRecords, record, status } from './helpers';
@@ -47,9 +47,9 @@ describe('TasksService.start', () => {
 
   it('passes repoUrl, repoRef and model through', async () => {
     const { service, launcher } = setup({ records: [] });
-    const view = await service.start({ prompt: 'p', repoUrl: 'https://x/y.git', repoRef: 'dev', model: 'm' });
-    expect(view).toMatchObject({ repoUrl: 'https://x/y.git', repoRef: 'dev', model: 'm' });
-    expect(launcher.launch.mock.calls[0]).toEqual([expect.objectContaining({ repoUrl: 'https://x/y.git', repoRef: 'dev', model: 'm' })]);
+    const view = await service.start({ prompt: 'p', repoUrl: 'https://github.com/x/y.git', repoRef: 'dev', model: 'm' });
+    expect(view).toMatchObject({ repoUrl: 'https://github.com/x/y.git', repoRef: 'dev', model: 'm' });
+    expect(launcher.launch.mock.calls[0]).toEqual([expect.objectContaining({ repoUrl: 'https://github.com/x/y.git', repoRef: 'dev', model: 'm' })]);
   });
 
   it('refuses with 409 at the cap, before launching or recording', async () => {
@@ -74,6 +74,35 @@ describe('TasksService.start', () => {
     expect(records.map.size).toBe(1);
     expect([...records.map.values()][0].bridgeUrl).toBe('http://bridge:8765');
     expect(launcher.remove).not.toHaveBeenCalled();
+  });
+
+  it('refuses a repoUrl whose host is not allowed, before anything happens', async () => {
+    const { service, launcher, records } = setup({ records: [] });
+    for (const url of ['https://attacker.example/r.git', 'https://github.com.evil.example/r.git', 'https://GITHUB.com:444@evil.example/r.git']) {
+      await expect(service.start({ prompt: 'p', repoUrl: url })).rejects.toBeInstanceOf(BadRequestException);
+    }
+    expect(launcher.countRunning).not.toHaveBeenCalled();
+    expect(launcher.launch).not.toHaveBeenCalled();
+    expect(records.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts a repoUrl on an allowed host, case-insensitively', async () => {
+    const { service } = setup({ records: [] });
+    expect((await service.start({ prompt: 'p', repoUrl: 'https://GitHub.com/a/b.git' })).repoUrl).toBe('https://GitHub.com/a/b.git');
+  });
+
+  it('does not hold the start lock while waiting for the bridge', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const slow = jest.fn(async () => { await gate; return status(); });
+    const { service, launcher } = setup({ records: [], bridge: { status: slow } });
+    const first = service.start({ prompt: 'one' });
+    await new Promise((r) => setTimeout(r, 10));
+    const second = service.start({ prompt: 'two' });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(launcher.launch).toHaveBeenCalledTimes(2);
+    release();
+    await Promise.all([first, second]);
   });
 
   it('retries the id on collision', async () => {
@@ -127,6 +156,12 @@ describe('TasksService reads', () => {
   it('get keeps stopped for a stopped container', async () => {
     const { service } = setup({ records: [record({ lastState: 'stopped' })], launcher: notRunning });
     expect((await service.get(ID)).state).toBe('stopped');
+  });
+
+  it('get does not overwrite a recorded stopped with a bridge state', async () => {
+    const { service, records } = setup({ records: [record({ lastState: 'stopped' })], bridge: { status: jest.fn(async () => status({ state: 'running' })) } });
+    await service.get(ID);
+    expect(records.map.get(ID)!.lastState).toBe('stopped');
   });
 
   it('get reports stopped when the container is gone', async () => {
@@ -230,6 +265,47 @@ describe('TasksService verbs', () => {
     const { service, launcher } = setup({ bridge: { stop: jest.fn(async () => { throw new BridgeUnreachableError('x'); }) } });
     await service.stop(ID);
     expect(launcher.stop).toHaveBeenCalledWith(ID);
+  });
+
+  it.each([
+    ['a 503', new BridgeError(503, 'starting', 'starting')],
+    ['a 401', new BridgeError(401, 'unauthorized', 'no')],
+    ['a plain error', new Error('boom')],
+  ])('stop still stops the container when the bridge fails with %s', async (_n, error) => {
+    const { service, launcher, records } = setup({ bridge: { stop: jest.fn(async () => { throw error; }) } });
+    expect((await service.stop(ID)).state).toBe('stopped');
+    expect(launcher.stop).toHaveBeenCalledWith(ID);
+    expect(records.map.get(ID)!.lastState).toBe('stopped');
+  });
+
+  it('stop works for a record without bridgeUrl', async () => {
+    const { service, launcher, factory } = setup({ records: [record({ bridgeUrl: undefined })] });
+    factory.mockImplementation(() => { throw new Error('no bridge url'); });
+    await service.stop(ID);
+    expect(launcher.stop).toHaveBeenCalledWith(ID);
+  });
+
+  it('events is 409 when the container is not running', async () => {
+    const { service, bridge } = setup({ launcher: notRunning });
+    await expect(service.events(ID, 0)).rejects.toBeInstanceOf(ConflictException);
+    expect(bridge.events).not.toHaveBeenCalled();
+  });
+
+  it('wakes under the same lock as the cap check: two concurrent wakes do not exceed the cap', async () => {
+    const a = record({ id: 'T-20260101-aaaa' });
+    const b = record({ id: 'T-20260101-bbbb' });
+    let running = 1;
+    const { service, launcher } = setup({
+      records: [a, b],
+      launcher: {
+        inspect: jest.fn(async () => ({ exists: true, running: false, bridgeUrl: 'x' })),
+        countRunning: jest.fn(async () => { await new Promise((r) => setTimeout(r, 5)); return running; }),
+        start: jest.fn(async () => { running += 1; }),
+      },
+    });
+    const results = await Promise.allSettled([service.prompt(a.id, 'x'), service.prompt(b.id, 'x')]);
+    expect(launcher.start).toHaveBeenCalledTimes(1);
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
   });
 
   it('events asks the bridge', async () => {

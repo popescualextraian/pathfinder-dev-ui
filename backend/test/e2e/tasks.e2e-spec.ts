@@ -49,6 +49,7 @@ describe('tasks REST API (e2e)', () => {
     await bridge.stop();
   });
 
+
   describe('starting', () => {
     it('creates a task: 201, the view without tokens, a launch with defaults', async () => {
       const res = await start({ prompt: 'fix the bug', repoRef: 'main', model: 'claude-sonnet-4-5' });
@@ -72,6 +73,16 @@ describe('tasks REST API (e2e)', () => {
       const res = await start({ prompt: 'p', repoUrl: 'https://github.com/other/repo.git' });
       expect(res.status).toBe(201);
       expect(res.body.repoUrl).toBe('https://github.com/other/repo.git');
+    });
+
+    it.each([
+      'https://attacker.example/r.git',
+      'https://github.com.evil.example/r.git',
+    ])('refuses the repository host of %s with 400 and launches nothing', async (repoUrl) => {
+      const res = await start({ prompt: 'p', repoUrl });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/allowed repository host/);
+      expect(launcher.specs).toHaveLength(0);
     });
 
     it.each([
@@ -268,6 +279,9 @@ describe('tasks REST API (e2e)', () => {
       expect(parse(viaQuery.text).map((e) => e.id)).toEqual(['4']);
       const viaHeader = await readSse(`/api/tasks/${task.id}/events/stream`, { 'Last-Event-ID': '2' }, (t) => parse(t).length >= 2);
       expect(parse(viaHeader.text).map((e) => e.id)).toEqual(['3', '4']);
+      // A reconnecting EventSource repeats its original since and adds Last-Event-ID: the header wins.
+      const both = await readSse(`/api/tasks/${task.id}/events/stream?since=0`, { 'Last-Event-ID': '3' }, (t) => parse(t).length >= 1);
+      expect(parse(both.text).map((e) => e.id)).toEqual(['4']);
       for (let i = 0; i < 50 && bridge.liveClients > 0; i++) await new Promise((r) => setTimeout(r, 20));
       expect(bridge.liveClients).toBe(0);
     });

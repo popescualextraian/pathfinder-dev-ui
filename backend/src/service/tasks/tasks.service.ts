@@ -1,4 +1,4 @@
-import { BadGatewayException, ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomBytes, randomInt } from 'node:crypto';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 import {
@@ -44,8 +44,9 @@ const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
 export class TasksService {
   private readonly waitTimeoutMs: number;
   private readonly waitIntervalMs: number;
-  // Serialises start() so two concurrent starts cannot both pass the cap check.
-  private startQueue: Promise<unknown> = Promise.resolve();
+  // Serialises cap check plus launch/start (of new and of woken tasks) so concurrent requests
+  // cannot all pass the cap check. Never held while waiting for a bridge.
+  private launchQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly records: TaskRecordRepository,
@@ -58,10 +59,31 @@ export class TasksService {
     this.waitIntervalMs = options?.waitIntervalMs ?? 500;
   }
 
-  start(input: StartTaskInput): Promise<TaskView> {
-    const run = this.startQueue.then(() => this.doStart(input));
-    this.startQueue = run.catch(() => undefined);
+  async start(input: StartTaskInput): Promise<TaskView> {
+    if (input.repoUrl !== undefined) this.checkRepoHost(input.repoUrl);
+    const created = await this.exclusive(() => this.launchNew(input));
+    // If the bridge never answers we keep record and container (so the user can stop and remove
+    // the task) and report 502; the task then shows up in the list as 'starting'.
+    return this.observe(created, await this.waitFor(created, `Task ${created.id} was created but its bridge did not become ready`));
+  }
+
+  private exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.launchQueue.then(fn);
+    this.launchQueue = run.catch(() => undefined);
     return run;
+  }
+
+  // The repository host receives GH_TOKEN (git credential helper), so only known hosts are accepted.
+  private checkRepoHost(repoUrl: string): void {
+    let host: string | undefined;
+    try {
+      host = new URL(repoUrl).hostname.toLowerCase();
+    } catch {
+      host = undefined;
+    }
+    if (host === undefined || !this.config.allowedRepoHosts.includes(host)) {
+      throw new BadRequestException('repoUrl must be on an allowed repository host');
+    }
   }
 
   async list(): Promise<TaskView[]> {
@@ -77,7 +99,9 @@ export class TasksService {
       return toView(record, { state, reason: record.lastState === state ? undefined : 'container is not running' });
     }
     try {
-      return await this.observe(record, await this.bridgeFor(record).status());
+      const status = await this.bridgeFor(record).status();
+      // A recorded 'stopped' is final: a status read must not bring it back (a stop may be racing).
+      return await this.observe(record, status, record.lastState !== 'stopped');
     } catch (error) {
       // Bridge not (yet) reachable: show what was last known.
       if (error instanceof BridgeUnreachableError || (error instanceof BridgeError && error.status === 503)) {
@@ -112,8 +136,9 @@ export class TasksService {
     const record = await this.require(id);
     try {
       await this.bridgeFor(record).stop();
-    } catch (error) {
-      if (!(error instanceof BridgeUnreachableError)) throw error;
+    } catch {
+      // Best effort: whatever the bridge says (starting, unauthorized, unreachable, no URL), the
+      // container is stopped below, otherwise the task could never be stopped or removed.
     }
     await this.launcher.stop(id);
     const updated = await this.records.update(id, { lastState: 'stopped' });
@@ -136,10 +161,15 @@ export class TasksService {
 
   async events(id: string, since: number): Promise<BridgeEvent[]> {
     const record = await this.require(id);
+    const inspection = await this.launcher.inspect(id);
+    if (!inspection.exists || !inspection.running) {
+      throw new ConflictException(`Task ${id} is not running; its events are not available`);
+    }
     return this.bridgeFor(record).events(since);
   }
 
-  private async doStart(input: StartTaskInput): Promise<TaskView> {
+  // Under the launch lock: cap check, record, container. Does not wait for the bridge.
+  private async launchNew(input: StartTaskInput): Promise<TaskRecord> {
     if ((await this.launcher.countRunning()) >= this.config.maxRunning) {
       throw new ConflictException(`At most ${this.config.maxRunning} tasks can run at once`);
     }
@@ -159,21 +189,16 @@ export class TasksService {
 
     // Record first: a crash between launch and save would orphan a container.
     await this.records.create(record);
-    let created: TaskRecord;
     try {
       const { bridgeUrl } = await this.launcher.launch({
         taskId: id, taskToken, agentToken, prompt: input.prompt, repoUrl, repoRef: input.repoRef, model: input.model, branch,
       });
-      created = await this.records.update(id, { bridgeUrl });
+      return await this.records.update(id, { bridgeUrl });
     } catch (error) {
       await this.launcher.remove(id).catch(() => undefined); // a half-made container or volume
       await this.records.delete(id);
       throw error;
     }
-
-    // If the bridge never answers we keep record and container (so the user can stop and remove
-    // the task) and report 502; the task then shows up in the list as 'starting'.
-    return this.observe(created, await this.waitFor(created, `Task ${id} was created but its bridge did not become ready`));
   }
 
   // Starts a container that is not running and waits for its bridge, so a prompt can be sent.
@@ -184,10 +209,12 @@ export class TasksService {
       throw new ConflictException(`Task ${id} has no container any more; it cannot be woken`);
     }
     if (!inspection.running) {
-      if ((await this.launcher.countRunning()) >= this.config.maxRunning) {
-        throw new ConflictException(`At most ${this.config.maxRunning} tasks can run at once; stop one first`);
-      }
-      await this.launcher.start(id);
+      await this.exclusive(async () => {
+        if ((await this.launcher.countRunning()) >= this.config.maxRunning) {
+          throw new ConflictException(`At most ${this.config.maxRunning} tasks can run at once; stop one first`);
+        }
+        await this.launcher.start(id);
+      });
       await this.waitFor(record, `Task ${id} was started but its bridge did not become ready`);
     }
     return record;
@@ -204,8 +231,10 @@ export class TasksService {
     }
   }
 
-  private async observe(record: TaskRecord, status: BridgeStatus): Promise<TaskView> {
-    const updated = await this.records.update(record.id, { lastState: status.state, lastStatus: status });
+  private async observe(record: TaskRecord, status: BridgeStatus, persist = true): Promise<TaskView> {
+    const updated = persist
+      ? await this.records.update(record.id, { lastState: status.state, lastStatus: status })
+      : record;
     return toView(updated, { state: status.state, reason: status.reason, questions: status.questions, summary: status.summary, branch: status.branch ?? undefined });
   }
 

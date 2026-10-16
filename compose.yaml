@@ -16,7 +16,7 @@ services:
   ui:
     build: .
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${UI_PORT:-3000}:3000"
     env_file:
       - path: .env
         required: false

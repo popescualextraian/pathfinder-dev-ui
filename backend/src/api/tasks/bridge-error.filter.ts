@@ -1,6 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { BridgeError, BridgeUnreachableError } from '../../repository/tasks/bridge/bridge-client';
+import { BridgeError, BridgeUnreachableError } from '../../service/tasks/task-errors';
 
 // Bridge errors the client can act on keep their status and the bridge's message. 401/403 and
 // anything else unexpected mean the engine is misconfigured or the bridge is broken: 502 with a fixed

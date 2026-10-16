@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { firstValueFrom, of, throwError, toArray } from 'rxjs';
 import { TasksController } from '../../../../src/api/tasks/tasks.controller';
-import { BridgeError, BridgeEvent, BridgeUnreachableError } from '../../../../src/repository/tasks/bridge/bridge-client';
+import { BridgeError, TaskEvent as BridgeEvent, BridgeUnreachableError } from '../../../../src/service/tasks/task-errors';
 
 const view = { id: 'T-1', state: 'idle' };
 const event = (seq: number): BridgeEvent => ({ seq, ts: 't', task: 'T-1', session: null, agent: 'a', type: 'message', data: { n: seq } });
@@ -67,14 +67,18 @@ describe('TasksController', () => {
     ]);
   });
 
-  it('prefers the since query over Last-Event-ID, and uses the header otherwise', async () => {
+  it('prefers Last-Event-ID over the since query, and uses the query otherwise', async () => {
     const { events, controller } = make();
     await controller.stream('T-1', { since: 3 }, '9');
     await controller.stream('T-1', {}, '9');
     await controller.stream('T-1', {}, 'garbage');
-    expect(events.stream).toHaveBeenNthCalledWith(1, 'T-1', 3);
+    await controller.stream('T-1', { since: 3 }, 'garbage');
+    await controller.stream('T-1', { since: 3 });
+    expect(events.stream).toHaveBeenNthCalledWith(1, 'T-1', 9);
     expect(events.stream).toHaveBeenNthCalledWith(2, 'T-1', 9);
     expect(events.stream).toHaveBeenNthCalledWith(3, 'T-1', 0);
+    expect(events.stream).toHaveBeenNthCalledWith(4, 'T-1', 3);
+    expect(events.stream).toHaveBeenNthCalledWith(5, 'T-1', 3);
   });
 
   it('turns bridge errors on the stream into generic messages without host or detail', async () => {

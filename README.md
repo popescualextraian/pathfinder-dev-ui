@@ -49,12 +49,13 @@ is missing or invalid, naming the variable, never printing a value.
 | `ENGINE_IMAGE` | yes | Task image that runs `agentic-bridge`: the project's agentic image built with `agentic build`, for example `agentic-pathfinder-dev-ui:local`. Not the image of `Dockerfile`. |
 | `ENGINE_DOCKER_NETWORK` | yes | Docker network shared by the UI and the task containers (`agentic-ui` in `compose.yaml`). |
 | `ENGINE_DATA_DIR` | yes | Absolute directory for task records (`/data` in `compose.yaml`). |
-| `ENGINE_REPO_URL` | yes | Repository tasks clone when the request gives no `repoUrl`. |
+| `ENGINE_REPO_URL` | yes | Repository tasks clone when the request gives no `repoUrl`. Must not contain credentials. |
+| `ENGINE_ALLOWED_REPO_HOSTS` | no | Comma-separated hosts a request's `repoUrl` may use, in addition to the host of `ENGINE_REPO_URL` (which is always allowed). The host of a repository gets `GH_TOKEN` for the clone, so other hosts are refused with 400. |
 | `ENGINE_PROJECT` | yes | Project name passed to tasks (`AGENTIC_PROJECT`). |
 | `ENGINE_MAX_RUNNING` | no, default `2` | Maximum running task containers (positive integer). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | yes, secret | Passed into task containers. |
 | `GH_TOKEN` | yes, secret | Passed into task containers; used for the clone and for push. |
-| `ENGINE_TASK_EXTRA_ENV` | no, test hook | JSON object of strings added to each task container's environment (applied last, so it wins). |
+| `ENGINE_TASK_EXTRA_ENV` | no, test hook | JSON object of strings added to each task container's environment (keys must be valid variable names; keys the engine sets itself, such as the tokens, `GH_TOKEN`, `AGENTIC_TASK_ID`, `AGENTIC_BRANCH` or `AGENTIC_BRIDGE_HOSTS`, are refused at start-up). |
 | `ENGINE_TASK_EXTRA_BINDS` | no, test hook | JSON array of `host:container[:mode]` binds added to each task container. |
 
 `PORT` (default 3000) sets the HTTP port. Docker itself is reached through the usual socket or
@@ -67,7 +68,7 @@ All under `/api`. A task view contains the task's fields without tokens: `id`, `
 
 | Route | Does | Success |
 |---|---|---|
-| `POST /api/tasks` `{prompt, repoUrl?, repoRef?, model?}` | Starts a task and waits for its bridge. `repoUrl` must be https without credentials and defaults to `ENGINE_REPO_URL`. | 201 task |
+| `POST /api/tasks` `{prompt, repoUrl?, repoRef?, model?}` | Starts a task and waits for its bridge. `repoUrl` must be https without credentials, on an allowed host (see `ENGINE_ALLOWED_REPO_HOSTS`), and defaults to `ENGINE_REPO_URL`. | 201 task |
 | `GET /api/tasks` | All tasks, with the last known state | 200 |
 | `GET /api/tasks/:id` | Task with live bridge status (state, reason, open questions, summary, branch) | 200 |
 | `POST /api/tasks/:id/prompt` `{text}` | Sends a prompt; wakes a stopped container first | 202 task |
@@ -75,8 +76,8 @@ All under `/api`. A task view contains the task's fields without tokens: `id`, `
 | `POST /api/tasks/:id/cancel` | Cancels the running turn | 202 task |
 | `POST /api/tasks/:id/stop` | Bridge `/stop`, then stops the container | 202 task |
 | `DELETE /api/tasks/:id` | Removes container, volume and record; 409 unless the task is stopped | 204 |
-| `GET /api/tasks/:id/events?since=N` | Events after sequence number N as a JSON array | 200 |
-| `GET /api/tasks/:id/events/stream?since=N` | The same events, then live ones, as SSE (`id` is the event `seq`; `Last-Event-ID` is used when there is no `since`) | 200 |
+| `GET /api/tasks/:id/events?since=N` | Events after sequence number N as a JSON array; 409 when the container is not running | 200 |
+| `GET /api/tasks/:id/events/stream?since=N` | The same events, then live ones, as SSE (`id` is the event `seq`; `Last-Event-ID`, which EventSource sends on reconnect, takes precedence over `since` when present) | 200 |
 | `GET /api/system/info` | `{ name, version, uptimeSeconds }` | 200 |
 
 Errors: bridge 400, 404, 409 and 503 pass through with the bridge's message; any other bridge answer
@@ -117,7 +118,7 @@ cp .env.example .env                # fill in secrets, ENGINE_IMAGE, ENGINE_REPO
 DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up --build
 ```
 
-`compose.yaml` runs service `ui` with `.env`, the Docker socket, a named volume `engine-data` at
+`compose.yaml` runs service `ui` (published on `127.0.0.1:${UI_PORT:-3000}` only) with `.env`, the Docker socket, a named volume `engine-data` at
 `/data` (task records), `group_add` of the numeric `DOCKER_GID` (so the non-root user may use the
 socket; compose refuses to start without it), and a network with the fixed name `agentic-ui`. It sets
 `ENGINE_DOCKER_NETWORK=agentic-ui` and `ENGINE_DATA_DIR=/data`, which win over `.env`; `ENGINE_IMAGE`

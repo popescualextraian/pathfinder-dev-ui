@@ -2,7 +2,7 @@ import {
   Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Query, Sse, UseFilters, UseGuards, MessageEvent,
 } from '@nestjs/common';
 import { catchError, map, Observable, throwError } from 'rxjs';
-import { BridgeError, BridgeEvent, BridgeUnreachableError } from '../../repository/tasks/bridge/bridge-client';
+import { BridgeError, BridgeUnreachableError, TaskEvent } from '../../service/tasks/task-errors';
 import { TaskEventsService } from '../../service/tasks/task-events.service';
 import { TasksService, TaskView } from '../../service/tasks/tasks.service';
 import { BridgeErrorFilter, describeBridgeError } from './bridge-error.filter';
@@ -68,11 +68,11 @@ export class TasksController {
   }
 
   @Get(':id/events')
-  eventList(@Param('id') id: string, @Query() query: SinceQueryDto): Promise<BridgeEvent[]> {
+  eventList(@Param('id') id: string, @Query() query: SinceQueryDto): Promise<TaskEvent[]> {
     return this.tasks.events(id, query.since ?? 0);
   }
 
-  // Backlog after `since` (or Last-Event-ID, which EventSource sends on reconnect), then live.
+  // Backlog after Last-Event-ID (which EventSource sends on reconnect) or else `since`, then live.
   // The SSE id is the event's seq. The subscription ends, and with it the bridge connection,
   // when the client disconnects.
   // Nest starts the SSE response before an async handler settles, so a failure inside it would reach
@@ -85,8 +85,10 @@ export class TasksController {
     @Query() query: SinceQueryDto,
     @Headers('last-event-id') lastEventId?: string,
   ): Promise<Observable<MessageEvent>> {
-    const fromHeader = lastEventId !== undefined && /^\d+$/.test(lastEventId) ? Number(lastEventId) : 0;
-    const events = await this.events.stream(id, query.since ?? fromHeader);
+    // On reconnect EventSource repeats the original URL (with its `since`) and adds Last-Event-ID:
+    // the header is where the client really got to, so it wins.
+    const fromHeader = lastEventId !== undefined && /^\d+$/.test(lastEventId) ? Number(lastEventId) : undefined;
+    const events = await this.events.stream(id, fromHeader ?? query.since ?? 0);
     return events.pipe(
       map((event) => ({ id: String(event.seq), data: event })),
       catchError((error: unknown) =>
