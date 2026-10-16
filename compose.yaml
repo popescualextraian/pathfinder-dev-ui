@@ -1,0 +1,44 @@
+# The UI/engine. Task containers are started by it through the Docker socket and join the same
+# network (name: agentic-ui), where the UI reaches each bridge by container name.
+#
+# Before `docker compose up --build`:
+#   1. Build the TASK image with `agentic build` (agentic-dev-base); its tag is ENGINE_IMAGE.
+#      It is a different image from the one built by ./Dockerfile (that one is only this UI).
+#   2. Copy .env.example to .env and fill it in (secrets, ENGINE_IMAGE, ENGINE_REPO_URL, ENGINE_PROJECT).
+#   3. Set DOCKER_GID to the numeric group id of the host's Docker socket: either
+#        DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up --build
+#      or write the number (from `stat -c %g /var/run/docker.sock`) into .env.
+#
+# Mounting the Docker socket gives this container root-equivalent control of the host.
+name: agentic-pathfinder-dev-ui
+
+services:
+  ui:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # These win over the same names in .env: inside the container the paths and network are fixed.
+      ENGINE_LAUNCHER: docker
+      ENGINE_IMAGE: ${ENGINE_IMAGE:-agentic-pathfinder-dev-ui:local}
+      ENGINE_DOCKER_NETWORK: agentic-ui
+      ENGINE_DATA_DIR: /data
+      ENGINE_MAX_RUNNING: ${ENGINE_MAX_RUNNING:-2}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - engine-data:/data
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID to the numeric group id of /var/run/docker.sock}"
+    networks:
+      - agentic-ui
+    restart: unless-stopped
+
+volumes:
+  engine-data:
+
+networks:
+  agentic-ui:
+    name: agentic-ui
