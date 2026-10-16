@@ -8,3 +8,4 @@ coverage/
 *.tsbuildinfo
 test-results/
 playwright-report/
+.superpowers/
