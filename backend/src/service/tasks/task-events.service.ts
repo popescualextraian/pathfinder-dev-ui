@@ -1,0 +1,36 @@
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { BridgeEvent } from '../../repository/tasks/bridge/bridge-client';
+import { BRIDGE_CLIENT_FACTORY, BridgeClientFactory } from '../../repository/tasks/bridge/bridge-client.factory';
+import { TaskRecordRepository } from '../../repository/tasks/task-record.repository';
+
+@Injectable()
+export class TaskEventsService {
+  constructor(
+    private readonly records: TaskRecordRepository,
+    @Inject(BRIDGE_CLIENT_FACTORY) private readonly bridgeFor: BridgeClientFactory,
+  ) {}
+
+  // Backlog after `since`, then live events. Rejects with NotFoundException for an unknown task
+  // (before any subscription). Unsubscribing aborts the bridge connection. Does not wake the task.
+  async stream(id: string, since: number): Promise<Observable<BridgeEvent>> {
+    const record = await this.records.get(id);
+    if (!record) throw new NotFoundException(`Task ${id} not found`);
+    const client = this.bridgeFor(record);
+    return new Observable<BridgeEvent>((subscriber) => {
+      const abort = new AbortController();
+      void (async () => {
+        try {
+          for await (const event of client.eventStream(since, abort.signal)) {
+            if (subscriber.closed) break;
+            subscriber.next(event);
+          }
+          subscriber.complete();
+        } catch (error) {
+          subscriber.error(error);
+        }
+      })();
+      return () => abort.abort();
+    });
+  }
+}
