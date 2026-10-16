@@ -41,6 +41,8 @@ describe('TasksService.start', () => {
     expect(JSON.stringify(view)).not.toContain(spec[0].agentToken);
     expect(view).not.toHaveProperty('taskToken');
     expect(view).not.toHaveProperty('agentToken');
+    expect(view).not.toHaveProperty('bridgeUrl');
+    expect(view).not.toHaveProperty('containerName');
   });
 
   it('passes repoUrl, repoRef and model through', async () => {

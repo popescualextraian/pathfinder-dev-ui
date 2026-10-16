@@ -16,8 +16,6 @@ export interface TaskView {
   repoRef?: string;
   model?: string;
   branch: string;
-  containerName: string;
-  bridgeUrl?: string;
   createdAt: string;
   updatedAt: string;
   state: string;
@@ -254,7 +252,6 @@ function toView(record: TaskRecord, live: Live = {}): TaskView {
     prompt: record.prompt,
     repoUrl: record.repoUrl,
     branch: live.branch ?? record.branch,
-    containerName: record.containerName,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     state: live.state ?? record.lastState ?? 'starting',
@@ -262,7 +259,6 @@ function toView(record: TaskRecord, live: Live = {}): TaskView {
   };
   if (record.repoRef !== undefined) view.repoRef = record.repoRef;
   if (record.model !== undefined) view.model = record.model;
-  if (record.bridgeUrl !== undefined) view.bridgeUrl = record.bridgeUrl;
   const reason = live.reason ?? last.reason;
   if (reason !== undefined) view.reason = reason;
   const summary = live.summary ?? last.summary;

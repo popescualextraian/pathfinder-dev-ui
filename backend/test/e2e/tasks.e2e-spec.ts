@@ -110,6 +110,8 @@ describe('tasks REST API (e2e)', () => {
       const one = await get(`/api/tasks/${task.id}`);
       expect(one.status).toBe(200);
       expect(one.body).toMatchObject({ id: task.id, state: 'waiting', summary: 'fake summary' });
+      expect(one.body).not.toHaveProperty('bridgeUrl');
+      expect(one.body).not.toHaveProperty('containerName');
       expect(one.body.questions).toEqual([expect.objectContaining({ id: 'q-1', text: 'Which file?' })]);
     });
 

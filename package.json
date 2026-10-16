@@ -10,6 +10,7 @@
     "lint": "eslint \"backend/{src,test}/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config backend/test/e2e/jest-e2e.config.js",
+    "test:bridge": "jest --config backend/test/bridge/jest-bridge.config.js --runInBand",
     "test:ui": "playwright test",
     "dev:frontend": "vite --config frontend/vite.config.mts"
   },
