@@ -76,7 +76,7 @@ describe('TaskList sections', () => {
   it('collapses Done behind a show button and expands it', () => {
     render(<TaskList tasks={tasks} selectedId={null} onSelect={() => undefined} />);
     expect(screen.queryByText('Closed one')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /▸ 2 done tasks/ }));
+    fireEvent.click(screen.getByRole('button', { name: /▸ 2 closed tasks/ }));
     expect(screen.getByText('Closed one')).toBeTruthy();
     expect(screen.getByText('Stopped one')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /hide/i }));

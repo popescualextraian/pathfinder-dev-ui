@@ -8,7 +8,7 @@ interface Props {
   tasks: Task[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  /** Done section: hidden behind "N done tasks" until shown. */
+  /** Done section: hidden behind "N closed tasks" until shown. */
   collapsible?: boolean;
   now?: number;
 }
@@ -27,7 +27,7 @@ export function TaskSection({ title, tasks, selectedId, onSelect, collapsible, n
         <>
           {collapsible && (
             <button type="button" className={styles.collapsed} onClick={() => setExpanded(false)}>
-              <span>▾ {tasks.length} done tasks</span>
+              <span>▾ {tasks.length} closed tasks</span>
               <span className={styles.show}>hide</span>
             </button>
           )}
@@ -41,7 +41,7 @@ export function TaskSection({ title, tasks, selectedId, onSelect, collapsible, n
         </>
       ) : (
         <button type="button" className={styles.collapsed} onClick={() => setExpanded(true)}>
-          <span>▸ {tasks.length} done tasks</span>
+          <span>▸ {tasks.length} closed tasks</span>
           <span className={styles.show}>show</span>
         </button>
       )}

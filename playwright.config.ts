@@ -24,8 +24,9 @@ export default defineConfig({
     launchOptions: { executablePath: installedChromium() },
   },
   webServer: {
-    command: 'npm run build && npm start',
-    env: { PORT: String(PORT) },
+    // local launcher, real agentic-bridge, fake agent; short poll so state changes show quickly
+    command: 'npm run start:local',
+    env: { PORT: String(PORT), ENGINE_POLL_SECONDS: '2' },
     url: `http://localhost:${PORT}/api/system/info`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
