@@ -111,13 +111,19 @@ run `npm start` and, in a second terminal, `npm run dev:frontend` (Vite proxies 
 ## Local launcher (no Docker)
 
 `ENGINE_LAUNCHER=local` runs each task as an `agentic-bridge` child process of the app instead of a
-container: own folder under `ENGINE_DATA_DIR/local-tasks/<id>`, own loopback port, a clone of
+container: own folder under `ENGINE_DATA_DIR/local-tasks/<id>`, own port (the app reaches it on the loopback address, but the real bridge listens on all interfaces, 0.0.0.0, and only its tokens protect it), a clone of
 `ENGINE_REPO_URL` (a URL or a local path) on branch `agentic/<task-id>`. The bridge is the real one
 (`agentic-bridge` must be on PATH) with an environment built explicitly, not inherited. The agent is
 the fake agent by default (`ENGINE_LOCAL_AGENT=fake`: `tools/fake-agent/fake-agent.mjs`, no token reaches the bridge)
 or Claude Code (`ENGINE_LOCAL_AGENT=claude`, which needs `CLAUDE_CODE_OAUTH_TOKEN` and costs real tokens).
 There is **no isolation** between tasks or from the app: development only. The app logs a warning
-at start-up. `ENGINE_MAX_RUNNING` applies as usual. Stopping the app (SIGINT/SIGTERM) stops the bridges.
+at start-up. The fake agent's `SHELL:` prompt runs commands as the app's user, so anyone who can send a prompt
+can read what the app's user can read (including the app's environment); keep real tokens out of such an app.
+`npm run start:local` therefore drops `CLAUDE_CODE_OAUTH_TOKEN` from the app's environment when the agent is `fake`,
+and `GH_TOKEN` as well when `ENGINE_REPO_URL` is a local path. `ENGINE_MAX_RUNNING` applies as usual. Stopping the app (SIGINT/SIGTERM) stops the bridges (each bridge runs in its own process group, which is killed as a whole).
+Local tasks do not survive an app crash or restart: after a SIGKILL of the app, bridges may be left running and must be stopped
+manually. `ENGINE_TASK_EXTRA_ENV` and `ENGINE_TASK_EXTRA_BINDS` are ignored by `local`, and SSH-form repository URLs
+(`git@host:path`) are not supported (use https or a local path). The clone is aborted after 120 seconds.
 
 ```sh
 PORT=3101 npm run start:local   # builds, then runs in the foreground; Ctrl-C stops it

@@ -7,7 +7,10 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+
+const { buildAppEnv, redactRepoUrl } = createRequire(import.meta.url)('./local-env.cjs');
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const port = process.env.PORT?.trim() || '3100';
@@ -25,19 +28,8 @@ rmSync(dataDir, { recursive: true, force: true });
 mkdirSync(dataDir, { recursive: true });
 writeFileSync(pidFile, `${process.pid}\n`);
 
-const env = {
-  ENGINE_REPO_URL: root,
-  ENGINE_PROJECT: basename(root),
-  ENGINE_LOCAL_AGENT: 'fake',
-  // The app wants an identity whenever GH_TOKEN is set in the environment.
-  ENGINE_GIT_NAME: 'Local Dev',
-  ENGINE_GIT_EMAIL: 'local-dev@example.invalid',
-  ...Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== undefined && v !== '')),
-  ENGINE_LAUNCHER: 'local',
-  PORT: port,
-  ENGINE_DATA_DIR: dataDir,
-};
-console.log(`start:local: port ${port}, data ${dataDir}, repo ${env.ENGINE_REPO_URL}, agent ${env.ENGINE_LOCAL_AGENT}`);
+const env = buildAppEnv({ processEnv: process.env, root, projectName: basename(root), port, dataDir });
+console.log(`start:local: port ${port}, data ${dataDir}, repo ${redactRepoUrl(env.ENGINE_REPO_URL)}, agent ${env.ENGINE_LOCAL_AGENT}`);
 
 const app = spawn(process.execPath, [join(root, 'dist/backend/main.js')], { cwd: root, env, stdio: 'inherit' });
 // The app shuts down on these (and stops its bridges); wait for it, then leave.

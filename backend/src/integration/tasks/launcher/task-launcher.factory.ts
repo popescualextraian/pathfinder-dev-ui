@@ -15,7 +15,7 @@ const LAUNCHERS: Record<string, (config: EngineConfig) => TaskLauncher> = {
 export function createTaskLauncher(config: EngineConfig): TaskLauncher {
   const create = LAUNCHERS[config.launcher];
   if (!Object.hasOwn(LAUNCHERS, config.launcher) || !create) {
-    throw new Error(`Unknown ENGINE_LAUNCHER "${config.launcher}"; known: ${Object.keys(LAUNCHERS).join(', ')}`);
+    throw new Error(`Unknown ENGINE_LAUNCHER; known launchers: ${Object.keys(LAUNCHERS).join(', ')}`);
   }
   return create(config);
 }

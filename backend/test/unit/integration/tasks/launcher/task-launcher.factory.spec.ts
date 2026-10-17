@@ -7,6 +7,9 @@ import { createTaskLauncher } from '../../../../../src/integration/tasks/launche
 const config = { launcher: 'docker', image: 'i', dockerNetwork: 'n', project: 'p', taskExtraEnv: {}, taskExtraBinds: [] } as unknown as EngineConfig;
 
 describe('createTaskLauncher', () => {
+  beforeEach(() => { jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined); });
+  afterEach(() => jest.restoreAllMocks());
+
   it('returns the Docker launcher for "docker"', () => {
     expect(createTaskLauncher(config)).toBeInstanceOf(DockerTaskLauncher);
   });
@@ -28,7 +31,8 @@ describe('createTaskLauncher', () => {
     }
   });
 
-  it('refuses an unknown launcher, naming it and the known ones', () => {
-    expect(() => createTaskLauncher({ ...config, launcher: 'azure' })).toThrow(/"azure".*docker/);
+  it('refuses an unknown launcher, naming the variable and the known ones but not the value', () => {
+    expect(() => createTaskLauncher({ ...config, launcher: 'azure-secret' })).toThrow(/ENGINE_LAUNCHER.*docker, local/);
+    expect(() => createTaskLauncher({ ...config, launcher: 'azure-secret' })).not.toThrow(/azure-secret/);
   });
 });

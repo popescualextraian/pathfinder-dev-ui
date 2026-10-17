@@ -26,7 +26,7 @@ Single test: `npx jest --selectProjects backend -t "name"` or `npx jest path/to/
 
 ## Test your version
 
-Run your checkout's app next to others without Docker (`local` launcher, real `agentic-bridge`, fake agent; no isolation, development only):
+Run your checkout's app next to others without Docker (`local` launcher, real `agentic-bridge`, fake agent; no isolation, development only; the fake agent's `SHELL:` runs commands as the app's user, so `start:local` drops `CLAUDE_CODE_OAUTH_TOKEN` (and `GH_TOKEN` for a local-path repo) from the app env; bridges listen on 0.0.0.0, only their tokens protect them):
 
 ```sh
 PORT=3101 npm run start:local > /tmp/app-3101.log 2>&1 &   # pick a free port; builds first, wait for "successfully started" in the log

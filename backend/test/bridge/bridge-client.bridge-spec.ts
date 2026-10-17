@@ -108,3 +108,30 @@ describeWithBridge('BridgeClient against the real bridge', () => {
     expect(status.state).toBe('stopped');
   });
 });
+
+// LocalTaskLauncher.start(): a bridge ended from outside comes back on the same port.
+describeWithBridge('LocalTaskLauncher.start() with the real bridge', () => {
+  const launcher = new LocalProcessLauncher();
+  const taskId = 'T-20261016-cl02';
+  const taskToken = randomBytes(16).toString('hex');
+
+  afterAll(async () => {
+    await launcher.dispose();
+  });
+
+  it('respawns a bridge ended by stop() on the same port with start() and it answers again', async () => {
+    const { bridgeUrl } = await launcher.launch({
+      taskId, taskToken, agentToken: randomBytes(16).toString('hex'), prompt: 'p', repoUrl: 'https://example.invalid/r.git', branch: `agentic/${taskId}`,
+    });
+    const client = new HttpBridgeClient({ baseUrl: bridgeUrl, taskToken });
+    await until('the first bridge', () => client.status().catch(() => undefined));
+    await launcher.stop(taskId);
+    expect(await launcher.inspect(taskId)).toMatchObject({ exists: true, running: false });
+    await expect(client.status()).rejects.toBeDefined();
+    await launcher.start(taskId);
+    expect(await launcher.inspect(taskId)).toMatchObject({ running: true, bridgeUrl });
+    const status = await until('the respawned bridge', () => client.status().catch(() => undefined));
+    expect(status.task).toBe(taskId);
+    expect(status.state).not.toBe('stopped'); // the bridge was ended, not stopped by the user
+  });
+});

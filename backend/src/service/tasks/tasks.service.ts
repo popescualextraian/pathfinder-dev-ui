@@ -5,7 +5,7 @@ import {
   BRIDGE_CLIENT_FACTORY, BridgeClient, BridgeClientFactory, BridgeError, BridgeEvent, BridgeQuestion, BridgeStatus,
   BridgeUnreachableError, waitForStatus,
 } from './bridge-client';
-import { TASK_LAUNCHER, TaskLauncher } from '../../service/tasks/task-launcher';
+import { TASK_LAUNCHER, TaskLauncher } from './task-launcher';
 import { TaskRecord, TaskRecordRepository } from '../../repository/tasks/task-record.repository';
 
 // What clients see of a task: the record without the tokens, plus state from the bridge.
