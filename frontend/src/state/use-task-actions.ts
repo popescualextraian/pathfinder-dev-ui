@@ -33,11 +33,22 @@ function useAction<A extends unknown[], R>(fn: (...args: A) => Promise<R>): Acti
 
 export const useStartTask = () => useAction((body: StartTaskRequest) => api.startTask(body));
 
-export function useTaskActions(id: string) {
-  const prompt = useAction(useCallback((text: string) => api.sendPrompt(id, text), [id]));
-  const answer = useAction(useCallback((text: string, question?: string) => api.answer(id, { text, question }), [id]));
-  const cancel = useAction(useCallback(() => api.cancel(id), [id]));
-  const close = useAction(useCallback(() => api.close(id), [id]));
+/** onTask receives the Task returned by 202 responses so the views do not depend on the status stream. */
+export function useTaskActions(id: string, onTask?: (task: Task) => void) {
+  const report = useCallback(
+    async (task: Promise<Task>) => {
+      const t = await task;
+      if (t && typeof t === 'object') onTask?.(t);
+      return t;
+    },
+    [onTask],
+  );
+  const prompt = useAction(useCallback((text: string) => report(api.sendPrompt(id, text)), [id, report]));
+  const answer = useAction(
+    useCallback((text: string, question?: string) => report(api.answer(id, { text, question })), [id, report]),
+  );
+  const cancel = useAction(useCallback(() => report(api.cancel(id)), [id, report]));
+  const close = useAction(useCallback(() => report(api.close(id)), [id, report]));
   const remove = useAction(useCallback(() => api.deleteTask(id), [id]));
   return { prompt, answer, cancel, close, remove };
 }

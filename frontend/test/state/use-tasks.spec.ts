@@ -29,7 +29,13 @@ describe('useTasks', () => {
     act(() => FakeEventSource.last.emit('task', b));
     expect(result.current.tasks.map((t) => t.id)).toEqual(['T-b', 'T-a']);
 
-    act(() => FakeEventSource.last.emit('task', { ...a, state: 'waiting', section: 'needs-you' }));
+    act(() =>
+      FakeEventSource.last.emit('task', {
+        ...a,
+        state: 'waiting',
+        section: 'needs-you',
+      }),
+    );
     expect(result.current.tasks.map((t) => t.id)).toEqual(['T-b', 'T-a']);
     expect(result.current.tasks[1].state).toBe('waiting');
 
@@ -43,11 +49,47 @@ describe('useTasks', () => {
     expect(listTasks).toHaveBeenCalledTimes(1);
   });
 
+  it('does not let an older GET overwrite a newer stream update, and keeps stream-created tasks', async () => {
+    const a = makeTask({
+      id: 'T-a',
+      createdAt: '2026-10-17T10:00:00Z',
+      updatedAt: '2026-10-17T10:00:00Z',
+    });
+    let resolve!: (l: unknown[]) => void;
+    listTasks.mockReturnValue(new Promise((r) => (resolve = r)));
+    const { result } = renderHook(() => useTasks(null));
+    const newer = {
+      ...a,
+      state: 'waiting' as const,
+      updatedAt: '2026-10-17T10:05:00Z',
+    };
+    const created = makeTask({ id: 'T-c', createdAt: '2026-10-17T11:00:00Z' });
+    act(() => FakeEventSource.last.emit('task', newer));
+    act(() => FakeEventSource.last.emit('task', created));
+    await act(async () => resolve([a]));
+    expect(result.current.tasks.find((t) => t.id === 'T-a')?.state).toBe('waiting');
+    expect(result.current.tasks.map((t) => t.id)).toEqual(['T-c', 'T-a']);
+  });
+
+  it('ignores a superseded load and skips the duplicate initial load on first open', async () => {
+    const a = makeTask({ id: 'T-a' });
+    listTasks.mockResolvedValue([a]);
+    const { result } = renderHook(() => useTasks(null));
+    act(() => FakeEventSource.last.emit('open'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(listTasks).toHaveBeenCalledTimes(1);
+  });
+
+  it('applyTask upserts a task returned by an action', async () => {
+    listTasks.mockResolvedValue([]);
+    const { result } = renderHook(() => useTasks(null));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.applyTask(makeTask({ id: 'T-z' })));
+    expect(result.current.allTasks.map((t) => t.id)).toEqual(['T-z']);
+  });
+
   it('filters by repository but keeps allTasks', async () => {
-    listTasks.mockResolvedValue([
-      makeTask({ id: 'T-a', repository: 'x' }),
-      makeTask({ id: 'T-b', repository: 'y' }),
-    ]);
+    listTasks.mockResolvedValue([makeTask({ id: 'T-a', repository: 'x' }), makeTask({ id: 'T-b', repository: 'y' })]);
     const { result } = renderHook(() => useTasks('y'));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.tasks.map((t) => t.id)).toEqual(['T-b']);

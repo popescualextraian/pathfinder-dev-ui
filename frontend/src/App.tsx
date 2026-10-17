@@ -13,7 +13,7 @@ import { TaskList } from './views/TaskList';
 export function App() {
   const route = useRoute();
   const { repositories } = useRepositories();
-  const { tasks, allTasks, loading, error } = useTasks(route.repository);
+  const { tasks, allTasks, loading, error, applyTask } = useTasks(route.repository);
 
   const [creating, setCreating] = useState(false);
   const { task, loading: taskLoading, error: taskError } = useTask(route.taskId, allTasks);
@@ -39,7 +39,15 @@ export function App() {
             error={error}
           />
         }
-        main={<TaskView task={task} loading={taskLoading} error={taskError} onDeleted={() => route.selectTask(null)} />}
+        main={
+          <TaskView
+            task={task}
+            loading={taskLoading}
+            error={taskError}
+            onDeleted={() => route.selectTask(null)}
+            onTask={applyTask}
+          />
+        }
         facts={<FactsPanel task={task} />}
       />
       {creating && (

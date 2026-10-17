@@ -146,6 +146,46 @@ describe('TaskView body', () => {
     view(makeTask({ state: 'stopped', section: 'done' }));
     expect((screen.getByLabelText('Follow-up') as HTMLTextAreaElement).disabled).toBe(true);
   });
+  it('placeholder says stopped for a stopped task', () => {
+    view(makeTask({ state: 'stopped', section: 'done' }));
+    expect(screen.getByPlaceholderText('This task is stopped')).toBeTruthy();
+  });
+  it('question cards are disabled on a stopped task', () => {
+    view(makeTask({ state: 'stopped', section: 'done', questions: [question] }));
+    expect((screen.getByText(/pg/) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Your answer') as HTMLInputElement).disabled).toBe(true);
+  });
+  it('answer pending and error are scoped to the question being answered', async () => {
+    const q2 = {
+      ...question,
+      id: 'q2',
+      text: 'Which cache?',
+      options: ['redis'],
+      recommendation: null,
+    };
+    let reject!: (e: Error) => void;
+    m(api.answer).mockReturnValue(new Promise((_, r) => (reject = r)));
+    view(
+      makeTask({
+        state: 'waiting',
+        section: 'needs-you',
+        questions: [question, q2],
+      }),
+    );
+    fireEvent.click(screen.getByText(/pg/));
+    await waitFor(() => expect((screen.getByText('redis') as HTMLButtonElement).disabled).toBe(false));
+    expect((screen.getByText(/pg/) as HTMLButtonElement).disabled).toBe(true);
+    reject(new ApiError(409, 'no open question'));
+    expect(await screen.findAllByRole('alert')).toHaveLength(1);
+  });
+  it('reports the task returned by an action', async () => {
+    const t = idle({ closed: true, section: 'done' });
+    m(api.close).mockResolvedValue(t);
+    const onTask = jest.fn();
+    render(<TaskView task={idle()} onDeleted={jest.fn()} onTask={onTask} />);
+    fireEvent.click(screen.getByText('Close task'));
+    await waitFor(() => expect(onTask).toHaveBeenCalledWith(t));
+  });
   it('toggles the full run', () => {
     view(idle());
     expect(screen.queryByTestId('full-run')).toBeNull();
@@ -214,6 +254,19 @@ describe('NewTaskDialog', () => {
     expect(onStarted).not.toHaveBeenCalled();
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
+  });
+  it('Escape closes from anywhere (document) and focus returns to the opener', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    const onClose = jest.fn();
+    const { unmount } = render(<NewTaskDialog repositories={repos} onClose={onClose} onStarted={jest.fn()} />);
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
   });
 });
 

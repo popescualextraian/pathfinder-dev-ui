@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { TaskList } from '../../src/views/TaskList';
 import { TaskCard } from '../../src/views/TaskCard';
-import { formatAge } from '../../src/views/format-age';
+import { formatAge, formatAgo } from '../../src/views/format-age';
 import { App } from '../../src/App';
 import * as tasksApi from '../../src/api/tasks-api';
 import * as reposApi from '../../src/api/repositories-api';
@@ -76,9 +76,11 @@ describe('TaskList sections', () => {
   it('collapses Done behind a show button and expands it', () => {
     render(<TaskList tasks={tasks} selectedId={null} onSelect={() => undefined} />);
     expect(screen.queryByText('Closed one')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /▸ 2 closed tasks/ }));
+    fireEvent.click(screen.getByRole('button', { name: /▸ 2 done tasks/ }));
     expect(screen.getByText('Closed one')).toBeTruthy();
     expect(screen.getByText('Stopped one')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /hide/i }));
+    expect(screen.queryByText('Closed one')).toBeNull();
   });
 
   it('shows empty and error notes and hides empty sections', () => {
@@ -122,6 +124,8 @@ describe('formatAge', () => {
   it('formats units', () => {
     const now = Date.parse('2026-10-17T12:00:00Z');
     expect(formatAge('2026-10-17T11:59:50Z', now)).toBe('now');
+    expect(formatAgo('2026-10-17T11:59:50Z', now)).toBe('just now');
+    expect(formatAgo('2026-10-17T11:30:00Z', now)).toBe('30 min ago');
     expect(formatAge('2026-10-17T10:00:00Z', now)).toBe('2 h');
     expect(formatAge('2026-10-14T12:00:00Z', now)).toBe('3 d');
   });
@@ -170,7 +174,12 @@ describe('App: sidebar, filter and stream', () => {
     fireEvent.click(await screen.findByText('Running one'));
     expect(window.location.hash).toBe('#/task/T-r');
     await waitFor(() =>
-      expect(within(screen.getByRole('region', { name: 'Working' })).getByText('Running one').closest('button')?.getAttribute('aria-current')).toBe('true'),
+      expect(
+        within(screen.getByRole('region', { name: 'Working' }))
+          .getByText('Running one')
+          .closest('button')
+          ?.getAttribute('aria-current'),
+      ).toBe('true'),
     );
   });
 

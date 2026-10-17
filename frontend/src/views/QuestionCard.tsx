@@ -6,11 +6,14 @@ import styles from './TaskView.module.css';
 interface Props {
   question: TaskQuestion;
   pending: boolean;
+  /** Task closed or stopped: nothing can be answered. */
+  disabled?: boolean;
   error: string | null;
   onAnswer: (text: string, question: string) => void;
 }
 
-export function QuestionCard({ question, pending, error, onAnswer }: Props) {
+export function QuestionCard({ question, pending, disabled = false, error, onAnswer }: Props) {
+  const off = pending || disabled;
   const [text, setText] = useState('');
   const send = () => text.trim() && onAnswer(text.trim(), question.id);
   return (
@@ -19,7 +22,7 @@ export function QuestionCard({ question, pending, error, onAnswer }: Props) {
       <p className={styles.block}>{question.text}</p>
       <div className={styles.options}>
         {question.options.map((o) => (
-          <Button key={o} disabled={pending} onClick={() => onAnswer(o, question.id)}>
+          <Button key={o} disabled={off} onClick={() => onAnswer(o, question.id)}>
             {o}
             {o === question.recommendation ? ' (recommended)' : ''}
           </Button>
@@ -29,11 +32,11 @@ export function QuestionCard({ question, pending, error, onAnswer }: Props) {
         <input
           aria-label="Your answer"
           value={text}
-          disabled={pending}
+          disabled={off}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && send()}
         />
-        <Button variant="primary" disabled={pending || !text.trim()} onClick={send}>
+        <Button variant="primary" disabled={off || !text.trim()} onClick={send}>
           Answer
         </Button>
       </div>

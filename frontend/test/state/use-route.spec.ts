@@ -3,7 +3,15 @@ import { buildHash, parseHash, useRoute } from '../../src/state/use-route';
 
 describe('route hash', () => {
   it('parses and builds', () => {
-    expect(parseHash('#/repo/my%20repo/task/T-1')).toEqual({ repository: 'my repo', taskId: 'T-1' });
+    expect(parseHash('#/repo/my%20repo/task/T-1')).toEqual({
+      repository: 'my repo',
+      taskId: 'T-1',
+    });
+    expect(parseHash('#/repo/%E0%A4%A/task/T-1')).toEqual({
+      repository: null,
+      taskId: 'T-1',
+    });
+    expect(parseHash('#/task/%')).toEqual({ repository: null, taskId: null });
     expect(parseHash('')).toEqual({ repository: null, taskId: null });
     expect(buildHash({ repository: 'a', taskId: 'T-1' })).toBe('#/repo/a/task/T-1');
     expect(buildHash({ repository: null, taskId: null })).toBe('#/');

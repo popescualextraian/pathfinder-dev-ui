@@ -3,6 +3,7 @@ type Listener = (e: { data?: string }) => void;
 export class FakeEventSource {
   static instances: FakeEventSource[] = [];
   closed = false;
+  readyState = 1;
   onmessage: Listener | null = null;
   onerror: (() => void) | null = null;
   private listeners = new Map<string, Listener[]>();
@@ -15,6 +16,7 @@ export class FakeEventSource {
   }
   close() {
     this.closed = true;
+    this.readyState = 2;
   }
   emit(type: string, data?: unknown) {
     const e = { data: data === undefined ? undefined : JSON.stringify(data) };

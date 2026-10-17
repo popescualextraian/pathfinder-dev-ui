@@ -16,9 +16,11 @@ interface Props {
   error?: string | null;
   /** Called after the task was deleted so the selection can clear. */
   onDeleted: () => void;
+  /** Receives the Task returned by an action (upsert into the list). */
+  onTask?: (task: Task) => void;
 }
 
-export function TaskView({ task, loading, error, onDeleted }: Props) {
+export function TaskView({ task, loading, error, onDeleted, onTask }: Props) {
   if (!task) {
     return (
       <p className={styles.empty} role={error ? 'alert' : undefined}>
@@ -26,11 +28,12 @@ export function TaskView({ task, loading, error, onDeleted }: Props) {
       </p>
     );
   }
-  return <TaskDetail key={task.id} task={task} onDeleted={onDeleted} />;
+  return <TaskDetail key={task.id} task={task} onDeleted={onDeleted} onTask={onTask} />;
 }
 
-function TaskDetail({ task, onDeleted }: { task: Task; onDeleted: () => void }) {
-  const actions = useTaskActions(task.id);
+function TaskDetail({ task, onDeleted, onTask }: { task: Task; onDeleted: () => void; onTask?: (task: Task) => void }) {
+  const actions = useTaskActions(task.id, onTask);
+  const [answering, setAnswering] = useState<string | null>(null);
   const [showRun, setShowRun] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const done = task.closed || task.state === 'stopped';
@@ -85,17 +88,22 @@ function TaskDetail({ task, onDeleted }: { task: Task; onDeleted: () => void }) 
         <QuestionCard
           key={q.id}
           question={q}
-          pending={actions.answer.pending}
-          error={actions.answer.error}
-          onAnswer={(text, question) => void actions.answer.run(text, question)}
+          disabled={done}
+          pending={answering === q.id && actions.answer.pending}
+          error={answering === q.id ? actions.answer.error : null}
+          onAnswer={(text, question) => {
+            setAnswering(question);
+            void actions.answer.run(text, question);
+          }}
         />
       ))}
       <button type="button" className={styles.runLink} onClick={() => setShowRun(!showRun)} aria-expanded={showRun}>
         {showRun ? 'Hide full run ▾' : 'View full run ▸'}
       </button>
-      {showRun && <FullRun taskId={task.id} />}
+      {showRun && <FullRun taskId={task.id} closed={closed} />}
       <ReplyBox
         disabled={done}
+        stopped={!closed && task.state === 'stopped'}
         pending={actions.prompt.pending}
         error={actions.prompt.error}
         onSend={async (text) => (await actions.prompt.run(text)).ok}

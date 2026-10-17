@@ -19,7 +19,19 @@ export function NewTaskDialog({ repositories, onClose, onStarted }: Props) {
   const [model, setModel] = useState('');
   const effectiveRepository = repository || repositories.find((r) => r.default)?.name || repositories[0]?.name || '';
 
-  useEffect(() => first.current?.focus(), []);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    first.current?.focus();
+    return () => opener?.focus?.();
+  }, []);
+
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   const submit = async () => {
     if (!prompt.trim() || start.pending) return;
@@ -39,7 +51,6 @@ export function NewTaskDialog({ repositories, onClose, onStarted }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-task-heading"
-        onKeyDown={(e) => e.key === 'Escape' && onClose()}
         onSubmit={(e) => {
           e.preventDefault();
           void submit();

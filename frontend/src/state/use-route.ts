@@ -10,7 +10,12 @@ export function parseHash(hash: string): Route {
   const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const route: Route = { repository: null, taskId: null };
   for (let i = 0; i + 1 < parts.length; i += 2) {
-    const value = decodeURIComponent(parts[i + 1]);
+    let value: string;
+    try {
+      value = decodeURIComponent(parts[i + 1]);
+    } catch {
+      continue; // malformed escape: treat as unset
+    }
     if (parts[i] === 'repo') route.repository = value;
     if (parts[i] === 'task') route.taskId = value;
   }

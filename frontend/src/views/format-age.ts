@@ -6,3 +6,9 @@ export function formatAge(iso: string, now: number = Date.now()): string {
   if (hours < 24) return `${hours} h`;
   return `${Math.floor(hours / 24)} d`;
 }
+
+/** "just now", "5 min ago", ... for sentences. */
+export function formatAgo(iso: string, now: number = Date.now()): string {
+  const age = formatAge(iso, now);
+  return age === 'now' ? 'just now' : `${age} ago`;
+}

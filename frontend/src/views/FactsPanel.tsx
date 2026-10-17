@@ -1,5 +1,5 @@
 import type { Task } from '../api/models';
-import { formatAge } from './format-age';
+import { formatAgo } from './format-age';
 import styles from './FactsPanel.module.css';
 
 export function FactsPanel({ task }: { task: Task | null }) {
@@ -10,8 +10,8 @@ export function FactsPanel({ task }: { task: Task | null }) {
     ['Branch', task.branch, true],
     ['Task id', task.id, true],
     ['Model', task.model ?? 'default'],
-    ['Started', `${formatAge(task.createdAt)} ago`],
-    ['Last activity', `${formatAge(task.lastMessageAt ?? task.updatedAt)} ago`],
+    ['Started', formatAgo(task.createdAt)],
+    ['Last activity', formatAgo(task.lastMessageAt ?? task.updatedAt)],
   ];
   return (
     <dl className={styles.facts}>

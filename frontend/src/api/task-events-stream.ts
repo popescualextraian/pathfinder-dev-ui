@@ -30,6 +30,7 @@ export function openTaskEventsStream(
       es.close();
       if (closed) return;
       handlers.onError?.();
+      if (closed) return; // the handler may have given up
       timer = setTimeout(connect, RECONNECT_DELAY_MS);
     };
   };
