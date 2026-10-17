@@ -1,0 +1,54 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.columns {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.sidebar {
+  width: 230px;
+  flex: none;
+  background: var(--ink);
+  color: var(--paper);
+  overflow-y: auto;
+}
+.list {
+  width: 280px;
+  flex: none;
+  background: var(--paper-soft);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+.main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+.facts {
+  width: 220px;
+  flex: none;
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+}
+.footer {
+  flex: none;
+  border-top: 1px solid var(--line);
+  background: var(--paper-soft);
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.footer dl {
+  display: flex;
+  gap: 12px;
+  margin: 0;
+}
+.footer dt {
+  display: none;
+}
+.footer dd {
+  margin: 0;
+}

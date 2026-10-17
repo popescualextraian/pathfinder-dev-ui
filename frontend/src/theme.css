@@ -1,0 +1,51 @@
+:root {
+  --msg-red: #a01441;
+  --msg-red-dark: #7c0f32;
+  --msg-red-light: #c4356a;
+  --ink: #1d1d2b;
+  --ink-soft: #4a4a5e;
+  --paper: #fff;
+  --paper-soft: #f7f5f6;
+  --line: #e6e0e3;
+  --accent-gold: #d9a441;
+
+  --state-working-dot: #3fb37f;
+  --state-working-bg: rgba(63, 179, 127, 0.12);
+  --state-working-text: #23855a;
+  --state-needs-dot: #d9a441;
+  --state-needs-bg: rgba(217, 164, 65, 0.18);
+  --state-needs-text: #8a6113;
+  --state-review-dot: #6d8fd6;
+  --state-review-bg: rgba(109, 143, 214, 0.15);
+  --state-review-text: #3b5aa0;
+  --state-done-dot: #9a98a8;
+  --state-done-bg: #eeecef;
+  --state-done-text: var(--ink-soft);
+
+  --font-sans: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --radius-card: 12px;
+  --radius-pill: 999px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--ink);
+  background: var(--paper);
+}
+
+:focus-visible {
+  outline: 2px solid var(--msg-red-light);
+  outline-offset: 2px;
+}

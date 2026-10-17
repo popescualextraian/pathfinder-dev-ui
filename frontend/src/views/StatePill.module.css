@@ -1,0 +1,23 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.working { background: var(--state-working-bg); color: var(--state-working-text); }
+.working .dot { background: var(--state-working-dot); }
+.needs-you { background: var(--state-needs-bg); color: var(--state-needs-text); }
+.needs-you .dot { background: var(--state-needs-dot); }
+.in-review { background: var(--state-review-bg); color: var(--state-review-text); }
+.in-review .dot { background: var(--state-review-dot); }
+.done { background: var(--state-done-bg); color: var(--state-done-text); }
+.done .dot { background: var(--state-done-dot); }

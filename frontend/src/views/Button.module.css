@@ -1,0 +1,33 @@
+.button {
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: var(--radius-pill);
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.primary {
+  background: var(--msg-red);
+  color: var(--paper);
+}
+.primary:hover:not(:disabled) {
+  background: var(--msg-red-dark);
+}
+.secondary {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.secondary:hover:not(:disabled) {
+  background: var(--paper-soft);
+}
+.danger {
+  background: var(--paper);
+  color: var(--msg-red);
+  border-color: var(--msg-red);
+}

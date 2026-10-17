@@ -1,10 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { SystemInfoView } from './views/SystemInfoView';
+import './theme.css';
+import { AppShell } from './views/AppShell';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <h1>agentic-dev-base</h1>
-    <SystemInfoView />
+    <AppShell sidebar={<p>agentic</p>} list={<p>Tasks</p>} main={<p>Select a task</p>} facts={null} />
   </StrictMode>,
 );

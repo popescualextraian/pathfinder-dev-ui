@@ -13,6 +13,7 @@ module.exports = {
       testEnvironment: 'jsdom',
       rootDir: 'frontend/test',
       testRegex: '.*\\.spec\\.tsx?$',
+      moduleNameMapper: { '\\.css$': '<rootDir>/style-stub.js' },
       transform: { '^.+\\.tsx?$': ['ts-jest', { tsconfig: '<rootDir>/../tsconfig.jest.json' }] },
     },
   ],
