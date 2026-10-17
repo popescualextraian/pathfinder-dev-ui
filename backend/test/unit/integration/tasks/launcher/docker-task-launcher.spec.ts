@@ -17,6 +17,8 @@ const config: EngineConfig = {
   dataDir: '/data',
   repoUrl: 'https://github.com/o/default.git',
   allowedRepoHosts: ['github.com'],
+  repositories: [{ name: 'default', url: 'https://github.com/o/default.git', default: true }],
+  pollSeconds: 15,
   project: 'proj',
   maxRunning: 2,
   claudeCodeOauthToken: OAUTH,

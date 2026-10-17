@@ -45,6 +45,46 @@ describe('TasksService.start', () => {
     expect(view).not.toHaveProperty('containerName');
   });
 
+  it('uses the first line of the prompt, shortened to 80 characters, as the title; the prompt stays whole', async () => {
+    const { service, records } = setup({ records: [] });
+    const long = `\n\n  ${'word '.repeat(30)}\nsecond line`;
+    const view = await service.start({ prompt: long });
+    expect(view.title).toHaveLength(80);
+    expect(view.title.endsWith('…')).toBe(true);
+    expect(view.title).not.toContain('second');
+    expect(view.prompt).toBe(long);
+    expect(records.map.get(view.id)!.title).toBe(view.title);
+    expect((await service.start({ prompt: 'Fix the bug\nmore text' })).title).toBe('Fix the bug');
+  });
+
+  it('takes a given title (trimmed, shortened to 80 characters)', async () => {
+    const { service } = setup({ records: [] });
+    expect((await service.start({ prompt: 'p', title: '  My title ' })).title).toBe('My title');
+    expect((await service.start({ prompt: 'p', title: 'y'.repeat(150) })).title).toHaveLength(80);
+  });
+
+  it('starts in the default repository, or in a named one', async () => {
+    const { service, launcher } = setup({ records: [] });
+    const byDefault = await service.start({ prompt: 'p' });
+    expect(byDefault).toMatchObject({ repository: 'default', repoUrl: 'https://github.com/acme/default.git' });
+    const named = await service.start({ prompt: 'p', repository: 'docs' });
+    expect(named).toMatchObject({ repository: 'docs', repoUrl: 'https://gitlab.com/acme/docs.git' });
+    expect((launcher.launch.mock.calls[1] as unknown as [{ repoUrl: string }])[0].repoUrl).toBe('https://gitlab.com/acme/docs.git');
+  });
+
+  it('refuses an unknown repository name and repository together with repoUrl (400)', async () => {
+    const { service, launcher } = setup({ records: [] });
+    await expect(service.start({ prompt: 'p', repository: 'nope' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.start({ prompt: 'p', repository: 'docs', repoUrl: 'https://github.com/x/y' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(launcher.launch).not.toHaveBeenCalled();
+  });
+
+  it('names the repository of a repoUrl after the configured one, else after its last path part', async () => {
+    const { service } = setup({ records: [] });
+    expect((await service.start({ prompt: 'p', repoUrl: 'https://gitlab.com/acme/docs.git' })).repository).toBe('docs');
+    expect((await service.start({ prompt: 'p', repoUrl: 'https://github.com/x/other.git' })).repository).toBe('other');
+  });
+
   it('passes repoUrl, repoRef and model through', async () => {
     const { service, launcher } = setup({ records: [] });
     const view = await service.start({ prompt: 'p', repoUrl: 'https://github.com/x/y.git', repoRef: 'dev', model: 'm' });

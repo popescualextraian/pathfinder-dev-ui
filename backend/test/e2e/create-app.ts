@@ -13,6 +13,8 @@ export interface CreateAppOptions {
   bridgeClientFactory?: unknown;
   // ENGINE_MAX_RUNNING for this app.
   maxRunning?: number;
+  // Extra ENGINE_* variables (ENGINE_REPOS, ENGINE_POLL_SECONDS); the optional ones are reset first.
+  env?: Record<string, string>;
 }
 
 export interface TestApp {
@@ -26,6 +28,9 @@ export interface TestApp {
 // need it, e.g. for SSE).
 export async function createApp(options: CreateAppOptions = {}): Promise<TestApp> {
   const dataDir = setTestEnv(options.maxRunning);
+  delete process.env.ENGINE_REPOS;
+  delete process.env.ENGINE_POLL_SECONDS;
+  Object.assign(process.env, options.env);
   const launcher = options.launcher ?? new FakeLauncher();
   let builder = Test.createTestingModule({ imports: [AppModule] }).overrideProvider(TASK_LAUNCHER).useValue(launcher);
   if (options.bridgeClientFactory) {

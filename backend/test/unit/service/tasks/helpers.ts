@@ -8,7 +8,11 @@ export const AGENT_TOKEN = 'agent-token-' + 'b'.repeat(32);
 
 export const config = {
   repoUrl: 'https://github.com/acme/default.git',
-  allowedRepoHosts: ['github.com'],
+  allowedRepoHosts: ['github.com', 'gitlab.com'],
+  repositories: [
+    { name: 'default', url: 'https://github.com/acme/default.git', default: true },
+    { name: 'docs', url: 'https://gitlab.com/acme/docs.git', default: false },
+  ],
   maxRunning: 2,
 } as EngineConfig;
 

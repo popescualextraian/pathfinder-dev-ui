@@ -11,6 +11,22 @@ async function errorsOf<T extends object>(cls: new () => T, plain: object): Prom
 }
 
 describe('StartTaskDto', () => {
+  it('accepts a title and a repository name', async () => {
+    expect(await errorsOf(StartTaskDto, { prompt: 'p', title: 'Fix it', repository: 'docs' })).toEqual([]);
+  });
+
+  it.each(['', '   ', 5, 'x'.repeat(201)])('rejects title %p', async (title) => {
+    expect(await errorsOf(StartTaskDto, { prompt: 'p', title })).toContain('title');
+  });
+
+  it.each(['', 5, 'a b', 'x'.repeat(101)])('rejects repository %p', async (repository) => {
+    expect(await errorsOf(StartTaskDto, { prompt: 'p', repository })).toContain('repository');
+  });
+
+  it('rejects repository together with repoUrl', async () => {
+    expect(await errorsOf(StartTaskDto, { prompt: 'p', repository: 'docs', repoUrl: 'https://github.com/o/r' })).toContain('repository');
+  });
+
   it('accepts a prompt alone', async () => {
     expect(await errorsOf(StartTaskDto, { prompt: 'do it' })).toEqual([]);
   });

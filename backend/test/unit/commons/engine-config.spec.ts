@@ -42,6 +42,8 @@ describe('loadEngineConfig', () => {
       gitName: 'Made Up Bot',
       gitEmail: 'made-up-bot@example.invalid',
       allowedRepoHosts: ['github.com'],
+      repositories: [{ name: 'repo', url: 'https://github.com/example/repo.git', default: true }],
+      pollSeconds: 15,
       taskExtraEnv: {},
       taskExtraBinds: [],
     });
@@ -201,5 +203,69 @@ describe('loadEngineConfig', () => {
 
   it('ignores ENGINE_LOCAL_AGENT for docker', () => {
     expect(loadEngineConfig({ ...validEnv(), ENGINE_LOCAL_AGENT: 'bogus' }).localAgent).toBe('fake');
+  });
+});
+
+describe('ENGINE_REPOS', () => {
+  const repos = (value: unknown) => ({ ...validEnv(), ENGINE_REPOS: typeof value === 'string' ? value : JSON.stringify(value) });
+
+  it('lists the default repository (named after the last path part) first, then the configured ones', () => {
+    const config = loadEngineConfig(repos([
+      { name: 'docs', url: 'https://github.com/example/docs.git' },
+      { name: 'tools', url: 'https://gitlab.com/example/tools' },
+    ]));
+    expect(config.repositories).toEqual([
+      { name: 'repo', url: 'https://github.com/example/repo.git', default: true },
+      { name: 'docs', url: 'https://github.com/example/docs.git', default: false },
+      { name: 'tools', url: 'https://gitlab.com/example/tools', default: false },
+    ]);
+  });
+
+  it('allows the host of every listed URL', () => {
+    const config = loadEngineConfig(repos([{ name: 'tools', url: 'https://GitLab.com/example/tools' }]));
+    expect(config.allowedRepoHosts).toEqual(['github.com', 'gitlab.com']);
+  });
+
+  it('names the default repository after a local path or a trailing slash, too', () => {
+    expect(loadEngineConfig({ ...validEnv(), ENGINE_REPO_URL: '/seed/my-repo' }).repositories[0].name).toBe('my-repo');
+    expect(loadEngineConfig({ ...validEnv(), ENGINE_REPO_URL: 'https://github.com/example/other/' }).repositories[0].name).toBe('other');
+  });
+
+  it('accepts the default repository listed again with the same name and URL', () => {
+    const config = loadEngineConfig(repos([{ name: 'repo', url: 'https://github.com/example/repo.git' }]));
+    expect(config.repositories).toHaveLength(1);
+  });
+
+  it.each([
+    ['invalid JSON', 'not json'],
+    ['an object', '{"name":"a"}'],
+    ['an entry without url', [{ name: 'a' }]],
+    ['an entry without name', [{ url: 'https://github.com/a/b' }]],
+    ['a number', [1]],
+    ['a bad name', [{ name: 'a b', url: 'https://github.com/a/b' }]],
+    ['a duplicate name', [{ name: 'a', url: 'https://github.com/a/a' }, { name: 'a', url: 'https://github.com/a/b' }]],
+    ['the default name with another URL', [{ name: 'repo', url: 'https://github.com/other/repo' }]],
+    ['a http URL', [{ name: 'a', url: 'http://github.com/a/b' }]],
+    ['a ssh URL', [{ name: 'a', url: 'git@github.com:a/b.git' }]],
+    ['a local path', [{ name: 'a', url: '/some/path' }]],
+  ])('rejects %s, naming only ENGINE_REPOS', (_label, value) => {
+    expect(errorOf(repos(value)).problems).toEqual([expect.stringContaining('ENGINE_REPOS')]);
+  });
+
+  it('refuses a URL with credentials without printing them', () => {
+    const error = errorOf(repos([{ name: 'a', url: 'https://user:s3cret-pw@github.com/a/b' }]));
+    expect(error.problems).toEqual([expect.stringContaining('ENGINE_REPOS')]);
+    expect(error.message).not.toContain('s3cret-pw');
+  });
+});
+
+describe('ENGINE_POLL_SECONDS', () => {
+  it('defaults to 15 and reads a positive integer', () => {
+    expect(loadEngineConfig(validEnv()).pollSeconds).toBe(15);
+    expect(loadEngineConfig({ ...validEnv(), ENGINE_POLL_SECONDS: '3' }).pollSeconds).toBe(3);
+  });
+
+  it.each(['0', '-1', '1.5', 'abc', '2x'])('rejects %s', (value) => {
+    expect(errorOf({ ...validEnv(), ENGINE_POLL_SECONDS: value }).problems).toEqual(['ENGINE_POLL_SECONDS must be a positive integer']);
   });
 });

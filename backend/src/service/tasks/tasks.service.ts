@@ -2,30 +2,21 @@ import { BadGatewayException, BadRequestException, ConflictException, Inject, In
 import { randomBytes, randomInt } from 'node:crypto';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 import {
-  BRIDGE_CLIENT_FACTORY, BridgeClient, BridgeClientFactory, BridgeError, BridgeEvent, BridgeQuestion, BridgeStatus,
+  BRIDGE_CLIENT_FACTORY, BridgeClient, BridgeClientFactory, BridgeError, BridgeEvent, BridgeStatus,
   BridgeUnreachableError, waitForStatus,
 } from './bridge-client';
 import { TASK_LAUNCHER, TaskLauncher } from './task-launcher';
 import { TaskRecord, TaskRecordRepository } from '../../repository/tasks/task-record.repository';
+import { repoNameOf } from '../../commons/repo-name';
+import { titleFrom, toView, TaskView } from './task-view';
 
-// What clients see of a task: the record without the tokens, plus state from the bridge.
-export interface TaskView {
-  id: string;
-  prompt: string;
-  repoUrl: string;
-  repoRef?: string;
-  model?: string;
-  branch: string;
-  createdAt: string;
-  updatedAt: string;
-  state: string;
-  reason?: string;
-  questions: BridgeQuestion[];
-  summary?: string;
-}
+export type { TaskView } from './task-view';
 
 export interface StartTaskInput {
   prompt: string;
+  title?: string;
+  // A name from the repository list; excludes repoUrl.
+  repository?: string;
   repoUrl?: string;
   repoRef?: string;
   model?: string;
@@ -60,8 +51,17 @@ export class TasksService {
   }
 
   async start(input: StartTaskInput): Promise<TaskView> {
-    if (input.repoUrl !== undefined) this.checkRepoHost(input.repoUrl);
-    const created = await this.exclusive(() => this.launchNew(input));
+    if (input.repoUrl !== undefined && input.repository !== undefined) {
+      throw new BadRequestException('Give either repository or repoUrl, not both');
+    }
+    let repoUrl = input.repoUrl;
+    if (input.repository !== undefined) {
+      repoUrl = this.config.repositories.find((r) => r.name === input.repository)?.url;
+      if (repoUrl === undefined) throw new BadRequestException(`Unknown repository ${input.repository}`);
+    } else if (repoUrl !== undefined) {
+      this.checkRepoHost(repoUrl);
+    }
+    const created = await this.exclusive(() => this.launchNew({ ...input, repoUrl }));
     // If the bridge never answers we keep record and container (so the user can stop and remove
     // the task) and report 502; the task then shows up in the list as 'starting'.
     return this.observe(created, await this.waitFor(created, `Task ${created.id} was created but its bridge did not become ready`));
@@ -180,8 +180,9 @@ export class TasksService {
     const now = new Date().toISOString();
     const branch = `agentic/${id}`;
     const repoUrl = input.repoUrl ?? this.config.repoUrl;
+    const repository = this.config.repositories.find((r) => r.url === repoUrl)?.name ?? repoNameOf(repoUrl);
     const record: TaskRecord = {
-      id, prompt: input.prompt, repoUrl, branch, containerName: `agentic-ui-task-${id}`,
+      id, title: titleFrom(input.prompt, input.title), prompt: input.prompt, repository, repoUrl, branch, containerName: `agentic-ui-task-${id}`,
       taskToken, agentToken, createdAt: now, updatedAt: now, lastState: 'starting',
     };
     if (input.repoRef !== undefined) record.repoRef = input.repoRef;
@@ -288,34 +289,4 @@ function stoppedConflict(id: string): ConflictException {
 
 function token(): string {
   return randomBytes(32).toString('hex');
-}
-
-interface Live {
-  state?: string;
-  reason?: string;
-  questions?: BridgeQuestion[];
-  summary?: string;
-  branch?: string;
-}
-
-// Built field by field so a token can never slip into a view.
-function toView(record: TaskRecord, live: Live = {}): TaskView {
-  const last = (record.lastStatus ?? {}) as Partial<BridgeStatus>;
-  const view: TaskView = {
-    id: record.id,
-    prompt: record.prompt,
-    repoUrl: record.repoUrl,
-    branch: live.branch ?? record.branch,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    state: live.state ?? record.lastState ?? 'starting',
-    questions: live.questions ?? last.questions ?? [],
-  };
-  if (record.repoRef !== undefined) view.repoRef = record.repoRef;
-  if (record.model !== undefined) view.model = record.model;
-  const reason = live.reason ?? last.reason;
-  if (reason !== undefined) view.reason = reason;
-  const summary = live.summary ?? last.summary;
-  if (summary !== undefined) view.summary = summary;
-  return view;
 }

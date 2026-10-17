@@ -7,7 +7,11 @@ import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 // The only place the per-task tokens are stored. They never leave the backend.
 export interface TaskRecord {
   id: string;
+  // Absent in records of older versions: derived from the prompt.
+  title?: string;
   prompt: string;
+  // Name of the repository; absent in older records: derived from repoUrl.
+  repository?: string;
   repoUrl: string;
   repoRef?: string;
   model?: string;
