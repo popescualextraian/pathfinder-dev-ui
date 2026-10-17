@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A NestJS backend that serves a React (Vite) frontend and is also a task engine: it starts one Docker container per agentic-dev-base task (image `ENGINE_IMAGE`, command `agentic-bridge`), talks to each task's bridge over HTTP/WebSocket, and exposes a REST/SSE API under `/api`. The frontend is still only a system-info slice; the engine has no UI. README.md documents the REST API, all `ENGINE_*` variables and Docker usage in detail. Needs Node 22+.
+A NestJS backend that serves a React (Vite) frontend and is also a task engine: it starts one Docker container per agentic-dev-base task (image `ENGINE_IMAGE`, command `agentic-bridge`), talks to each task's bridge over HTTP/WebSocket, and exposes a REST/SSE API under `/api`. The frontend is a task UI (task list, task view, full run) plus a system-info footer. README.md documents the REST API, all `ENGINE_*` variables and Docker usage in detail. Needs Node 22+.
 
 ## Commands
 
@@ -51,6 +51,17 @@ Task engine (`backend/src/service/tasks`, `backend/src/integration/tasks`, `back
 - `engine-config.ts` validates env at startup and names the bad variable without printing values.
 
 Test helpers (`backend/test/helpers`; the fake agent is `tools/fake-agent/fake-agent.mjs`) provide a fake bridge, fake launcher, local-process launcher and fake agent used by the e2e/bridge/docker suites.
+
+## Frontend
+
+`frontend/src`, strict layering `views` → `state` → `api`:
+- `api/`: the only code that calls the backend. `http.ts` (fetch, `ApiError`), `models.ts` (all typed models), `tasks-api.ts`, `repositories-api.ts`, `system-api.ts`, `task-status-stream.ts` (SSE `/api/tasks/stream`), `task-events-stream.ts` (SSE of one task's full run; reconnects from the last seq).
+- `state/` (hooks): `useRoute`, `useRepositories`, `useTasks(filter)` (list once, then status stream; reloads on reconnect), `useTask(id, live)`, `useTaskRun(id)` (stream opened only while `FullRun` is mounted; merges message chunks), `use-task-actions` (start, prompt, answer, cancel, close, delete with pending/error), `useSystemInfo`.
+- `views/` (components, no API calls, one CSS module each): AppShell, Sidebar, RepositoryList, TaskList, TaskSection, TaskCard, TaskView, PromptBlock, LastResponse, QuestionCard, FullRun, ReplyBox, FactsPanel, NewTaskDialog, StatePill, Button, SystemInfoView (footer). `App.tsx` wires them.
+- Styling: design tokens are CSS variables in `theme.css` (`--msg-red`, `--ink`, `--paper`, `--line`, state colors); components use only these in their `*.module.css`. No external fonts or CDNs.
+- URL hash state: `#/repo/<name>/task/<id>` (either part optional) holds the repository filter and selected task, so reload and links keep them.
+- Tests (`frontend/test`, jest + Testing Library, jsdom): CSS is mapped to `frontend/test/style-stub.js` (CSS modules return no class names). The API is tested with `fetch` and `EventSource` mocked (`test/api/fake-event-source.ts`, `test/fixtures/tasks.ts`); views mock `api/*` modules.
+- See the screens: `npm run dev:frontend` (Vite proxies `/api` to :3000, run `npm start` alongside), or `npm run start:local` (see "Test your version") and open the port.
 
 ## Notes
 
