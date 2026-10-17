@@ -168,6 +168,7 @@ export class TasksService {
       await this.launcher.stop(id);
     }
     await this.launcher.remove(id);
+    this.updates.clearActed(id);
     return this.persist(record, {
       closed: true, closedAt: new Date().toISOString(), lastState: 'stopped',
       lastStatus: { ...(record.lastStatus as object | undefined), state: 'stopped', reason: 'closed', questions: [] },
@@ -297,6 +298,10 @@ export class TasksService {
   private async observe(record: TaskRecord, status: BridgeStatus, persist = true): Promise<TaskView> {
     const live: Live = { state: status.state, reason: status.reason, questions: status.questions, summary: status.summary, branch: status.branch ?? undefined };
     if (!persist) return toView(record, live);
+    // A task that left starting/running without the poller seeing it still has events to read.
+    if (['starting', 'running'].includes(record.lastState ?? 'starting') && !['starting', 'running'].includes(status.state)) {
+      this.updates.markActed(record.id);
+    }
     return this.persist(record, { lastState: status.state, lastStatus: status }, live);
   }
 

@@ -40,8 +40,11 @@ export function fakeRecords(initial: TaskRecord[] = []) {
     create: jest.fn(async (r: TaskRecord) => { map.set(r.id, { ...r }); return r; }),
     get: jest.fn(async (id: string) => map.get(id)),
     list: jest.fn(async () => [...map.values()]),
-    update: jest.fn(async (id: string, patch: Partial<TaskRecord>) => {
-      const next = { ...map.get(id)!, ...patch };
+    update: jest.fn(async (id: string, patchOrFn: Partial<TaskRecord> | ((r: TaskRecord) => Partial<TaskRecord> | undefined)) => {
+      const current = map.get(id)!;
+      const patch = typeof patchOrFn === 'function' ? patchOrFn(current) : patchOrFn;
+      if (patch === undefined) return current;
+      const next = { ...current, ...patch };
       map.set(id, next);
       return next;
     }),

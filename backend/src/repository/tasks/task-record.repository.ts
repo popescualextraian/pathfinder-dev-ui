@@ -35,6 +35,8 @@ export interface TaskRecord {
   closedAt?: string;
 }
 
+export type RecordPatch = Partial<TaskRecord> | ((current: TaskRecord) => Partial<TaskRecord> | undefined);
+
 const ID = /^T-\d{8}-[a-z0-9]{4}$/;
 
 @Injectable()
@@ -81,7 +83,9 @@ export class TaskRecordRepository {
     return records.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   }
 
-  update(id: string, patch: Partial<TaskRecord>): Promise<TaskRecord> {
+  // `patch` may be a function of the current record (read inside the write queue, so no update is lost);
+  // returning undefined leaves the record as it is.
+  update(id: string, patch: RecordPatch): Promise<TaskRecord> {
     const previous = this.updates.get(id) ?? Promise.resolve();
     const run = previous.then(() => this.doUpdate(id, patch));
     const tail = run.catch(() => undefined);
@@ -90,9 +94,11 @@ export class TaskRecordRepository {
     return run;
   }
 
-  private async doUpdate(id: string, patch: Partial<TaskRecord>): Promise<TaskRecord> {
+  private async doUpdate(id: string, patchOrFn: RecordPatch): Promise<TaskRecord> {
     const current = await this.get(id);
     if (!current) throw new Error(`Task record ${id} not found`);
+    const patch = typeof patchOrFn === 'function' ? patchOrFn(current) : patchOrFn;
+    if (patch === undefined) return current;
     const updated = { ...current, ...patch, id, updatedAt: new Date().toISOString() };
     await this.write(updated);
     return updated;

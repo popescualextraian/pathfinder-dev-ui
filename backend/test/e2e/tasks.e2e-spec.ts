@@ -409,6 +409,12 @@ describe('tasks REST API (e2e)', () => {
       expect(launcher.containers.has(task.id)).toBe(false);
     });
 
+    it('answers 409 to the full-run stream of a closed task', async () => {
+      const { body: task } = await start();
+      await post(`/api/tasks/${task.id}/close`);
+      expect((await get(`/api/tasks/${task.id}/events/stream`)).status).toBe(409);
+    });
+
     it('delete works only for a closed or stopped task', async () => {
       const { body: task } = await start();
       expect(record(await api().delete(`/api/tasks/${task.id}`)).status).toBe(409);

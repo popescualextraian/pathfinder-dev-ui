@@ -52,7 +52,7 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
   private async pollAll(): Promise<void> {
     const acted = this.updates.actedIds();
     const due = (await this.records.list()).filter(
-      (r) => !r.closed && r.lastState !== 'stopped' && (POLLED_STATES.has(r.lastState ?? 'starting') || acted.has(r.id)),
+      (r) => !r.closed && r.bridgeUrl !== undefined && r.lastState !== 'stopped' && (POLLED_STATES.has(r.lastState ?? 'starting') || acted.has(r.id)),
     );
     let next = 0;
     const worker = async (): Promise<void> => {
@@ -81,15 +81,15 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
     }
     if (events.length === 0) return;
 
-    // Re-read: an action may have changed the record while the bridge was asked.
-    const current = await this.records.get(polled.id);
-    if (!current || current.closed) return;
-    const patch = applyEvents(current, events);
-    if (!patch) return;
-    const updated = await this.records.update(current.id, patch);
-    const before = toView(current);
-    const after = toView(updated);
-    if (viewsDiffer(before, after)) this.updates.changed(after);
+    // The patch is computed from the record as it is at write time: a stop, close or answer that came in
+    // while the bridge was asked must not be overwritten with older data. Stopped and closed are final.
+    let before: TaskRecord | undefined;
+    const updated = await this.records.update(polled.id, (current) => {
+      before = current;
+      if (current.closed || current.lastState === 'stopped') return undefined;
+      return applyEvents(current, events);
+    });
+    if (before && updated !== before && viewsDiffer(toView(before), toView(updated))) this.updates.changed(toView(updated));
   }
 }
 

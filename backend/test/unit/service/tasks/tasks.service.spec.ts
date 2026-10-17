@@ -477,6 +477,12 @@ describe('TasksService announces changes', () => {
     expect(closed.published[1]).toEqual({ kind: 'removed', id: ID });
   });
 
+  it('notes a running task that a read finds finished, so the poller still reads its last events', async () => {
+    const { service, updates } = setup({ records: [record({ lastState: 'running' })] });
+    await service.get(ID); // the fake bridge says idle
+    expect([...updates.actedIds()]).toEqual([ID]);
+  });
+
   it('notes a new task for the poller', async () => {
     const { service, updates } = setup({ records: [] });
     const view = await service.start({ prompt: 'p' });

@@ -357,6 +357,27 @@ describe('TaskPoller', () => {
       await poller.tick();
     });
 
+    it('does not undo a stop that came in while the bridge was asked', async () => {
+      const { poller, bridges, records } = setup({ [ids[0]]: { lastState: 'running' } });
+      const b = bridges.get(ids[0])!;
+      b.push('state', { state: 'running', reason: '' });
+      let release!: () => void;
+      b.gate = new Promise<void>((resolve) => { release = resolve; });
+      const round = poller.tick();
+      await new Promise((resolve) => setImmediate(resolve));
+      records.map.set(ids[0], { ...records.map.get(ids[0])!, lastState: 'stopped' });
+      release();
+      await round;
+      expect(records.map.get(ids[0])).toMatchObject({ lastState: 'stopped' });
+      expect(records.map.get(ids[0])!.lastSeq).toBeUndefined();
+    });
+
+    it('does not poll a record that has no bridge URL yet', async () => {
+      const { poller, bridges } = setup({ [ids[0]]: { lastState: 'starting', bridgeUrl: undefined } });
+      await poller.tick();
+      expect(bridges.get(ids[0])!.calls).toHaveLength(0);
+    });
+
     it('drops the result when the task was closed while its bridge was asked', async () => {
       const { poller, bridges, records } = setup({ [ids[0]]: { lastState: 'running' } });
       const b = bridges.get(ids[0])!;
