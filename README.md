@@ -14,8 +14,9 @@ agentic image with `agentic-bridge` as its command.
   (`CLAUDE_CODE_OAUTH_TOKEN`, `GH_TOKEN`) in its environment.
 - The container clones the repository itself when it starts (start step `05-workspace`, git
   credentials from `GH_TOKEN`, never written to a file) and works on its own branch
-  `agentic/<task-id>` in a git worktree (`AGENTIC_WORKTREE=1`). The task gets the `push` grant; the
-  branch stays on GitHub after the task is removed.
+  `agentic/<task-id>` in a git worktree (`AGENTIC_WORKTREE=1`). The task gets the `push` and `open-pr`
+  grants (`AGENTIC_ALLOWED_ACTIONS=push,open-pr`, both launchers; `deploy` needs a named target, merges
+  and protected words stay blocked by the bridge's gate); the branch stays on GitHub after the task is removed.
 - The engine talks to each task's bridge (HTTP API v1, `Authorization: Bearer <task token>`) at
   `http://<container-name>:8765`. The UI and the task containers share one Docker network
   (`ENGINE_DOCKER_NETWORK`); the engine sets `AGENTIC_BRIDGE_HOSTS=<container-name>` so the bridge
@@ -27,6 +28,20 @@ agentic image with `agentic-bridge` as its command.
   (suspended, or stopped outside the engine with `docker stop`) starts it first and waits for its
   bridge. A task stopped with `POST /stop` (or whose bridge reports `stopped`) is final: prompt and
   answer are refused with 409 ("task is stopped") at once, without starting its container.
+- **Task poller.** Every `ENGINE_POLL_SECONDS` the engine reads `GET /events?since=<last seq>&view=status`
+  (the bridge's status view: `state`, `question`, `answer`, `error` and final `message` events, with the full
+  stream's `seq` numbers) of every task that is `starting` or `running`, and once of a task it has just acted on
+  (a new task, a prompt, an answer, a wake-up). It keeps in the record the state, the open questions, the
+  whole last agent message (`lastMessage`, not cut to 300 characters like the bridge's `summary`) and the
+  cursor, so nothing is lost between polls or across an app restart. Idle, suspended, stopped and closed
+  tasks change only through the engine's own actions and are not polled. A failed poll (container gone,
+  bridge not answering) is logged and retried in the next round; it does not change the state. Up to four
+  tasks are polled at once. Every change a poll or an action makes to a task is also sent on the status
+  stream (`GET /api/tasks/stream`).
+- **Closing.** `POST /api/tasks/:id/close` stops the task if it runs, removes its container and volume and
+  keeps the record (prompt, last response, branch, times) with `closed: true`; the task then belongs to
+  the `done` section. A closed task takes no prompt, answer or cancel (409). `DELETE` removes the record of a
+  closed (or stopped) task for good.
 - Task container: image `ENGINE_IMAGE`, name and volume `agentic-ui-task-<id>` (volume mounted at
   `/task`), labels `agentic-ui.task=<id>` and `agentic-ui.kind=task`, all capabilities dropped,
   `no-new-privileges`. Removing a task deletes container, volume and record.
@@ -53,6 +68,8 @@ is missing or invalid, naming the variable, never printing a value.
 | `ENGINE_DOCKER_NETWORK` | `docker` only | Docker network shared by the UI and the task containers (`agentic-ui` in `compose.yaml`). |
 | `ENGINE_DATA_DIR` | yes | Absolute directory for task records (`/data` in `compose.yaml`). |
 | `ENGINE_REPO_URL` | yes | Repository tasks clone when the request gives no `repoUrl`. Must not contain credentials. |
+| `ENGINE_REPOS` | no | JSON array of `{"name", "url"}`: more repositories a task can be started in by name (`repository` in `POST /api/tasks`, listed by `GET /api/repositories`). Names are unique (letters, digits, `.`, `_`, `-`); URLs are https without credentials (a bad value is refused at start-up naming only the variable). `ENGINE_REPO_URL` stays the default, named after the last part of its URL. The host of every listed URL is an allowed repository host. Example: `[{"name":"docs","url":"https://github.com/acme/docs.git"}]` |
+| `ENGINE_POLL_SECONDS` | no, default `15` | Seconds between two rounds of the task poller (positive integer). |
 | `ENGINE_ALLOWED_REPO_HOSTS` | no | Comma-separated hosts a request's `repoUrl` may use, in addition to the host of `ENGINE_REPO_URL` (which is always allowed). The host of a repository gets `GH_TOKEN` for the clone, so other hosts are refused with 400. |
 | `ENGINE_PROJECT` | yes | Project name passed to tasks (`AGENTIC_PROJECT`). |
 | `ENGINE_GIT_NAME` | `docker`; `local` only when `GH_TOKEN` is set | Commit author and committer name of task containers (`GIT_AUTHOR_NAME`, `GIT_COMMITTER_NAME`). |
@@ -68,27 +85,38 @@ is missing or invalid, naming the variable, never printing a value.
 
 ## REST API
 
-All under `/api`. A task view contains the task's fields without tokens: `id`, `prompt`, `repoUrl`,
-`repoRef?`, `model?`, `branch`, `createdAt`, `updatedAt`, `state`, `reason?`, `questions`, `summary?`.
+All under `/api`, JSON, times are ISO 8601 UTC strings. A task view contains the task's fields without tokens:
+
+| Field | |
+|---|---|
+| `id`, `title`, `prompt` | `title` is the given one or the prompt's first line, at most 80 characters; `prompt` is the whole initial prompt |
+| `repository`, `repoUrl`, `repoRef?`, `model?`, `branch` | `repository` is the name (from `/api/repositories`, or the last part of the URL for another URL) |
+| `state`, `reason?`, `section` | `state` is the last known one (`starting` `running` `waiting` `idle` `suspended` `stopped` `failed` `interrupted`); `section` is computed: `closed` or `stopped` → `done`; `waiting`, `failed`, `interrupted` → `needs-you`; `starting`, `running` → `working`; `idle`, `suspended` → `in-review` |
+| `questions` | open questions only: `{id, source, text, options, recommendation, asked}` |
+| `lastMessage?`, `lastMessageAt?`, `summary?` | the whole last agent message (from the poller) and its time; `summary` is the bridge's, cut to 300 characters, a fallback |
+| `createdAt`, `updatedAt`, `closed`, `closedAt?` | `updatedAt` is the last change of the record; a record without `closed` counts as not closed |
 
 | Route | Does | Success |
 |---|---|---|
-| `POST /api/tasks` `{prompt, repoUrl?, repoRef?, model?}` | Starts a task and waits for its bridge. `repoUrl` must be https without credentials, on an allowed host (see `ENGINE_ALLOWED_REPO_HOSTS`), and defaults to `ENGINE_REPO_URL`. | 201 task |
-| `GET /api/tasks` | All tasks, with the last known state | 200 |
-| `GET /api/tasks/:id` | Task with live bridge status (state, reason, open questions, summary, branch) | 200 |
-| `POST /api/tasks/:id/prompt` `{text}` | Sends a prompt; wakes a container that is not running first; 409 for a stopped task | 202 task |
-| `POST /api/tasks/:id/answer` `{text, question?}` | Answers a question; default is the oldest open one; wakes like prompt; 409 for a stopped task | 202 task |
-| `POST /api/tasks/:id/cancel` | Cancels the running turn | 202 task |
+| `GET /api/repositories` | `[{name, url, default}]`, the default first (see `ENGINE_REPOS`) | 200 |
+| `POST /api/tasks` `{prompt, title?, repository?, repoUrl?, repoRef?, model?}` | Starts a task and waits for its bridge. `repository` is a name from `/api/repositories`; with `repoUrl` too it is 400, as is an unknown name. `repoUrl` must be https without credentials, on an allowed host (see `ENGINE_ALLOWED_REPO_HOSTS`). With neither, the default repository (`ENGINE_REPO_URL`). | 201 task |
+| `GET /api/tasks` | All tasks, newest `createdAt` first, closed ones included, as last recorded (no bridge call) | 200 |
+| `GET /api/tasks/:id` | Task with live bridge status (state, reason, open questions, summary, branch); a closed task is read from its record | 200 |
+| `POST /api/tasks/:id/prompt` `{text}` | Sends a prompt; wakes a container that is not running first; 409 for a closed or stopped task | 202 task |
+| `POST /api/tasks/:id/answer` `{text, question?}` | Answers a question; default is the oldest open one; wakes like prompt; 409 for a closed or stopped task, or without an open question | 202 task |
+| `POST /api/tasks/:id/cancel` | Cancels the running turn; 409 for a closed task | 202 task |
+| `POST /api/tasks/:id/close` | Stops the task if it runs, removes container and volume, keeps the record with `closed: true`. Closing a closed task is 202 as well | 202 task |
 | `POST /api/tasks/:id/stop` | Bridge `/stop`, then stops the container | 202 task |
-| `DELETE /api/tasks/:id` | Removes container, volume and record; 409 unless the task is stopped | 204 |
-| `GET /api/tasks/:id/events?since=N` | Events after sequence number N as a JSON array; 409 when the container is not running | 200 |
-| `GET /api/tasks/:id/events/stream?since=N` | The same events, then live ones, as SSE (`id` is the event `seq`; `Last-Event-ID`, which EventSource sends on reconnect, takes precedence over `since` when present) | 200 |
+| `DELETE /api/tasks/:id` | Removes the record (and container and volume, if still there); 409 unless the task is closed or stopped | 204 |
+| `GET /api/tasks/:id/events?since=N` | Events after sequence number N as a JSON array; 409 when the container is not running (always for a closed task) | 200 |
+| `GET /api/tasks/:id/events/stream?since=N` | The full run: the same events, then live ones, as SSE (`id` is the event `seq`; `Last-Event-ID`, which EventSource sends on reconnect, takes precedence over `since` when present) | 200 |
+| `GET /api/tasks/stream` | The status stream, SSE: `event: task` with the task view when a task is created or changed (state, questions, last message, title, closed), `event: removed` with `{"id"}` when one is deleted, and a `: ping` comment every 25 seconds. Nothing is replayed on connect: load `GET /api/tasks` first (and again after a reconnect), then apply the events. | 200 |
 | `GET /api/system/info` | `{ name, version, uptimeSeconds }` | 200 |
 
 Errors: bridge 400, 404, 409 and 503 pass through with the bridge's message; any other bridge answer
 (including 401/403) and an unreachable bridge give 502 with a fixed message. An unknown task is 404;
 starting beyond `ENGINE_MAX_RUNNING` is 409. Limits: `prompt`/`text` at most 20000 characters and not
-blank. Errors inside an SSE stream that already started arrive as an SSE `error` event.
+blank, `title` at most 200 (shortened to 80). Errors have the body `{statusCode, message, path}` (a validation error is 400 with `message` as a list of strings). Errors inside an SSE stream that already started arrive as an SSE `error` event.
 
 ## Install
 
@@ -189,7 +217,7 @@ daemon available and have not been run yet; `docker compose config` accepts the 
 |---|---|
 | `npm test` | Jest unit tests: backend (`backend/test/unit/`) and frontend (`frontend/test/`, jsdom + React Testing Library) |
 | `npm run test:e2e` | Backend e2e tests (`backend/test/e2e/`, Jest + supertest; REST API with a fake launcher and a fake bridge). Needs a prior `npm run build` for the frontend tests. |
-| `npm run test:bridge` | `backend/test/bridge/`: the real `agentic-bridge` as a local process with a fake agent (`tools/fake-agent/fake-agent.mjs`), driven through the bridge client, the task service and the REST API (local launcher). Skipped with a message on stderr where `agentic-bridge` is not on PATH. |
+| `npm run test:bridge` | `backend/test/bridge/`: the real `agentic-bridge` as a local process with a fake agent (`tools/fake-agent/fake-agent.mjs`), driven through the bridge client, the task service and the REST API (local launcher); also the poller and the status stream (a turn, an `ASK:` question and its answer, close), with a one-second poll interval. Skipped with a message on stderr where `agentic-bridge` is not on PATH. |
 | `npm run test:docker` | `backend/test/docker/`: real Docker, real task image, fake agent: start a task, reach idle, prompt and see the echo, wake it after `docker stop`, stop it (a prompt is then refused with 409 without starting it), remove, check container and volume are gone. Needs both `ENGINE_IMAGE` (the task image) and `FAKE_AGENT_DIR` (directory holding agentic-dev-base's `bridge/test/fake-agent.mjs`, mounted at `/fake`), and a reachable Docker daemon (Linux Docker or Docker Desktop); otherwise skipped with a message on stderr. The test process never connects to container IPs: bridge requests run in a helper container from `ENGINE_IMAGE` on the test network (`node` with a small built-ins-only script, `backend/test/docker/bridge-request.cjs`) and reach the task by container name, as the UI does. It creates a temporary network, the helper container and a local git repository (bound into the task and cloned from there, no GitHub needed), and removes all of them, task containers and volumes in `afterAll`, also after a failure. Example: `ENGINE_IMAGE=agentic-pathfinder-dev-ui:local FAKE_AGENT_DIR=/path/to/agentic-dev-base/bridge/test npm run test:docker` |
 | `npm run test:ui` | Playwright (`e2e/`). Builds and starts the app on port 3100, uses the Chromium under `PLAYWRIGHT_BROWSERS_PATH` if set. |
 | `npm run lint` | ESLint for `backend/src/` and `backend/test/` |
@@ -225,8 +253,8 @@ backend/
   src/
     main.ts, app.setup.ts   bootstrap; global prefix /api, pipe, interceptor, filters
     app.module.ts           imports the api modules and serves dist/frontend
-    api/<area>/             controllers (HTTP only, no business logic): system/, tasks/ (+ dto/)
-    service/<area>/         business logic: system/, tasks/ (tasks.service.ts, task-events.service.ts)
+    api/<area>/             controllers (HTTP only, no business logic): system/, repositories/, tasks/ (+ dto/)
+    service/<area>/         business logic: system/, repositories/, tasks/ (tasks.service.ts, task-poller.ts, task-updates.ts, task-view.ts, task-events.service.ts)
     integration/<area>/     external systems and runtimes: tasks/ bridge/ (HttpBridgeClient),
                             launcher/ (Docker and local launchers, factory); implements the service's interfaces
     repository/<area>/      storage only: system/ (package.json), tasks/ (task-record.repository.ts, JSON files)

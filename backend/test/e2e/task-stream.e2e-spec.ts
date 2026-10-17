@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { FakeBridge } from '../helpers/fake-bridge';
 import { FakeLauncher } from '../helpers/fake-launcher';
-import { openSse, SseEvent } from '../helpers/sse-client';
+import { openSse } from '../helpers/sse-client';
 import { createApp } from './create-app';
 
 jest.setTimeout(20_000);
