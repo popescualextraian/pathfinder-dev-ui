@@ -6,18 +6,22 @@ import styles from './TaskView.module.css';
 
 interface Props {
   repositories: Repository[];
+  /** Active repository filter; preselected when it names a known repository. */
+  defaultRepository?: string | null;
   onClose: () => void;
   onStarted: (task: Task) => void;
 }
 
-export function NewTaskDialog({ repositories, onClose, onStarted }: Props) {
+export function NewTaskDialog({ repositories, defaultRepository, onClose, onStarted }: Props) {
   const start = useStartTask();
   const first = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState('');
   const [prompt, setPrompt] = useState('');
   const [repository, setRepository] = useState('');
   const [model, setModel] = useState('');
-  const effectiveRepository = repository || repositories.find((r) => r.default)?.name || repositories[0]?.name || '';
+  const filtered = repositories.find((r) => r.name === defaultRepository)?.name;
+  const effectiveRepository =
+    repository || filtered || repositories.find((r) => r.default)?.name || repositories[0]?.name || '';
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;

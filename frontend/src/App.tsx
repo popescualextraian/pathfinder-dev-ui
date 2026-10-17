@@ -13,7 +13,7 @@ import { TaskList } from './views/TaskList';
 export function App() {
   const route = useRoute();
   const { repositories } = useRepositories();
-  const { tasks, allTasks, loading, error, applyTask } = useTasks(route.repository);
+  const { tasks, allTasks, loading, error, applyTask, removeTask } = useTasks(route.repository);
 
   const [creating, setCreating] = useState(false);
   const { task, loading: taskLoading, error: taskError } = useTask(route.taskId, allTasks);
@@ -44,7 +44,10 @@ export function App() {
             task={task}
             loading={taskLoading}
             error={taskError}
-            onDeleted={() => route.selectTask(null)}
+            onDeleted={() => {
+              if (task) removeTask(task.id);
+              route.selectTask(null);
+            }}
             onTask={applyTask}
           />
         }
@@ -53,6 +56,7 @@ export function App() {
       {creating && (
         <NewTaskDialog
           repositories={repositories}
+          defaultRepository={route.repository}
           onClose={() => setCreating(false)}
           onStarted={(t) => {
             setCreating(false);

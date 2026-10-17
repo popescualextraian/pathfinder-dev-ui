@@ -6,6 +6,7 @@ export class FakeEventSource {
   readyState = 1;
   onmessage: Listener | null = null;
   onerror: (() => void) | null = null;
+  onopen: (() => void) | null = null;
   private listeners = new Map<string, Listener[]>();
 
   constructor(readonly url: string) {
@@ -22,6 +23,7 @@ export class FakeEventSource {
     const e = { data: data === undefined ? undefined : JSON.stringify(data) };
     if (type === 'message') this.onmessage?.(e);
     if (type === 'error') this.onerror?.();
+    if (type === 'open') this.onopen?.();
     this.listeners.get(type)?.forEach((fn) => fn(e));
   }
   static install() {

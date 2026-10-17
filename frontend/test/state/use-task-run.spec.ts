@@ -1,4 +1,6 @@
-import { buildRunItems } from '../../src/state/use-task-run';
+import { act, renderHook } from '@testing-library/react';
+import { buildRunItems, useTaskRun } from '../../src/state/use-task-run';
+import { FakeEventSource } from '../api/fake-event-source';
 import type { BridgeEvent } from '../../src/api/models';
 
 const ev = (seq: number, type: string, data: Record<string, unknown>): BridgeEvent =>
@@ -62,5 +64,44 @@ describe('buildRunItems', () => {
     const first = items[0];
     expect(first.kind === 'event' && first.event.data.status).toBe('completed');
     expect(first.kind === 'event' && first.event.data.id).toBe('t1');
+  });
+});
+
+describe('useTaskRun', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    FakeEventSource.install();
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it('open followed by an error does not reset the failure counter: gives up after 5', () => {
+    const { result } = renderHook(() => useTaskRun('T-1'));
+    for (let i = 0; i < 5; i++) {
+      const es = FakeEventSource.last;
+      act(() => es.emit('open'));
+      act(() => es.emit('error'));
+      act(() => {
+        jest.advanceTimersByTime(2500);
+      });
+    }
+    expect(FakeEventSource.instances).toHaveLength(5);
+    expect(result.current.error).toBe(true);
+    expect(result.current.connected).toBe(false);
+  });
+
+  it('batches events, dedupes by seq and keeps them ordered', () => {
+    const { result } = renderHook(() => useTaskRun('T-1'));
+    const es = FakeEventSource.last;
+    act(() => {
+      es.emit('message', msg(2, 'agent', 'b', true));
+      es.emit('message', msg(1, 'user', 'a', true));
+      es.emit('message', msg(2, 'agent', 'b', true));
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+    expect(result.current.events.map((e) => e.seq)).toEqual([1, 2]);
+    expect(result.current.connected).toBe(true);
+    expect(result.current.error).toBe(false);
   });
 });

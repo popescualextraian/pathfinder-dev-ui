@@ -26,7 +26,7 @@ export default defineConfig({
   webServer: {
     // local launcher, real agentic-bridge, fake agent; short poll so state changes show quickly
     command: 'npm run start:local',
-    env: { PORT: String(PORT), ENGINE_POLL_SECONDS: '2' },
+    env: { PORT: String(PORT), ENGINE_POLL_SECONDS: '2', ENGINE_MAX_RUNNING: '10' },
     url: `http://localhost:${PORT}/api/system/info`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

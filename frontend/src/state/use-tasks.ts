@@ -18,13 +18,11 @@ export function useTasks(repository: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const latestLoad = useRef(0);
-  const inFlight = useRef(0);
   // Changes seen on the stream while a load runs: the (older) GET must not undo them.
   const touched = useRef(new Map<string, Task | null>());
 
   const load = useCallback(() => {
     const seq = ++latestLoad.current;
-    inFlight.current++;
     touched.current = new Map();
     return listTasks()
       .then((list) => {
@@ -47,7 +45,6 @@ export function useTasks(repository: string | null) {
         if (seq === latestLoad.current) setError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
-        inFlight.current--;
         if (seq === latestLoad.current) setLoading(false);
       });
   }, []);
@@ -57,30 +54,27 @@ export function useTasks(repository: string | null) {
     setAllTasks((list) => upsertTask(list, task));
   }, []);
 
+  const removeTask = useCallback((id: string) => {
+    touched.current.set(id, null);
+    setAllTasks((list) => list.filter((t) => t.id !== id));
+  }, []);
+
   useEffect(() => {
-    let opened = false;
     const stop = openTaskStatusStream({
-      // Reload on every (re)connect, but the first open does not repeat the initial load in flight.
-      onOpen: () => {
-        const first = !opened;
-        opened = true;
-        if (first && inFlight.current > 0) return;
-        void load();
-      },
+      // Contract order: stream connected, then load. Every (re)connect reloads; a newer load
+      // supersedes an older one, and stream changes seen meanwhile are kept (see `touched`).
+      onOpen: () => void load(),
       onTask: applyTask,
-      onRemoved: (id) => {
-        touched.current.set(id, null);
-        setAllTasks((list) => list.filter((t) => t.id !== id));
-      },
+      onRemoved: removeTask,
     });
     void load();
     return stop;
-  }, [load, applyTask]);
+  }, [load, applyTask, removeTask]);
 
   const tasks = useMemo(
     () => (repository ? allTasks.filter((t) => t.repository === repository) : allTasks),
     [allTasks, repository],
   );
 
-  return { tasks, allTasks, loading, error, applyTask };
+  return { tasks, allTasks, loading, error, applyTask, removeTask };
 }

@@ -230,6 +230,10 @@ describe('NewTaskDialog', () => {
       repository: 'b',
     });
   });
+  it('defaults the repository to the active filter when set', () => {
+    render(<NewTaskDialog repositories={repos} defaultRepository="a" onClose={jest.fn()} onStarted={jest.fn()} />);
+    expect((screen.getByLabelText('Repository') as HTMLSelectElement).value).toBe('a');
+  });
   it('shows the 409 error and stays open; Escape closes', async () => {
     m(api.startTask).mockRejectedValue(new ApiError(409, 'max running'));
     const onClose = jest.fn();

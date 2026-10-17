@@ -71,13 +71,22 @@ describe('useTasks', () => {
     expect(result.current.tasks.map((t) => t.id)).toEqual(['T-c', 'T-a']);
   });
 
-  it('ignores a superseded load and skips the duplicate initial load on first open', async () => {
+  it('reloads on the first open too, after the stream connected', async () => {
     const a = makeTask({ id: 'T-a' });
     listTasks.mockResolvedValue([a]);
     const { result } = renderHook(() => useTasks(null));
     act(() => FakeEventSource.last.emit('open'));
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(listTasks).toHaveBeenCalledTimes(1);
+    expect(listTasks).toHaveBeenCalledTimes(2);
+    expect(result.current.tasks.map((t) => t.id)).toEqual(['T-a']);
+  });
+
+  it('removeTask drops a task locally', async () => {
+    listTasks.mockResolvedValue([makeTask({ id: 'T-a' })]);
+    const { result } = renderHook(() => useTasks(null));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.removeTask('T-a'));
+    expect(result.current.allTasks).toEqual([]);
   });
 
   it('applyTask upserts a task returned by an action', async () => {

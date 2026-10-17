@@ -13,7 +13,13 @@ const ev = (seq: number, type: string, data: Record<string, unknown>) => ({
 });
 
 describe('FullRun', () => {
-  beforeEach(() => FakeEventSource.install());
+  beforeEach(() => {
+    jest.useFakeTimers();
+    FakeEventSource.install();
+  });
+  afterEach(() => jest.useRealTimers());
+  // events are applied in batches
+  const flush = () => act(() => void jest.advanceTimersByTime(60));
 
   it('opens the stream from seq 0 and renders events in order without duplicates', () => {
     render(<FullRun taskId="T-1" />);
@@ -24,6 +30,7 @@ describe('FullRun', () => {
       FakeEventSource.last.emit('message', ev(1, 'message', { role: 'user', text: 'first', final: true }));
       FakeEventSource.last.emit('message', ev(3, 'error', { message: 'boom' }));
     });
+    flush();
     const text = screen.getByTestId('full-run').textContent ?? '';
     expect(text.indexOf('first')).toBeLessThan(text.indexOf('second'));
     expect(text.indexOf('second')).toBeLessThan(text.indexOf('boom'));
@@ -37,8 +44,10 @@ describe('FullRun', () => {
       es.emit('message', ev(1, 'message', { role: 'agent', text: 'Hel', final: false }));
       es.emit('message', ev(2, 'message', { role: 'agent', text: 'lo', final: false }));
     });
+    flush();
     expect(screen.getByText('Hello')).toBeTruthy();
     act(() => es.emit('message', ev(3, 'message', { role: 'agent', text: 'Hello world', final: true })));
+    flush();
     expect(screen.queryByText('Hello')).toBeNull();
     expect(screen.getByText('Hello world')).toBeTruthy();
   });
@@ -57,6 +66,7 @@ describe('FullRun', () => {
         }),
       ),
     );
+    flush();
     expect(screen.getByText('Run ls')).toBeTruthy();
     expect(screen.queryByText('file.txt')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Run ls/ }));
@@ -123,6 +133,7 @@ describe('FullRun', () => {
         }),
       );
     });
+    flush();
     expect(screen.getAllByText('Let me check Done.')).toHaveLength(1);
     expect(screen.getAllByText('Run ls')).toHaveLength(1);
     expect(screen.getByText(/completed/)).toBeTruthy();

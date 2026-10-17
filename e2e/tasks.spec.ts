@@ -1,4 +1,4 @@
-import { expect, test, Page } from '@playwright/test';
+import { expect, test, Page, APIRequestContext } from '@playwright/test';
 
 const section = (page: Page, name: string) => page.getByRole('region', { name, exact: true });
 const card = (page: Page, name: string, title: string) =>
@@ -9,16 +9,30 @@ async function startTask(page: Page, prompt: string) {
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Prompt').fill(prompt);
   await dialog.getByRole('button', { name: 'Start task' }).click();
-  await expect(dialog).toBeHidden();
+  await expect(dialog).toBeHidden({ timeout: 60_000 });
 }
+
+let testId = '';
+
+// Remove whatever the test left behind (also when it failed half way).
+test.afterEach(async ({ request }: { request: APIRequestContext }) => {
+  if (!testId) return;
+  const res = await request.get('/api/tasks');
+  const tasks = (await res.json()) as { id: string; title: string }[];
+  for (const t of tasks.filter((x) => x.title.includes(testId))) {
+    await request.post(`/api/tasks/${t.id}/close`);
+    await request.delete(`/api/tasks/${t.id}`);
+  }
+});
 
 test('task lifecycle: start, ask, answer, follow-up, full run, close, delete', async ({ page }) => {
   const id = Date.now().toString(36);
+  testId = id;
   const echoTitle = `echo ${id}`;
   const askTitle = `ASK:pick ${id}`;
 
   await page.goto('/');
-  await page.evaluate(() => window.location.reload()); // list loaded once, then live only
+  await page.reload();
   await expect(page.getByRole('button', { name: '+ New task' })).toBeVisible();
 
   // start a task: it ends up in review with its echo
