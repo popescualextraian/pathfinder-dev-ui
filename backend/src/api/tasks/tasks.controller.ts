@@ -1,9 +1,10 @@
 import {
   Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Query, Sse, UseFilters, UseGuards, MessageEvent,
 } from '@nestjs/common';
-import { catchError, map, Observable, throwError } from 'rxjs';
+import { catchError, interval, map, merge, Observable, throwError } from 'rxjs';
 import { BridgeError, BridgeUnreachableError, TaskEvent } from '../../service/tasks/task-errors';
 import { TaskEventsService } from '../../service/tasks/task-events.service';
+import { TaskUpdates } from '../../service/tasks/task-updates';
 import { TasksService, TaskView } from '../../service/tasks/tasks.service';
 import { BridgeErrorFilter, describeBridgeError } from './bridge-error.filter';
 import { AnswerDto } from './dto/answer.dto';
@@ -11,6 +12,8 @@ import { PromptDto } from './dto/prompt.dto';
 import { SinceQueryDto } from './dto/since-query.dto';
 import { StartTaskDto } from './dto/start-task.dto';
 import { TaskExistsGuard } from './task-exists.guard';
+
+const PING_INTERVAL_MS = 25_000;
 
 // Status codes: POST /tasks 201 with the task; prompt, answer, cancel and stop 202 (the bridge
 // accepts the command and works on it asynchronously) with the task view as of the answer; DELETE 204.
@@ -20,11 +23,25 @@ export class TasksController {
   constructor(
     private readonly tasks: TasksService,
     private readonly events: TaskEventsService,
+    private readonly updates: TaskUpdates,
   ) {}
 
   @Post()
   start(@Body() body: StartTaskDto): Promise<TaskView> {
     return this.tasks.start(body);
+  }
+
+  // Status stream, one per browser: `task` (data: the task) when a task is created or changed,
+  // `removed` (data: {id}) when one is deleted; nothing is replayed, the client loads the list first.
+  // A comment line every 25 seconds keeps proxies from closing an idle connection.
+  // Declared before `:id` routes so that `stream` is not taken for an id.
+  @Sse('stream')
+  statusStream(): Observable<MessageEvent> {
+    const changes = this.updates.changes.pipe(
+      map((change): MessageEvent => (change.kind === 'task' ? { type: 'task', data: change.task } : { type: 'removed', data: { id: change.id } })),
+    );
+    const pings = interval(PING_INTERVAL_MS).pipe(map((): MessageEvent => ({ comment: 'ping' })));
+    return merge(changes, pings);
   }
 
   @Get()

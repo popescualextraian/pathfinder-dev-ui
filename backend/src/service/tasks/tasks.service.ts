@@ -8,7 +8,8 @@ import {
 import { TASK_LAUNCHER, TaskLauncher } from './task-launcher';
 import { TaskRecord, TaskRecordRepository } from '../../repository/tasks/task-record.repository';
 import { repoNameOf } from '../../commons/repo-name';
-import { titleFrom, toView, TaskView } from './task-view';
+import { TaskUpdates } from './task-updates';
+import { Live, titleFrom, toView, TaskView, viewsDiffer } from './task-view';
 
 export type { TaskView } from './task-view';
 
@@ -44,6 +45,7 @@ export class TasksService {
     @Inject(TASK_LAUNCHER) private readonly launcher: TaskLauncher,
     @Inject(BRIDGE_CLIENT_FACTORY) private readonly bridgeFor: BridgeClientFactory,
     @Inject(ENGINE_CONFIG) private readonly config: EngineConfig,
+    private readonly updates: TaskUpdates,
     @Optional() @Inject(TASKS_SERVICE_OPTIONS) options?: TasksServiceOptions,
   ) {
     this.waitTimeoutMs = options?.waitTimeoutMs ?? 60_000;
@@ -116,11 +118,13 @@ export class TasksService {
 
   async prompt(id: string, text: string): Promise<TaskView> {
     const record = await this.wake(id);
+    this.updates.markActed(id);
     return this.observe(record, await this.bridgeFor(record).prompt(text));
   }
 
   async answer(id: string, input: { text: string; question?: string }): Promise<TaskView> {
     const record = await this.wake(id);
+    this.updates.markActed(id);
     const client = this.bridgeFor(record);
     let question = input.question;
     if (question === undefined) {
@@ -146,8 +150,7 @@ export class TasksService {
       // container is stopped below, otherwise the task could never be stopped or removed.
     }
     await this.launcher.stop(id);
-    const updated = await this.records.update(id, { lastState: 'stopped' });
-    return toView(updated);
+    return this.persist(record, { lastState: 'stopped' });
   }
 
   // Stops the task if it runs, removes its container and volume and keeps the record as closed
@@ -165,11 +168,10 @@ export class TasksService {
       await this.launcher.stop(id);
     }
     await this.launcher.remove(id);
-    const updated = await this.records.update(id, {
+    return this.persist(record, {
       closed: true, closedAt: new Date().toISOString(), lastState: 'stopped',
       lastStatus: { ...(record.lastStatus as object | undefined), state: 'stopped', reason: 'closed', questions: [] },
     });
-    return toView(updated);
   }
 
   // Allowed only for a closed or stopped task: the container is not running and the last known state is
@@ -178,6 +180,7 @@ export class TasksService {
     const record = await this.require(id);
     if (record.closed) {
       await this.records.delete(id);
+      this.updates.removed(id);
       return;
     }
     const inspection = await this.launcher.inspect(id);
@@ -188,6 +191,7 @@ export class TasksService {
       await this.launcher.remove(id);
     }
     await this.records.delete(id);
+    this.updates.removed(id);
   }
 
   async events(id: string, since: number): Promise<BridgeEvent[]> {
@@ -226,7 +230,11 @@ export class TasksService {
       const { bridgeUrl } = await this.launcher.launch({
         taskId: id, taskToken, agentToken, prompt: input.prompt, repoUrl, repoRef: input.repoRef, model: input.model, branch,
       });
-      return await this.records.update(id, { bridgeUrl });
+      const launched = await this.records.update(id, { bridgeUrl });
+      // The first poll catches up with the events from the beginning, whatever the state is by then.
+      this.updates.markActed(id);
+      this.updates.changed(toView(launched));
+      return launched;
     } catch (error) {
       await this.launcher.remove(id).catch(() => undefined); // a half-made container or volume
       await this.records.delete(id);
@@ -287,10 +295,17 @@ export class TasksService {
   }
 
   private async observe(record: TaskRecord, status: BridgeStatus, persist = true): Promise<TaskView> {
-    const updated = persist
-      ? await this.records.update(record.id, { lastState: status.state, lastStatus: status })
-      : record;
-    return toView(updated, { state: status.state, reason: status.reason, questions: status.questions, summary: status.summary, branch: status.branch ?? undefined });
+    const live: Live = { state: status.state, reason: status.reason, questions: status.questions, summary: status.summary, branch: status.branch ?? undefined };
+    if (!persist) return toView(record, live);
+    return this.persist(record, { lastState: status.state, lastStatus: status }, live);
+  }
+
+  // Writes the patch and announces the task on the status stream when its view changed.
+  private async persist(record: TaskRecord, patch: Partial<TaskRecord>, live: Live = {}): Promise<TaskView> {
+    const updated = await this.records.update(record.id, patch);
+    const view = toView(updated, live);
+    if (viewsDiffer(toView(record), view)) this.updates.changed(view);
+    return view;
   }
 
   private async require(id: string): Promise<TaskRecord> {

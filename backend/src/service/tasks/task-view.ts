@@ -48,6 +48,11 @@ export function titleFrom(prompt: string, given?: string): string {
   return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1).trimEnd()}…`;
 }
 
+// True when two views differ in anything but the time of the last write.
+export function viewsDiffer(a: TaskView, b: TaskView): boolean {
+  return JSON.stringify({ ...a, updatedAt: '' }) !== JSON.stringify({ ...b, updatedAt: '' });
+}
+
 export interface Live {
   state?: string;
   reason?: string;

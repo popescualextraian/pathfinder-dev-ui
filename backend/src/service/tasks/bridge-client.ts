@@ -65,7 +65,8 @@ export interface BridgeClient {
   cancel(): Promise<BridgeStatus>;
   stop(): Promise<BridgeStatus>;
   status(): Promise<BridgeStatus>;
-  events(since: number, limit?: number): Promise<BridgeEvent[]>;
+  // `view` 'status' keeps only state, question, answer, error and final messages (same seq numbers, with gaps).
+  events(since: number, limit?: number, view?: 'full' | 'status'): Promise<BridgeEvent[]>;
   // Backlog after `since`, then live events; ends when the bridge closes or the signal aborts.
   eventStream(since: number, signal?: AbortSignal): AsyncGenerator<BridgeEvent>;
 }

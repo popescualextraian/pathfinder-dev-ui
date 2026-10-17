@@ -1,6 +1,9 @@
 import 'reflect-metadata';
 import { firstValueFrom, of, throwError, toArray } from 'rxjs';
 import { TasksController } from '../../../../src/api/tasks/tasks.controller';
+import { TaskUpdates } from '../../../../src/service/tasks/task-updates';
+import { toView } from '../../../../src/service/tasks/task-view';
+import { record } from '../../service/tasks/helpers';
 import { BridgeError, TaskEvent as BridgeEvent, BridgeUnreachableError } from '../../../../src/service/tasks/task-errors';
 
 const view = { id: 'T-1', state: 'idle' };
@@ -15,12 +18,13 @@ function make() {
     answer: jest.fn().mockResolvedValue(view),
     cancel: jest.fn().mockResolvedValue(view),
     stop: jest.fn().mockResolvedValue(view),
+    close: jest.fn().mockResolvedValue(view),
     remove: jest.fn().mockResolvedValue(undefined),
     events: jest.fn().mockResolvedValue([event(1)]),
   };
   const events = { stream: jest.fn().mockResolvedValue(of(event(4), event(5))) };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { tasks, events, controller: new TasksController(tasks as any, events as any) };
+  const updates = new TaskUpdates();
+  return { tasks, events, updates, controller: new TasksController(tasks as never, events as never, updates) };
 }
 
 describe('TasksController', () => {
@@ -36,6 +40,8 @@ describe('TasksController', () => {
     expect(tasks.answer).toHaveBeenCalledWith('T-1', { text: 'yes', question: 'q' });
     await controller.cancel('T-1');
     await controller.stop('T-1');
+    expect(await controller.close('T-1')).toBe(view);
+    expect(tasks.close).toHaveBeenCalledWith('T-1');
     await controller.remove('T-1');
     expect(tasks.cancel).toHaveBeenCalledWith('T-1');
     expect(tasks.stop).toHaveBeenCalledWith('T-1');
@@ -87,5 +93,36 @@ describe('TasksController', () => {
     await expect(firstValueFrom(await controller.stream('T-1', {}, undefined))).rejects.toThrow('The task bridge is not reachable');
     events.stream.mockResolvedValueOnce(throwError(() => new BridgeError(401, 'unauthorized', 'bad bearer')));
     await expect(firstValueFrom(await controller.stream('T-1', {}, undefined))).rejects.toThrow('The task bridge answered unexpectedly');
+  });
+});
+
+describe('TasksController status stream', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('sends task and removed events, and a ping comment every 25 seconds', () => {
+    jest.useFakeTimers();
+    const { controller, updates } = make();
+    const seen: unknown[] = [];
+    const subscription = controller.statusStream().subscribe((m) => seen.push(m));
+    const task = toView(record());
+    updates.changed(task);
+    updates.removed('T-1');
+    jest.advanceTimersByTime(24_999);
+    expect(seen).toEqual([{ type: 'task', data: task }, { type: 'removed', data: { id: 'T-1' } }]);
+    jest.advanceTimersByTime(1);
+    expect(seen[2]).toEqual({ comment: 'ping' });
+    jest.advanceTimersByTime(25_000);
+    expect(seen).toHaveLength(4);
+    subscription.unsubscribe();
+    jest.advanceTimersByTime(50_000);
+    expect(seen).toHaveLength(4);
+  });
+
+  it('replays nothing to a late subscriber', () => {
+    const { controller, updates } = make();
+    updates.changed(toView(record()));
+    const seen: unknown[] = [];
+    controller.statusStream().subscribe((m) => seen.push(m)).unsubscribe();
+    expect(seen).toEqual([]);
   });
 });

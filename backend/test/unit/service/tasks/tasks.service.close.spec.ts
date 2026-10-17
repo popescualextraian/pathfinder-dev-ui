@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { TaskUpdates } from '../../../../src/service/tasks/task-updates';
 import { TasksService } from '../../../../src/service/tasks/tasks.service';
 import { config, fakeBridge, fakeLauncher, fakeRecords, record } from './helpers';
 
@@ -7,7 +8,7 @@ function setup(opts: { records?: ReturnType<typeof record>[]; launcher?: Record<
   const launcher = fakeLauncher(opts.launcher);
   const bridge = fakeBridge(opts.bridge);
   const factory = jest.fn(() => bridge);
-  const service = new TasksService(records as never, launcher as never, factory as never, config, { waitTimeoutMs: 50, waitIntervalMs: 1 });
+  const service = new TasksService(records as never, launcher as never, factory as never, config, new TaskUpdates(), { waitTimeoutMs: 50, waitIntervalMs: 1 });
   return { records, launcher, bridge, factory, service };
 }
 

@@ -1,5 +1,6 @@
 import { BadGatewayException, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { BridgeError, BridgeUnreachableError } from '../../../../src/service/tasks/bridge-client';
+import { TaskUpdates } from '../../../../src/service/tasks/task-updates';
 import { TasksService } from '../../../../src/service/tasks/tasks.service';
 import { AGENT_TOKEN, TASK_TOKEN, config, fakeBridge, fakeLauncher, fakeRecords, record, status } from './helpers';
 
@@ -8,11 +9,14 @@ function setup(opts: { records?: ReturnType<typeof record>[]; launcher?: Record<
   const launcher = fakeLauncher(opts.launcher);
   const bridge = fakeBridge(opts.bridge);
   const factory = jest.fn(() => bridge);
+  const updates = new TaskUpdates();
+  const published: unknown[] = [];
+  updates.changes.subscribe((change) => published.push(change));
   const service = new TasksService(
-    records as never, launcher as never, factory as never, config,
+    records as never, launcher as never, factory as never, config, updates,
     { waitTimeoutMs: 50, waitIntervalMs: 1 },
   );
-  return { records, launcher, bridge, factory, service };
+  return { records, launcher, bridge, factory, service, updates, published };
 }
 
 const ID = 'T-20260101-abcd';
@@ -438,5 +442,52 @@ describe('TasksService.remove', () => {
   it('unknown id is NotFound', async () => {
     const { service } = setup({ records: [] });
     await expect(service.remove(ID)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('TasksService announces changes', () => {
+  it('announces a created task and its state once the bridge answers', async () => {
+    const { service, published } = setup({ records: [] });
+    const view = await service.start({ prompt: 'p' });
+    expect(published).toEqual([
+      { kind: 'task', task: expect.objectContaining({ id: view.id, state: 'starting' }) },
+      { kind: 'task', task: expect.objectContaining({ id: view.id, state: 'idle', section: 'in-review' }) },
+    ]);
+  });
+
+  it('announces a read only when something changed', async () => {
+    const { service, published } = setup({ records: [record({ lastStatus: status({ state: 'idle' }) })], bridge: { status: jest.fn(async () => status({ state: 'idle' })) } });
+    await service.get(ID);
+    expect(published).toEqual([]);
+    const other = setup({ bridge: { status: jest.fn(async () => status({ state: 'running' })) } });
+    await other.service.get(ID);
+    expect(other.published).toEqual([{ kind: 'task', task: expect.objectContaining({ state: 'running', section: 'working' }) }]);
+  });
+
+  it('announces stop, close and removal', async () => {
+    const stopped = setup();
+    await stopped.service.stop(ID);
+    expect(stopped.published).toEqual([{ kind: 'task', task: expect.objectContaining({ state: 'stopped', section: 'done' }) }]);
+    await stopped.service.remove(ID).catch(() => undefined);
+
+    const closed = setup();
+    await closed.service.close(ID);
+    expect(closed.published).toEqual([{ kind: 'task', task: expect.objectContaining({ closed: true }) }]);
+    await closed.service.remove(ID);
+    expect(closed.published[1]).toEqual({ kind: 'removed', id: ID });
+  });
+
+  it('notes a new task for the poller', async () => {
+    const { service, updates } = setup({ records: [] });
+    const view = await service.start({ prompt: 'p' });
+    expect([...updates.actedIds()]).toEqual([view.id]);
+  });
+
+  it('notes prompt and answer for the poller', async () => {
+    const { service, updates } = setup({ records: [record(), record({ id: 'T-20260101-efgh' })] });
+    await service.prompt(ID, 'more');
+    expect([...updates.actedIds()]).toEqual([ID]);
+    await service.answer('T-20260101-efgh', { text: 'yes', question: 'Q1' });
+    expect([...updates.actedIds()]).toEqual([ID, 'T-20260101-efgh']);
   });
 });

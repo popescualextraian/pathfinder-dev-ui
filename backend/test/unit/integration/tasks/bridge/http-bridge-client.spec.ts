@@ -110,6 +110,14 @@ describe('HttpBridgeClient', () => {
     expect(status.questions[0].id).toBe('q1');
   });
 
+  it('events asks for the status view only when told to', async () => {
+    reply = () => ({ status: 200, raw: '' });
+    await client().events(7, 1000, 'status');
+    await client().events(7, 50);
+    expect(seen[0].url).toBe('/events?since=7&limit=1000&view=status');
+    expect(seen[1].url).toBe('/events?since=7&limit=50');
+  });
+
   it('prompt posts the text', async () => {
     reply = () => ({ status: 202, body: { state: 'running', questions: [] } });
     const status = await client().prompt('hello');
