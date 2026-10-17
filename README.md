@@ -9,7 +9,7 @@ frontend so far shows one slice of the layers: `GET /api/system/info` returns
 The engine starts and drives agentic-dev-base tasks. A task is one container running the project's
 agentic image with `agentic-bridge` as its command.
 
-- `POST /api/tasks` creates a container (and volume) per task through a `TaskLauncher` (Docker now),
+- `POST /api/tasks` creates a container (and volume) per task through a `TaskLauncher` (Docker, or the `local` process launcher for development),
   with the task's prompt, two random per-task tokens (task token, agent token), and your secrets
   (`CLAUDE_CODE_OAUTH_TOKEN`, `GH_TOKEN`) in its environment.
 - The container clones the repository itself when it starts (start step `05-workspace`, git
@@ -47,22 +47,23 @@ is missing or invalid, naming the variable, never printing a value.
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `ENGINE_LAUNCHER` | no, default `docker` | Which launcher runs tasks; only `docker` exists. An unknown value is refused when the launcher is created. |
-| `ENGINE_IMAGE` | yes | Task image that runs `agentic-bridge`: the project's agentic image built with `agentic build`, for example `agentic-pathfinder-dev-ui:local`. Not the image of `Dockerfile`. |
-| `ENGINE_DOCKER_NETWORK` | yes | Docker network shared by the UI and the task containers (`agentic-ui` in `compose.yaml`). |
+| `ENGINE_LAUNCHER` | no, default `docker` | Which launcher runs tasks: `docker` or `local` (see Local launcher). An unknown value is refused when the launcher is created. |
+| `ENGINE_LOCAL_AGENT` | no, default `fake`; `local` only | `fake` (scripted fake agent) or `claude` (the bridge's default agent, Claude Code). Anything else is refused at start-up. |
+| `ENGINE_IMAGE` | `docker` only | Task image that runs `agentic-bridge`: the project's agentic image built with `agentic build`, for example `agentic-pathfinder-dev-ui:local`. Not the image of `Dockerfile`. |
+| `ENGINE_DOCKER_NETWORK` | `docker` only | Docker network shared by the UI and the task containers (`agentic-ui` in `compose.yaml`). |
 | `ENGINE_DATA_DIR` | yes | Absolute directory for task records (`/data` in `compose.yaml`). |
 | `ENGINE_REPO_URL` | yes | Repository tasks clone when the request gives no `repoUrl`. Must not contain credentials. |
 | `ENGINE_ALLOWED_REPO_HOSTS` | no | Comma-separated hosts a request's `repoUrl` may use, in addition to the host of `ENGINE_REPO_URL` (which is always allowed). The host of a repository gets `GH_TOKEN` for the clone, so other hosts are refused with 400. |
 | `ENGINE_PROJECT` | yes | Project name passed to tasks (`AGENTIC_PROJECT`). |
-| `ENGINE_GIT_NAME` | yes | Commit author and committer name of task containers (`GIT_AUTHOR_NAME`, `GIT_COMMITTER_NAME`). |
-| `ENGINE_GIT_EMAIL` | yes | Commit author and committer email (`GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_EMAIL`). |
+| `ENGINE_GIT_NAME` | `docker`; `local` only when `GH_TOKEN` is set | Commit author and committer name of task containers (`GIT_AUTHOR_NAME`, `GIT_COMMITTER_NAME`). |
+| `ENGINE_GIT_EMAIL` | `docker`; `local` only when `GH_TOKEN` is set | Commit author and committer email (`GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_EMAIL`). |
 | `ENGINE_MAX_RUNNING` | no, default `2` | Maximum running task containers (positive integer). |
-| `CLAUDE_CODE_OAUTH_TOKEN` | yes, secret | Passed into task containers. |
-| `GH_TOKEN` | yes, secret | Passed into task containers; used for the clone and for push. |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `docker`; `local` only with `ENGINE_LOCAL_AGENT=claude`; secret | Passed into task containers. |
+| `GH_TOKEN` | `docker`; optional for `local` (needed only to push); secret | Passed into task containers; used for the clone and for push. |
 | `ENGINE_TASK_EXTRA_ENV` | no, test hook | JSON object of strings added to each task container's environment (keys must be valid variable names; keys the engine sets itself, such as the tokens, `GH_TOKEN`, `AGENTIC_TASK_ID`, `AGENTIC_BRANCH`, `AGENTIC_BRIDGE_HOSTS`, the four `GIT_AUTHOR_*`/`GIT_COMMITTER_*` identity variables, `GIT_CONFIG_COUNT` and `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, are refused at start-up). |
 | `ENGINE_TASK_EXTRA_BINDS` | no, test hook | JSON array of `host:container[:mode]` binds added to each task container. |
 
-`PORT` (default 3000) sets the HTTP port. Docker itself is reached through the usual socket or
+`ENGINE_DATA_DIR`, `ENGINE_REPO_URL` and `ENGINE_PROJECT` are required for every launcher. `PORT` (default 3000) sets the HTTP port; the app listens on all interfaces. Docker itself is reached through the usual socket or
 `DOCKER_HOST` (dockerode).
 
 ## REST API
@@ -106,6 +107,32 @@ npm start       # http://localhost:3000 (set PORT to change); needs the ENGINE_*
 
 The frontend is served at `/`, the API under `/api`. For frontend development,
 run `npm start` and, in a second terminal, `npm run dev:frontend` (Vite proxies `/api` to port 3000).
+
+## Local launcher (no Docker)
+
+`ENGINE_LAUNCHER=local` runs each task as an `agentic-bridge` child process of the app instead of a
+container: own folder under `ENGINE_DATA_DIR/local-tasks/<id>`, own loopback port, a clone of
+`ENGINE_REPO_URL` (a URL or a local path) on branch `agentic/<task-id>`. The bridge is the real one
+(`agentic-bridge` must be on PATH) with an environment built explicitly, not inherited. The agent is
+the fake agent by default (`ENGINE_LOCAL_AGENT=fake`: `tools/fake-agent/fake-agent.mjs`, no token reaches the bridge)
+or Claude Code (`ENGINE_LOCAL_AGENT=claude`, which needs `CLAUDE_CODE_OAUTH_TOKEN` and costs real tokens).
+There is **no isolation** between tasks or from the app: development only. The app logs a warning
+at start-up. `ENGINE_MAX_RUNNING` applies as usual. Stopping the app (SIGINT/SIGTERM) stops the bridges.
+
+```sh
+PORT=3101 npm run start:local   # builds, then runs in the foreground; Ctrl-C stops it
+```
+
+`npm run start:local` (`tools/start-local.mjs`) runs `npm run build`, then `node dist/backend/main.js` with
+`ENGINE_LAUNCHER=local`, `PORT` (default 3100) and `ENGINE_DATA_DIR=<checkout>/.local/<port>/`, which is wiped
+and recreated at every start (`.local/` is git-ignored). Defaults that your environment overrides:
+`ENGINE_REPO_URL` = the checkout itself (absolute path), `ENGINE_PROJECT` = the checkout's folder name,
+`ENGINE_LOCAL_AGENT=fake`, `ENGINE_GIT_NAME`/`ENGINE_GIT_EMAIL` = a dummy identity. The script's pid is in
+`.local/<port>.pid` (`kill $(cat .local/3101.pid)` stops the app and its bridges). Several checkouts or ports can run side by side.
+
+The fake agent and `agentic-bridge` come from a checkout of this repository and the machine's PATH: the
+`Dockerfile` image contains neither `tools/` nor the bridge, so use `local` from a checkout (the Docker image is for the `docker`
+launcher). `tools/` is deliberately not copied into the image: `local` would still lack `agentic-bridge` there.
 
 ## Run in Docker
 
@@ -156,7 +183,7 @@ daemon available and have not been run yet; `docker compose config` accepts the 
 |---|---|
 | `npm test` | Jest unit tests: backend (`backend/test/unit/`) and frontend (`frontend/test/`, jsdom + React Testing Library) |
 | `npm run test:e2e` | Backend e2e tests (`backend/test/e2e/`, Jest + supertest; REST API with a fake launcher and a fake bridge). Needs a prior `npm run build` for the frontend tests. |
-| `npm run test:bridge` | `backend/test/bridge/`: the real `agentic-bridge` as a local process with a fake agent (`tools/fake-agent/fake-agent.mjs`), driven through the bridge client and the task service. Skipped with a message on stderr where `agentic-bridge` is not on PATH. |
+| `npm run test:bridge` | `backend/test/bridge/`: the real `agentic-bridge` as a local process with a fake agent (`tools/fake-agent/fake-agent.mjs`), driven through the bridge client, the task service and the REST API (local launcher). Skipped with a message on stderr where `agentic-bridge` is not on PATH. |
 | `npm run test:docker` | `backend/test/docker/`: real Docker, real task image, fake agent: start a task, reach idle, prompt and see the echo, wake it after `docker stop`, stop it (a prompt is then refused with 409 without starting it), remove, check container and volume are gone. Needs both `ENGINE_IMAGE` (the task image) and `FAKE_AGENT_DIR` (directory holding agentic-dev-base's `bridge/test/fake-agent.mjs`, mounted at `/fake`), and a reachable Docker daemon (Linux Docker or Docker Desktop); otherwise skipped with a message on stderr. The test process never connects to container IPs: bridge requests run in a helper container from `ENGINE_IMAGE` on the test network (`node` with a small built-ins-only script, `backend/test/docker/bridge-request.cjs`) and reach the task by container name, as the UI does. It creates a temporary network, the helper container and a local git repository (bound into the task and cloned from there, no GitHub needed), and removes all of them, task containers and volumes in `afterAll`, also after a failure. Example: `ENGINE_IMAGE=agentic-pathfinder-dev-ui:local FAKE_AGENT_DIR=/path/to/agentic-dev-base/bridge/test npm run test:docker` |
 | `npm run test:ui` | Playwright (`e2e/`). Builds and starts the app on port 3100, uses the Chromium under `PLAYWRIGHT_BROWSERS_PATH` if set. |
 | `npm run lint` | ESLint for `backend/src/` and `backend/test/` |
@@ -195,7 +222,7 @@ backend/
     api/<area>/             controllers (HTTP only, no business logic): system/, tasks/ (+ dto/)
     service/<area>/         business logic: system/, tasks/ (tasks.service.ts, task-events.service.ts)
     integration/<area>/     external systems and runtimes: tasks/ bridge/ (HttpBridgeClient),
-                            launcher/ (Docker launcher, factory); implements the service's interfaces
+                            launcher/ (Docker and local launchers, factory); implements the service's interfaces
     repository/<area>/      storage only: system/ (package.json), tasks/ (task-record.repository.ts, JSON files)
     commons/                engine config, validation pipe, logging interceptor, exception filters, shared utilities
   test/
@@ -204,7 +231,8 @@ backend/
     bridge/                 real-bridge suite (npm run test:bridge)
     docker/                 real-Docker suite (npm run test:docker)
     helpers/                fake bridge, fake and local-process launchers
-tools/fake-agent/           fake agent (fake-agent.mjs) used by the bridge suite
+tools/fake-agent/           fake agent (fake-agent.mjs): bridge suite and the local launcher
+tools/start-local.mjs       npm run start:local
 frontend/
   src/
     api/                    the only code that calls the backend

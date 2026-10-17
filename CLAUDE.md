@@ -17,11 +17,23 @@ npm run lint        # ESLint on backend/{src,test}
 npm test            # unit tests: backend (backend/test/unit) + frontend (frontend/test, jsdom)
 npm run test:e2e    # supertest with fake launcher + fake bridge; frontend tests need a prior build
 npm run test:bridge # real agentic-bridge process + fake agent; skipped if agentic-bridge not on PATH
+npm run start:local # build + run the app with the local launcher, no Docker (see "Test your version")
 npm run test:docker # real Docker; needs ENGINE_IMAGE and FAKE_AGENT_DIR, else skipped
 npm run test:ui     # Playwright (e2e/), builds and starts the app on port 3100
 ```
 
 Single test: `npx jest --selectProjects backend -t "name"` or `npx jest path/to/file.spec.ts`. For other suites pass their config, e.g. `npx jest --config backend/test/e2e/jest-e2e.config.js tasks.e2e-spec`. Suffixes differ per suite: `.spec.ts` (unit), `.e2e-spec.ts`, `.bridge-spec.ts`, `.docker-spec.ts`.
+
+## Test your version
+
+Run your checkout's app next to others without Docker (`local` launcher, real `agentic-bridge`, fake agent; no isolation, development only):
+
+```sh
+PORT=3101 npm run start:local > /tmp/app-3101.log 2>&1 &   # pick a free port; builds first, wait for "successfully started" in the log
+kill $(cat .local/3101.pid)                                 # stop it; also stops its bridges (Ctrl-C if in the foreground)
+```
+
+Data lives in `.local/<port>/` (wiped at each start, git-ignored). Drive it with curl (routes in README, e.g. `curl -H 'content-type: application/json' -d '{"prompt":"hi"}' localhost:3101/api/tasks`, then `GET /api/tasks/<id>`, `/events`) or the Playwright MCP against `http://localhost:3101`. The fake agent (`tools/fake-agent/fake-agent.mjs`) answers `echo: <prompt>`; `ASK:<text>` raises a question (answer via `/answer`), `SLEEP:<ms>` runs a long turn (cancel via `/cancel`), `CRASH` exits the agent. Use the real Claude (`ENGINE_LOCAL_AGENT=claude`, needs `CLAUDE_CODE_OAUTH_TOKEN`) only when asked: it costs real tokens. Stop and delete tasks you created, and stop the app when done.
 
 ## Architecture
 
@@ -31,7 +43,7 @@ Strict layering, enforced by convention:
 - Tests mirror the source tree under `backend/test/unit` and `frontend/test`.
 
 Task engine (`backend/src/service/tasks`, `backend/src/integration/tasks`, `backend/src/repository/tasks`):
-- `TaskLauncher` (interface in `service/tasks/task-launcher.ts`) runs containers; `DockerTaskLauncher` is the only implementation, in `integration/tasks/launcher/`, selected by name in `task-launcher.factory.ts` via `ENGINE_LAUNCHER`. The launcher only returns a bridge base URL; the bridge client (`HttpBridgeClient` in `integration/tasks/bridge/`, interface in `service/tasks/bridge-client.ts`) is independent of it and uses the task token.
+- `TaskLauncher` (interface in `service/tasks/task-launcher.ts`) runs containers; `DockerTaskLauncher` and `LocalTaskLauncher` (bridge as child process, no isolation) are the implementations, in `integration/tasks/launcher/`, selected by name in `task-launcher.factory.ts` via `ENGINE_LAUNCHER`. The launcher only returns a bridge base URL; the bridge client (`HttpBridgeClient` in `integration/tasks/bridge/`, interface in `service/tasks/bridge-client.ts`) is independent of it and uses the task token.
 - Task records are one mode-600 JSON file per task in `ENGINE_DATA_DIR` (`task-record.repository.ts`). They contain tokens, which must never appear in API responses or container labels.
 - The task container clones the repo itself (start step `05-workspace`) before the bridge starts; with `AGENTIC_WORKTREE=1` the bridge exits if `/work` isn't a git checkout with a commit. Git push credentials are injected via `GIT_CONFIG_*` env referencing `GH_TOKEN` (`git-credential-env.ts`), never a token value or file.
 - `ENGINE_MAX_RUNNING` caps running containers (409 beyond it). Prompt/answer wake a non-running container, except a task that was stopped via `/stop` (final; 409 immediately).
