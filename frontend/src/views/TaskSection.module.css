@@ -1,0 +1,7 @@
+.section { padding: 8px 12px; }
+.kicker { margin: 4px 0 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--msg-red); font-weight: 700; }
+.count { color: var(--ink-soft); font-weight: 600; }
+.cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.collapsed { display: flex; justify-content: space-between; width: 100%; padding: 10px 12px; background: transparent; border: 1px dashed var(--line); border-radius: var(--radius-card); font: inherit; font-size: 13px; color: var(--ink-soft); cursor: pointer; }
+.collapsed:focus-visible { outline: 2px solid var(--msg-red); outline-offset: 2px; }
+.show { color: var(--msg-red); font-weight: 600; }

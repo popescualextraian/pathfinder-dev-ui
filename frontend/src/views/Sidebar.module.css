@@ -1,0 +1,8 @@
+.sidebar { padding-bottom: 16px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 16px; }
+.logo { display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; background: var(--msg-red); border-radius: 6px; font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+.brandName { font-weight: 600; font-size: 16px; }
+.newTask { padding: 0 16px; }
+.newTask button { width: 100%; }
+.kicker { margin: 16px 16px 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.55); font-weight: 600; }
+.show { list-style: none; margin: 0; padding: 0 18px; font-size: 14px; }
