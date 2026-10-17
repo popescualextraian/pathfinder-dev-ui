@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { firstValueFrom, toArray } from 'rxjs';
 import { BridgeEvent } from '../../../../src/service/tasks/bridge-client';
 import { TaskEventsService } from '../../../../src/service/tasks/task-events.service';
@@ -38,6 +38,14 @@ describe('TaskEventsService', () => {
     const bridge = fakeBridge({ eventStream: jest.fn(async function* () { throw new Error('bad'); }) });
     const service = new TaskEventsService(fakeRecords([record()]) as never, (() => bridge) as never);
     await expect(firstValueFrom((await service.stream('T-20260101-abcd', 0)))).rejects.toThrow('bad');
+  });
+
+  it('refuses the stream of a closed task (409), before any bridge call', async () => {
+    const bridge = fakeBridge();
+    const service = new TaskEventsService(fakeRecords([record({ closed: true })]) as never, (() => bridge) as never);
+    await expect(service.stream('T-20260101-abcd', 0)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.assertExists('T-20260101-abcd')).rejects.toBeInstanceOf(ConflictException);
+    expect(bridge.eventStream).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown task at call time', async () => {

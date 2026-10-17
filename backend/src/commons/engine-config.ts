@@ -1,7 +1,14 @@
 import { isAbsolute } from 'node:path';
+import { repoNameOf } from './repo-name';
 
 // Injection token of the validated engine configuration.
 export const ENGINE_CONFIG = Symbol('ENGINE_CONFIG');
+
+export interface RepositoryEntry {
+  name: string;
+  url: string;
+  default: boolean;
+}
 
 export interface EngineConfig {
   launcher: string;
@@ -13,8 +20,12 @@ export interface EngineConfig {
   repoUrl: string;
   // Hosts a task's repoUrl may point to: the host of repoUrl plus ENGINE_ALLOWED_REPO_HOSTS (lower case).
   allowedRepoHosts: string[];
+  // ENGINE_REPO_URL (the default, first) and ENGINE_REPOS.
+  repositories: RepositoryEntry[];
   project: string;
   maxRunning: number;
+  // Seconds between two rounds of the task poller.
+  pollSeconds: number;
   claudeCodeOauthToken: string;
   ghToken: string;
   // Commit author and committer identity of task containers.
@@ -89,6 +100,20 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
     const h = host.trim().toLowerCase();
     if (h && !allowedRepoHosts.includes(h)) allowedRepoHosts.push(h);
   }
+  const repositories: RepositoryEntry[] = [];
+  if (repoUrl) repositories.push({ name: repoNameOf(repoUrl), url: repoUrl, default: true });
+  const listed = parseJson('ENGINE_REPOS', value('ENGINE_REPOS'), [], problems, parseRepos);
+  for (const entry of listed) {
+    const same = repositories.find((r) => r.name === entry.name);
+    if (same) {
+      // The default listed again with the same URL is harmless; anything else clashes.
+      if (same.url !== entry.url) problems.push('ENGINE_REPOS must not repeat a name (the default repository is named after its URL)');
+      continue;
+    }
+    repositories.push({ ...entry, default: false });
+    const host = new URL(entry.url).hostname.toLowerCase();
+    if (!allowedRepoHosts.includes(host)) allowedRepoHosts.push(host);
+  }
   const project = required('ENGINE_PROJECT');
   let claudeCodeOauthToken: string;
   let ghToken: string;
@@ -122,6 +147,16 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
     }
   }
 
+  let pollSeconds = 15;
+  const rawPoll = value('ENGINE_POLL_SECONDS');
+  if (rawPoll !== undefined) {
+    pollSeconds = Number(rawPoll);
+    if (!/^\d+$/.test(rawPoll) || !Number.isSafeInteger(pollSeconds) || pollSeconds < 1) {
+      problems.push('ENGINE_POLL_SECONDS must be a positive integer');
+      pollSeconds = 15;
+    }
+  }
+
   const taskExtraEnv = parseJson('ENGINE_TASK_EXTRA_ENV', value('ENGINE_TASK_EXTRA_ENV'), {}, problems, (parsed) =>
     typeof parsed === 'object' &&
     parsed !== null &&
@@ -141,13 +176,32 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
   );
 
   if (problems.length > 0) throw new EngineConfigError(problems);
-  return { launcher, localAgent, image, dockerNetwork, dataDir, repoUrl, allowedRepoHosts, project, maxRunning, claudeCodeOauthToken, ghToken, gitName, gitEmail, taskExtraEnv, taskExtraBinds };
+  return { launcher, localAgent, image, dockerNetwork, dataDir, repoUrl, allowedRepoHosts, repositories, project, maxRunning, pollSeconds, claudeCodeOauthToken, ghToken, gitName, gitEmail, taskExtraEnv, taskExtraBinds };
 }
 
 const SHAPES: Record<string, string> = {
+  ENGINE_REPOS: 'a JSON array of {"name", "url"} with unique names and https URLs without credentials',
   ENGINE_TASK_EXTRA_ENV: 'a JSON object of strings',
   ENGINE_TASK_EXTRA_BINDS: 'a JSON array of "host:container[:mode]" strings',
 };
+
+const REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
+function parseRepos(parsed: unknown): { name: string; url: string }[] | undefined {
+  if (!Array.isArray(parsed)) return undefined;
+  const names = new Set<string>();
+  const entries: { name: string; url: string }[] = [];
+  for (const item of parsed) {
+    if (typeof item !== 'object' || item === null) return undefined;
+    const { name, url } = item as Record<string, unknown>;
+    if (typeof name !== 'string' || !REPO_NAME.test(name) || typeof url !== 'string' || names.has(name)) return undefined;
+    const u = parseUrl(url);
+    if (u?.protocol !== 'https:' || u.hostname === '' || u.username !== '' || u.password !== '') return undefined;
+    names.add(name);
+    entries.push({ name, url });
+  }
+  return entries;
+}
 
 function parseJson<T>(
   name: string,

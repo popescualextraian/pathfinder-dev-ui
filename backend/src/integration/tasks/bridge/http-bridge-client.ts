@@ -55,8 +55,8 @@ export class HttpBridgeClient implements BridgeClient {
     return this.json('GET', '/status');
   }
 
-  async events(since: number, limit?: number): Promise<BridgeEvent[]> {
-    const query = `since=${since}${limit === undefined ? '' : `&limit=${limit}`}`;
+  async events(since: number, limit?: number, view?: 'full' | 'status'): Promise<BridgeEvent[]> {
+    const query = `since=${since}${limit === undefined ? '' : `&limit=${limit}`}${view === undefined ? '' : `&view=${view}`}`;
     const text = await this.send('GET', `/events?${query}`);
     return parseJson<BridgeEvent[]>(() => text.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line) as BridgeEvent));
   }

@@ -1,6 +1,10 @@
 // Injection token of the TaskLauncher in use (picked from config by the factory).
 export const TASK_LAUNCHER = Symbol('TASK_LAUNCHER');
 
+// The grants every task starts with (AGENTIC_ALLOWED_ACTIONS): the gate still blocks merges and protected words;
+// `deploy` is left out because it needs a named target.
+export const TASK_GRANTS = 'push,open-pr';
+
 // What the service knows about a task. Secrets and project settings come from the engine config.
 export interface LaunchSpec {
   taskId: string;

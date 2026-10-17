@@ -7,7 +7,11 @@ import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 // The only place the per-task tokens are stored. They never leave the backend.
 export interface TaskRecord {
   id: string;
+  // Absent in records of older versions: derived from the prompt.
+  title?: string;
   prompt: string;
+  // Name of the repository; absent in older records: derived from repoUrl.
+  repository?: string;
   repoUrl: string;
   repoRef?: string;
   model?: string;
@@ -21,7 +25,17 @@ export interface TaskRecord {
   // Last state seen from the bridge, for listing without asking every bridge.
   lastState?: string;
   lastStatus?: unknown;
+  // The whole last final agent message and its time, from the task poller.
+  lastMessage?: string;
+  lastMessageAt?: string;
+  // Last event seq the task poller has processed.
+  lastSeq?: number;
+  // Closed by the user: container gone, record kept. Absent means not closed.
+  closed?: boolean;
+  closedAt?: string;
 }
+
+export type RecordPatch = Partial<TaskRecord> | ((current: TaskRecord) => Partial<TaskRecord> | undefined);
 
 const ID = /^T-\d{8}-[a-z0-9]{4}$/;
 
@@ -69,7 +83,9 @@ export class TaskRecordRepository {
     return records.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   }
 
-  update(id: string, patch: Partial<TaskRecord>): Promise<TaskRecord> {
+  // `patch` may be a function of the current record (read inside the write queue, so no update is lost);
+  // returning undefined leaves the record as it is.
+  update(id: string, patch: RecordPatch): Promise<TaskRecord> {
     const previous = this.updates.get(id) ?? Promise.resolve();
     const run = previous.then(() => this.doUpdate(id, patch));
     const tail = run.catch(() => undefined);
@@ -78,9 +94,11 @@ export class TaskRecordRepository {
     return run;
   }
 
-  private async doUpdate(id: string, patch: Partial<TaskRecord>): Promise<TaskRecord> {
+  private async doUpdate(id: string, patchOrFn: RecordPatch): Promise<TaskRecord> {
     const current = await this.get(id);
     if (!current) throw new Error(`Task record ${id} not found`);
+    const patch = typeof patchOrFn === 'function' ? patchOrFn(current) : patchOrFn;
+    if (patch === undefined) return current;
     const updated = { ...current, ...patch, id, updatedAt: new Date().toISOString() };
     await this.write(updated);
     return updated;

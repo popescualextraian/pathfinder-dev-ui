@@ -5,7 +5,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { EngineConfig } from '../../../commons/engine-config';
-import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from '../../../service/tasks/task-launcher';
+import { LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../../service/tasks/task-launcher';
 import { gitCredentialEnv } from './git-credential-env';
 
 type LauncherConfig = Pick<
@@ -58,6 +58,7 @@ export function bridgeEnv({ config, spec, taskDir, workDir, port, path, fakeAgen
     AGENTIC_STATE: join(taskDir, 'state'),
     AGENTIC_EVENTS_DIR: join(taskDir, 'no-events'),
     AGENTIC_BRIDGE_PORT: String(port),
+    AGENTIC_ALLOWED_ACTIONS: TASK_GRANTS,
   };
   if (spec.model) env.AGENTIC_MODEL = spec.model;
   if (config.localAgent === 'fake') {
@@ -65,7 +66,6 @@ export function bridgeEnv({ config, spec, taskDir, workDir, port, path, fakeAgen
     env.FAKE_AGENT_STATE = join(taskDir, 'agent-state');
     return env;
   }
-  env.AGENTIC_ALLOWED_ACTIONS = 'push';
   env.CLAUDE_CODE_OAUTH_TOKEN = config.claudeCodeOauthToken;
   if (config.ghToken) env.GH_TOKEN = config.ghToken;
   if (config.gitName) Object.assign(env, { GIT_AUTHOR_NAME: config.gitName, GIT_COMMITTER_NAME: config.gitName });

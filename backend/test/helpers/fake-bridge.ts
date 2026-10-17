@@ -58,7 +58,8 @@ export class FakeBridge {
   ask(id: string, text: string, asked: string): void {
     this.questions.push({ id, source: 'ask', text, options: [], recommendation: null, asked });
     this.state = 'waiting';
-    this.emit('question', { id, text });
+    this.emit('question', { id, source: 'ask', text, options: [], recommendation: null });
+    this.emit('state', { state: 'waiting', reason: `question ${id}` });
   }
 
   private status() {
@@ -115,7 +116,12 @@ export class FakeBridge {
           return send(202, this.status());
         case 'GET /events': {
           const since = Number(url.searchParams.get('since') ?? 0);
-          return send(200, this.events.filter((e) => e.seq > since).map((e) => JSON.stringify(e)).join('\n') + '\n', 'application/x-ndjson');
+          const limit = Number(url.searchParams.get('limit') ?? 1000);
+          const status = url.searchParams.get('view') === 'status';
+          // The status view keeps state, question, answer, error and final messages, with the full seq numbers.
+          const keep = (e: BridgeEvent) => !status || ['state', 'question', 'answer', 'error'].includes(e.type) || (e.type === 'message' && e.data.final === true);
+          const chosen = this.events.filter((e) => e.seq > since && keep(e)).slice(0, limit);
+          return send(200, chosen.map((e) => JSON.stringify(e)).join('\n') + '\n', 'application/x-ndjson');
         }
         default:
           return fail(404, 'not_found', 'No such route');

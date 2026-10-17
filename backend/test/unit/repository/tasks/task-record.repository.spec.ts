@@ -71,6 +71,17 @@ describe('TaskRecordRepository', () => {
     expect(await repo.get(r.id)).toEqual(updated);
   });
 
+  it('computes a patch from the record as it is when the write happens, and may decline', async () => {
+    const r = record('T-20261016-fn01');
+    await repo.create(r);
+    const slow = repo.update(r.id, { lastState: 'running' });
+    const fn = repo.update(r.id, (current) => ({ lastMessage: `seen ${current.lastState}` }));
+    await slow;
+    expect((await fn).lastMessage).toBe('seen running');
+    const untouched = await repo.update(r.id, () => undefined);
+    expect(untouched.updatedAt).toBe((await fn).updatedAt);
+  });
+
   it('throws when updating a missing record', async () => {
     await expect(repo.update('T-20261016-zz99', { lastState: 'idle' })).rejects.toThrow('not found');
   });

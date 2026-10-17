@@ -26,7 +26,7 @@ describe('bridgeEnv', () => {
     expect(env).toMatchObject({
       PATH: '/usr/bin', HOME: '/data/local-tasks/T-1', AGENTIC_TASK_TOKEN: TASK_TOKEN, AGENTIC_AGENT_TOKEN: AGENT_TOKEN,
       AGENTIC_PROJECT: 'proj', AGENTIC_WORKTREE: '1', AGENTIC_BRANCH: 'agentic/T-1', AGENTIC_BRIDGE_PORT: '4321',
-      AGENTIC_WORK: '/data/local-tasks/T-1/work', AGENTIC_MODEL: 'm1',
+      AGENTIC_WORK: '/data/local-tasks/T-1/work', AGENTIC_MODEL: 'm1', AGENTIC_ALLOWED_ACTIONS: 'push,open-pr',
     });
     expect(JSON.parse(env.AGENTIC_ACP_CMD)).toEqual(['node', '/repo/tools/fake-agent/fake-agent.mjs']);
     const text = JSON.stringify(env);
@@ -41,7 +41,7 @@ describe('bridgeEnv', () => {
     expect(env).toMatchObject({
       CLAUDE_CODE_OAUTH_TOKEN: OAUTH, GH_TOKEN: GH, GIT_AUTHOR_NAME: 'Bot', GIT_COMMITTER_NAME: 'Bot',
       GIT_AUTHOR_EMAIL: 'bot@example.invalid', GIT_COMMITTER_EMAIL: 'bot@example.invalid', GIT_CONFIG_COUNT: '4',
-      GIT_CONFIG_KEY_0: 'credential.https://github.com.helper', AGENTIC_ALLOWED_ACTIONS: 'push',
+      GIT_CONFIG_KEY_0: 'credential.https://github.com.helper', AGENTIC_ALLOWED_ACTIONS: 'push,open-pr',
     });
     expect(env.GIT_CONFIG_VALUE_1).toContain('GH_TOKEN');
     // The token appears only as the value of GH_TOKEN, never inside another value.

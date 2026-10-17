@@ -2,30 +2,22 @@ import { BadGatewayException, BadRequestException, ConflictException, Inject, In
 import { randomBytes, randomInt } from 'node:crypto';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 import {
-  BRIDGE_CLIENT_FACTORY, BridgeClient, BridgeClientFactory, BridgeError, BridgeEvent, BridgeQuestion, BridgeStatus,
+  BRIDGE_CLIENT_FACTORY, BridgeClient, BridgeClientFactory, BridgeError, BridgeEvent, BridgeStatus,
   BridgeUnreachableError, waitForStatus,
 } from './bridge-client';
 import { TASK_LAUNCHER, TaskLauncher } from './task-launcher';
 import { TaskRecord, TaskRecordRepository } from '../../repository/tasks/task-record.repository';
+import { repoNameOf } from '../../commons/repo-name';
+import { TaskUpdates } from './task-updates';
+import { Live, titleFrom, toView, TaskView, viewsDiffer } from './task-view';
 
-// What clients see of a task: the record without the tokens, plus state from the bridge.
-export interface TaskView {
-  id: string;
-  prompt: string;
-  repoUrl: string;
-  repoRef?: string;
-  model?: string;
-  branch: string;
-  createdAt: string;
-  updatedAt: string;
-  state: string;
-  reason?: string;
-  questions: BridgeQuestion[];
-  summary?: string;
-}
+export type { TaskView } from './task-view';
 
 export interface StartTaskInput {
   prompt: string;
+  title?: string;
+  // A name from the repository list; excludes repoUrl.
+  repository?: string;
   repoUrl?: string;
   repoRef?: string;
   model?: string;
@@ -53,6 +45,7 @@ export class TasksService {
     @Inject(TASK_LAUNCHER) private readonly launcher: TaskLauncher,
     @Inject(BRIDGE_CLIENT_FACTORY) private readonly bridgeFor: BridgeClientFactory,
     @Inject(ENGINE_CONFIG) private readonly config: EngineConfig,
+    private readonly updates: TaskUpdates,
     @Optional() @Inject(TASKS_SERVICE_OPTIONS) options?: TasksServiceOptions,
   ) {
     this.waitTimeoutMs = options?.waitTimeoutMs ?? 60_000;
@@ -60,8 +53,17 @@ export class TasksService {
   }
 
   async start(input: StartTaskInput): Promise<TaskView> {
-    if (input.repoUrl !== undefined) this.checkRepoHost(input.repoUrl);
-    const created = await this.exclusive(() => this.launchNew(input));
+    if (input.repoUrl !== undefined && input.repository !== undefined) {
+      throw new BadRequestException('Give either repository or repoUrl, not both');
+    }
+    let repoUrl = input.repoUrl;
+    if (input.repository !== undefined) {
+      repoUrl = this.config.repositories.find((r) => r.name === input.repository)?.url;
+      if (repoUrl === undefined) throw new BadRequestException(`Unknown repository ${input.repository}`);
+    } else if (repoUrl !== undefined) {
+      this.checkRepoHost(repoUrl);
+    }
+    const created = await this.exclusive(() => this.launchNew({ ...input, repoUrl }));
     // If the bridge never answers we keep record and container (so the user can stop and remove
     // the task) and report 502; the task then shows up in the list as 'starting'.
     return this.observe(created, await this.waitFor(created, `Task ${created.id} was created but its bridge did not become ready`));
@@ -87,11 +89,14 @@ export class TasksService {
   }
 
   async list(): Promise<TaskView[]> {
-    return (await this.records.list()).map((record) => toView(record));
+    return (await this.records.list())
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((record) => toView(record));
   }
 
   async get(id: string): Promise<TaskView> {
     const record = await this.require(id);
+    if (record.closed) return toView(record);
     const inspection = await this.launcher.inspect(id);
     if (!inspection.exists) return toView(record, { state: 'stopped', reason: 'container is gone' });
     if (!inspection.running) {
@@ -113,11 +118,13 @@ export class TasksService {
 
   async prompt(id: string, text: string): Promise<TaskView> {
     const record = await this.wake(id);
+    this.updates.markActed(id);
     return this.observe(record, await this.bridgeFor(record).prompt(text));
   }
 
   async answer(id: string, input: { text: string; question?: string }): Promise<TaskView> {
     const record = await this.wake(id);
+    this.updates.markActed(id);
     const client = this.bridgeFor(record);
     let question = input.question;
     if (question === undefined) {
@@ -129,11 +136,13 @@ export class TasksService {
 
   async cancel(id: string): Promise<TaskView> {
     const record = await this.require(id);
+    if (record.closed) throw closedConflict(id);
     return this.observe(record, await this.bridgeFor(record).cancel());
   }
 
   async stop(id: string): Promise<TaskView> {
     const record = await this.require(id);
+    if (record.closed) return toView(record);
     try {
       await this.bridgeFor(record).stop();
     } catch {
@@ -141,14 +150,40 @@ export class TasksService {
       // container is stopped below, otherwise the task could never be stopped or removed.
     }
     await this.launcher.stop(id);
-    const updated = await this.records.update(id, { lastState: 'stopped' });
-    return toView(updated);
+    return this.persist(record, { lastState: 'stopped' });
   }
 
-  // Allowed only for a stopped task: the container is not running and the last known state is
+  // Stops the task if it runs, removes its container and volume and keeps the record as closed
+  // (prompt, last response, branch, times). Closing a closed task changes nothing.
+  async close(id: string): Promise<TaskView> {
+    const record = await this.require(id);
+    if (record.closed) return toView(record);
+    const inspection = await this.launcher.inspect(id);
+    if (inspection.exists && inspection.running) {
+      try {
+        await this.bridgeFor(record).stop();
+      } catch {
+        // Best effort, as in stop(): the container goes either way.
+      }
+      await this.launcher.stop(id);
+    }
+    await this.launcher.remove(id);
+    this.updates.clearActed(id);
+    return this.persist(record, {
+      closed: true, closedAt: new Date().toISOString(), lastState: 'stopped',
+      lastStatus: { ...(record.lastStatus as object | undefined), state: 'stopped', reason: 'closed', questions: [] },
+    });
+  }
+
+  // Allowed only for a closed or stopped task: the container is not running and the last known state is
   // 'stopped'. A suspended container is not stopped. A record whose container is gone can go too.
   async remove(id: string): Promise<void> {
     const record = await this.require(id);
+    if (record.closed) {
+      await this.records.delete(id);
+      this.updates.removed(id);
+      return;
+    }
     const inspection = await this.launcher.inspect(id);
     if (inspection.exists) {
       if (inspection.running || record.lastState !== 'stopped') {
@@ -157,10 +192,12 @@ export class TasksService {
       await this.launcher.remove(id);
     }
     await this.records.delete(id);
+    this.updates.removed(id);
   }
 
   async events(id: string, since: number): Promise<BridgeEvent[]> {
     const record = await this.require(id);
+    if (record.closed) throw closedConflict(id);
     const inspection = await this.launcher.inspect(id);
     if (!inspection.exists || !inspection.running) {
       throw new ConflictException(`Task ${id} is not running; its events are not available`);
@@ -180,8 +217,9 @@ export class TasksService {
     const now = new Date().toISOString();
     const branch = `agentic/${id}`;
     const repoUrl = input.repoUrl ?? this.config.repoUrl;
+    const repository = this.config.repositories.find((r) => r.url === repoUrl)?.name ?? repoNameOf(repoUrl);
     const record: TaskRecord = {
-      id, prompt: input.prompt, repoUrl, branch, containerName: `agentic-ui-task-${id}`,
+      id, title: titleFrom(input.prompt, input.title), prompt: input.prompt, repository, repoUrl, branch, containerName: `agentic-ui-task-${id}`,
       taskToken, agentToken, createdAt: now, updatedAt: now, lastState: 'starting',
     };
     if (input.repoRef !== undefined) record.repoRef = input.repoRef;
@@ -193,7 +231,11 @@ export class TasksService {
       const { bridgeUrl } = await this.launcher.launch({
         taskId: id, taskToken, agentToken, prompt: input.prompt, repoUrl, repoRef: input.repoRef, model: input.model, branch,
       });
-      return await this.records.update(id, { bridgeUrl });
+      const launched = await this.records.update(id, { bridgeUrl });
+      // The first poll catches up with the events from the beginning, whatever the state is by then.
+      this.updates.markActed(id);
+      this.updates.changed(toView(launched));
+      return launched;
     } catch (error) {
       await this.launcher.remove(id).catch(() => undefined); // a half-made container or volume
       await this.records.delete(id);
@@ -207,6 +249,7 @@ export class TasksService {
   // "Stopped" is the recorded last state, or what a reachable bridge says.
   private async wake(id: string): Promise<TaskRecord> {
     const record = await this.require(id);
+    if (record.closed) throw closedConflict(id);
     if (record.lastState === 'stopped') throw stoppedConflict(id);
     const inspection = await this.launcher.inspect(id);
     if (!inspection.exists) {
@@ -253,10 +296,21 @@ export class TasksService {
   }
 
   private async observe(record: TaskRecord, status: BridgeStatus, persist = true): Promise<TaskView> {
-    const updated = persist
-      ? await this.records.update(record.id, { lastState: status.state, lastStatus: status })
-      : record;
-    return toView(updated, { state: status.state, reason: status.reason, questions: status.questions, summary: status.summary, branch: status.branch ?? undefined });
+    const live: Live = { state: status.state, reason: status.reason, questions: status.questions, summary: status.summary, branch: status.branch ?? undefined };
+    if (!persist) return toView(record, live);
+    // A task that left starting/running without the poller seeing it still has events to read.
+    if (['starting', 'running'].includes(record.lastState ?? 'starting') && !['starting', 'running'].includes(status.state)) {
+      this.updates.markActed(record.id);
+    }
+    return this.persist(record, { lastState: status.state, lastStatus: status }, live);
+  }
+
+  // Writes the patch and announces the task on the status stream when its view changed.
+  private async persist(record: TaskRecord, patch: Partial<TaskRecord>, live: Live = {}): Promise<TaskView> {
+    const updated = await this.records.update(record.id, patch);
+    const view = toView(updated, live);
+    if (viewsDiffer(toView(record), view)) this.updates.changed(view);
+    return view;
   }
 
   private async require(id: string): Promise<TaskRecord> {
@@ -282,40 +336,14 @@ export class TasksService {
   }
 }
 
+function closedConflict(id: string): ConflictException {
+  return new ConflictException(`Task ${id} is closed`);
+}
+
 function stoppedConflict(id: string): ConflictException {
   return new ConflictException(`Task ${id} takes no prompts or answers: task is stopped`);
 }
 
 function token(): string {
   return randomBytes(32).toString('hex');
-}
-
-interface Live {
-  state?: string;
-  reason?: string;
-  questions?: BridgeQuestion[];
-  summary?: string;
-  branch?: string;
-}
-
-// Built field by field so a token can never slip into a view.
-function toView(record: TaskRecord, live: Live = {}): TaskView {
-  const last = (record.lastStatus ?? {}) as Partial<BridgeStatus>;
-  const view: TaskView = {
-    id: record.id,
-    prompt: record.prompt,
-    repoUrl: record.repoUrl,
-    branch: live.branch ?? record.branch,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    state: live.state ?? record.lastState ?? 'starting',
-    questions: live.questions ?? last.questions ?? [],
-  };
-  if (record.repoRef !== undefined) view.repoRef = record.repoRef;
-  if (record.model !== undefined) view.model = record.model;
-  const reason = live.reason ?? last.reason;
-  if (reason !== undefined) view.reason = reason;
-  const summary = live.summary ?? last.summary;
-  if (summary !== undefined) view.summary = summary;
-  return view;
 }

@@ -136,6 +136,7 @@ describe('tasks REST API (e2e)', () => {
         await post(`/api/tasks/${id}/answer`, { text: 'x' }),
         await post(`/api/tasks/${id}/cancel`),
         await post(`/api/tasks/${id}/stop`),
+        await post(`/api/tasks/${id}/close`),
         record(await api().delete(`/api/tasks/${id}`)),
         await get('/api/tasks/not-an-id'),
       ]) {
@@ -320,6 +321,106 @@ describe('tasks REST API (e2e)', () => {
       expect(parse(both.text).map((e) => e.id)).toEqual(['4']);
       for (let i = 0; i < 50 && bridge.liveClients > 0; i++) await new Promise((r) => setTimeout(r, 20));
       expect(bridge.liveClients).toBe(0);
+    });
+  });
+
+  describe('task view data and sections', () => {
+    it('list and detail carry the fields of the contract', async () => {
+      const { body: task } = await start({ prompt: 'Fix the bug\nin detail', model: 'claude-sonnet-4-5' });
+      const expected = {
+        id: task.id, title: 'Fix the bug', prompt: 'Fix the bug\nin detail', repository: 'default',
+        repoUrl: 'https://github.com/acme/default.git', model: 'claude-sonnet-4-5',
+        state: 'idle', section: 'in-review', questions: [], closed: false,
+        createdAt: expect.stringMatching(/Z$/), updatedAt: expect.stringMatching(/Z$/),
+      };
+      expect((await get(`/api/tasks/${task.id}`)).body).toMatchObject(expected);
+      expect((await get('/api/tasks')).body).toEqual([expect.objectContaining({ ...expected, branch: `agentic/${task.id}` })]);
+    });
+
+    it('lists the newest task first', async () => {
+      const a = (await start({ prompt: 'a' })).body.id;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const b = (await start({ prompt: 'b' })).body.id;
+      expect((await get('/api/tasks')).body.map((t: { id: string }) => t.id)).toEqual([b, a]);
+    });
+
+    it.each([
+      ['running', 'working'],
+      ['idle', 'in-review'],
+      ['stopped', 'done'],
+    ] as const)('state %s is in section %s', async (state, section) => {
+      const { body: task } = await start();
+      bridge.state = state;
+      expect((await get(`/api/tasks/${task.id}`)).body).toMatchObject({ state, section });
+      expect((await get('/api/tasks')).body[0]).toMatchObject({ state, section });
+    });
+
+    it('an open question puts the task under needs-you', async () => {
+      const { body: task } = await start();
+      bridge.ask('Q1', 'Which?', '2026-10-17T10:00:00Z');
+      expect((await get(`/api/tasks/${task.id}`)).body).toMatchObject({ state: 'waiting', section: 'needs-you' });
+    });
+  });
+
+  describe('closing', () => {
+    it('closes an idle task: 202, container and volume gone, record kept in done', async () => {
+      const { body: task } = await start();
+      const res = await post(`/api/tasks/${task.id}/close`);
+      expect(res.status).toBe(202);
+      expect(res.body).toMatchObject({ id: task.id, closed: true, closedAt: expect.stringMatching(/Z$/), state: 'stopped', section: 'done', prompt: 'fix the bug' });
+      expect(launcher.containers.has(task.id)).toBe(false);
+      expect(bridge.requests.some((r) => r.url === '/stop')).toBe(true);
+      const again = await get(`/api/tasks/${task.id}`);
+      expect(again.body).toMatchObject({ closed: true, section: 'done', branch: `agentic/${task.id}` });
+      expect((await get('/api/tasks')).body).toEqual([expect.objectContaining({ id: task.id, closed: true })]);
+    });
+
+    it('closes a running task, with an open question, and clears its questions', async () => {
+      const { body: task } = await start();
+      bridge.ask('Q1', 'Which?', '2026-10-17T10:00:00Z');
+      bridge.state = 'running';
+      const res = await post(`/api/tasks/${task.id}/close`);
+      expect(res.body).toMatchObject({ closed: true, questions: [], section: 'done' });
+      expect(launcher.containers.has(task.id)).toBe(false);
+    });
+
+    it('closing twice is 202 both times with the same closedAt', async () => {
+      const { body: task } = await start();
+      const first = await post(`/api/tasks/${task.id}/close`);
+      const second = await post(`/api/tasks/${task.id}/close`);
+      expect(second.status).toBe(202);
+      expect(second.body.closedAt).toBe(first.body.closedAt);
+    });
+
+    it('answers 409 to prompt, answer, cancel and events of a closed task', async () => {
+      const { body: task } = await start();
+      await post(`/api/tasks/${task.id}/close`);
+      const before = bridge.requests.length;
+      for (const res of [
+        await post(`/api/tasks/${task.id}/prompt`, { text: 'more' }),
+        await post(`/api/tasks/${task.id}/answer`, { text: 'yes' }),
+        await post(`/api/tasks/${task.id}/cancel`),
+        await get(`/api/tasks/${task.id}/events`),
+      ]) {
+        expect(res.status).toBe(409);
+        expect(res.body).toMatchObject({ statusCode: 409, path: expect.stringContaining(task.id) });
+      }
+      expect(bridge.requests).toHaveLength(before);
+      expect(launcher.containers.has(task.id)).toBe(false);
+    });
+
+    it('answers 409 to the full-run stream of a closed task', async () => {
+      const { body: task } = await start();
+      await post(`/api/tasks/${task.id}/close`);
+      expect((await get(`/api/tasks/${task.id}/events/stream`)).status).toBe(409);
+    });
+
+    it('delete works only for a closed or stopped task', async () => {
+      const { body: task } = await start();
+      expect(record(await api().delete(`/api/tasks/${task.id}`)).status).toBe(409);
+      await post(`/api/tasks/${task.id}/close`);
+      expect(record(await api().delete(`/api/tasks/${task.id}`)).status).toBe(204);
+      expect((await get(`/api/tasks/${task.id}`)).status).toBe(404);
     });
   });
 
