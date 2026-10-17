@@ -7,6 +7,7 @@
   "scripts": {
     "build": "nest build && vite build --config frontend/vite.config.mts",
     "start": "node dist/backend/main.js",
+    "start:local": "node tools/start-local.mjs",
     "lint": "eslint \"backend/{src,test}/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config backend/test/e2e/jest-e2e.config.js",

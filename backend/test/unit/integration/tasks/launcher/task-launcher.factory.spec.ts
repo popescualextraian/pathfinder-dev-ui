@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { EngineConfig } from '../../../../../src/commons/engine-config';
 import { DockerTaskLauncher } from '../../../../../src/integration/tasks/launcher/docker-task-launcher';
 import { LocalTaskLauncher } from '../../../../../src/integration/tasks/launcher/local-task-launcher';
@@ -12,6 +13,19 @@ describe('createTaskLauncher', () => {
 
   it('returns the local launcher for "local"', () => {
     expect(createTaskLauncher({ ...config, launcher: 'local', localAgent: 'fake', dataDir: '/tmp/x' })).toBeInstanceOf(LocalTaskLauncher);
+  });
+
+  it('warns at creation that the local launcher has no isolation, and only for it', () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      createTaskLauncher(config);
+      expect(warn).not.toHaveBeenCalled();
+      createTaskLauncher({ ...config, launcher: 'local', localAgent: 'fake', dataDir: '/tmp/x' });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toMatch(/local launcher.*no isolation.*development only/i);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('refuses an unknown launcher, naming it and the known ones', () => {

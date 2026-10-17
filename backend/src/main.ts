@@ -17,6 +17,8 @@ async function bootstrap() {
   }
   const app = await NestFactory.create(AppModule);
   configureApp(app);
+  // SIGINT/SIGTERM close the app, which also stops the processes of the local launcher.
+  app.enableShutdownHooks();
   await app.listen(process.env.PORT ?? 3000);
 }
 void bootstrap();
