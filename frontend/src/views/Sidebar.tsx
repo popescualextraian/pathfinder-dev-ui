@@ -18,7 +18,7 @@ export function Sidebar({ repositories, tasks, selectedRepository, onSelectRepos
         <span className={styles.logo} aria-hidden="true">
           &gt;_
         </span>
-        <span className={styles.brandName}>agentic</span>
+        <span className={styles.brandName}>pathfinder</span>
       </div>
       <div className={styles.newTask}>
         <Button variant="primary" onClick={onNewTask}>
