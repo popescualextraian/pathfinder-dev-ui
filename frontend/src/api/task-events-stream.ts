@@ -10,6 +10,7 @@ export function openTaskEventsStream(
   taskId: string,
   onEvent: (event: BridgeEvent) => void,
   since = 0,
+  handlers: { onOpen?: () => void; onError?: () => void } = {},
 ): () => void {
   let last = since;
   let source: EventSource | undefined;
@@ -19,6 +20,7 @@ export function openTaskEventsStream(
   const connect = () => {
     const es = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/events/stream?since=${last}`);
     source = es;
+    es.onopen = () => handlers.onOpen?.();
     es.onmessage = (e: MessageEvent) => {
       const event = JSON.parse(e.data) as BridgeEvent;
       if (typeof event.seq === 'number' && event.seq > last) last = event.seq;
@@ -27,6 +29,7 @@ export function openTaskEventsStream(
     es.onerror = () => {
       es.close();
       if (closed) return;
+      handlers.onError?.();
       timer = setTimeout(connect, RECONNECT_DELAY_MS);
     };
   };

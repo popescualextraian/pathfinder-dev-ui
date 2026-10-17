@@ -5,6 +5,7 @@ import { FactsPanel } from '../../src/views/FactsPanel';
 import * as api from '../../src/api/tasks-api';
 import { ApiError } from '../../src/api/http';
 import { makeTask } from '../fixtures/tasks';
+import { FakeEventSource } from '../api/fake-event-source';
 
 jest.mock('../../src/api/tasks-api');
 const m = (f: unknown) => f as jest.Mock;
@@ -22,7 +23,10 @@ const idle = (o = {}) => makeTask({ state: 'idle', section: 'in-review', ...o })
 const done = () => idle({ closed: true, section: 'done' });
 const view = (t = makeTask(), onDeleted = jest.fn()) => render(<TaskView task={t} onDeleted={onDeleted} />);
 
-beforeEach(() => jest.resetAllMocks());
+beforeEach(() => {
+  jest.resetAllMocks();
+  FakeEventSource.install();
+});
 
 describe('TaskView header', () => {
   it('working: Cancel turn, no Close; cancel pending and error', async () => {
@@ -210,5 +214,16 @@ describe('NewTaskDialog', () => {
     expect(onStarted).not.toHaveBeenCalled();
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('TaskView full run', () => {
+  it('opens the stream only while the run is shown and closes it when hidden', () => {
+    view();
+    expect(FakeEventSource.instances).toHaveLength(0);
+    fireEvent.click(screen.getByText('View full run ▸'));
+    expect(FakeEventSource.instances).toHaveLength(1);
+    fireEvent.click(screen.getByText('Hide full run ▾'));
+    expect(FakeEventSource.last.closed).toBe(true);
   });
 });
