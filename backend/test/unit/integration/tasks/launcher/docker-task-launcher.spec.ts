@@ -11,6 +11,7 @@ const AGENT_TOKEN = 'made-up-agent-token-bbbb';
 
 const config: EngineConfig = {
   launcher: 'docker',
+  localAgent: 'fake',
   image: 'agentic-dev:test',
   dockerNetwork: 'agentic-net',
   dataDir: '/data',

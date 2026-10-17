@@ -5,6 +5,8 @@ export const ENGINE_CONFIG = Symbol('ENGINE_CONFIG');
 
 export interface EngineConfig {
   launcher: string;
+  // Agent of the local launcher: the fake agent or the real Claude. Unused by other launchers.
+  localAgent: 'fake' | 'claude';
   image: string;
   dockerNetwork: string;
   dataDir: string;
@@ -63,8 +65,17 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
   };
 
   const launcher = value('ENGINE_LAUNCHER') ?? 'docker';
-  const image = required('ENGINE_IMAGE');
-  const dockerNetwork = required('ENGINE_DOCKER_NETWORK');
+  // Only `local` has its own rules; docker and any unknown name (refused later by the launcher
+  // factory) keep the Docker rules.
+  const local = launcher === 'local';
+  let localAgent: 'fake' | 'claude' = 'fake';
+  if (local) {
+    const rawAgent = value('ENGINE_LOCAL_AGENT') ?? 'fake';
+    if (rawAgent === 'fake' || rawAgent === 'claude') localAgent = rawAgent;
+    else problems.push('ENGINE_LOCAL_AGENT must be fake or claude');
+  }
+  const image = local ? (value('ENGINE_IMAGE') ?? '') : required('ENGINE_IMAGE');
+  const dockerNetwork = local ? (value('ENGINE_DOCKER_NETWORK') ?? '') : required('ENGINE_DOCKER_NETWORK');
   const dataDir = required('ENGINE_DATA_DIR');
   if (dataDir && !isAbsolute(dataDir)) problems.push('ENGINE_DATA_DIR must be an absolute path');
   const repoUrl = required('ENGINE_REPO_URL');
@@ -79,10 +90,27 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
     if (h && !allowedRepoHosts.includes(h)) allowedRepoHosts.push(h);
   }
   const project = required('ENGINE_PROJECT');
-  const claudeCodeOauthToken = required('CLAUDE_CODE_OAUTH_TOKEN');
-  const ghToken = required('GH_TOKEN');
-  const gitName = required('ENGINE_GIT_NAME');
-  const gitEmail = required('ENGINE_GIT_EMAIL');
+  let claudeCodeOauthToken: string;
+  let ghToken: string;
+  let gitName: string;
+  let gitEmail: string;
+  if (local) {
+    claudeCodeOauthToken = localAgent === 'claude' ? required('CLAUDE_CODE_OAUTH_TOKEN') : (value('CLAUDE_CODE_OAUTH_TOKEN') ?? '');
+    ghToken = value('GH_TOKEN') ?? '';
+    // Pushing needs an author identity: required as soon as a push token is configured.
+    const identity = (name: string): string => {
+      const v = value(name);
+      if (v === undefined && ghToken) problems.push(`${name} is required when GH_TOKEN is set`);
+      return v ?? '';
+    };
+    gitName = identity('ENGINE_GIT_NAME');
+    gitEmail = identity('ENGINE_GIT_EMAIL');
+  } else {
+    claudeCodeOauthToken = required('CLAUDE_CODE_OAUTH_TOKEN');
+    ghToken = required('GH_TOKEN');
+    gitName = required('ENGINE_GIT_NAME');
+    gitEmail = required('ENGINE_GIT_EMAIL');
+  }
 
   let maxRunning = 2;
   const rawMax = value('ENGINE_MAX_RUNNING');
@@ -113,7 +141,7 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
   );
 
   if (problems.length > 0) throw new EngineConfigError(problems);
-  return { launcher, image, dockerNetwork, dataDir, repoUrl, allowedRepoHosts, project, maxRunning, claudeCodeOauthToken, ghToken, gitName, gitEmail, taskExtraEnv, taskExtraBinds };
+  return { launcher, localAgent, image, dockerNetwork, dataDir, repoUrl, allowedRepoHosts, project, maxRunning, claudeCodeOauthToken, ghToken, gitName, gitEmail, taskExtraEnv, taskExtraBinds };
 }
 
 const SHAPES: Record<string, string> = {

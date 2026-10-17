@@ -30,6 +30,7 @@ describe('loadEngineConfig', () => {
   it('reads a valid config and applies defaults', () => {
     expect(loadEngineConfig(validEnv())).toEqual({
       launcher: 'docker',
+      localAgent: 'fake',
       image: 'agentic-task:test',
       dockerNetwork: 'agentic-net',
       dataDir: '/var/lib/engine',
@@ -151,5 +152,54 @@ describe('loadEngineConfig', () => {
       const extra = { AGENTIC_REPO_URL: '/seed/repo', AGENTIC_ACP_CMD: 'x' };
       expect(loadEngineConfig({ ...validEnv(), ENGINE_TASK_EXTRA_ENV: JSON.stringify(extra) }).taskExtraEnv).toEqual(extra);
     });
+  });
+
+  describe('launcher local', () => {
+    const localEnv = (): NodeJS.ProcessEnv => ({
+      ENGINE_LAUNCHER: 'local',
+      ENGINE_DATA_DIR: '/var/lib/engine',
+      ENGINE_REPO_URL: '/some/checkout',
+      ENGINE_PROJECT: 'example',
+    });
+
+    it('needs no image, network, tokens or identity with the fake agent (default)', () => {
+      const config = loadEngineConfig(localEnv());
+      expect(config).toMatchObject({ launcher: 'local', localAgent: 'fake', image: '', dockerNetwork: '', claudeCodeOauthToken: '', ghToken: '', gitName: '', gitEmail: '' });
+    });
+
+    it('requires data dir, repo and project', () => {
+      expect(errorOf({ ENGINE_LAUNCHER: 'local' }).problems).toEqual([
+        'ENGINE_DATA_DIR is required', 'ENGINE_REPO_URL is required', 'ENGINE_PROJECT is required',
+      ]);
+    });
+
+    it('refuses an unknown agent naming the variable, not the value', () => {
+      const error = errorOf({ ...localEnv(), ENGINE_LOCAL_AGENT: 'secret-agent-name' });
+      expect(error.problems).toEqual(['ENGINE_LOCAL_AGENT must be fake or claude']);
+      expect(error.message).not.toContain('secret-agent-name');
+    });
+
+    it('requires the Claude token only for the claude agent', () => {
+      expect(errorOf({ ...localEnv(), ENGINE_LOCAL_AGENT: 'claude' }).problems).toEqual(['CLAUDE_CODE_OAUTH_TOKEN is required']);
+      expect(loadEngineConfig({ ...localEnv(), ENGINE_LOCAL_AGENT: 'claude', CLAUDE_CODE_OAUTH_TOKEN: TOKEN })).toMatchObject({ localAgent: 'claude', claudeCodeOauthToken: TOKEN });
+    });
+
+    it('requires the git identity only when GH_TOKEN is set', () => {
+      const error = errorOf({ ...localEnv(), GH_TOKEN: GH });
+      expect(error.problems).toEqual(['ENGINE_GIT_NAME is required when GH_TOKEN is set', 'ENGINE_GIT_EMAIL is required when GH_TOKEN is set']);
+      expect(error.message).not.toContain(GH);
+      expect(loadEngineConfig({ ...localEnv(), GH_TOKEN: GH, ENGINE_GIT_NAME: 'n', ENGINE_GIT_EMAIL: 'e@x' })).toMatchObject({ ghToken: GH, gitName: 'n' });
+    });
+  });
+
+  it('keeps the Docker rules: image, network, tokens and identity stay required', () => {
+    expect(errorOf({ ENGINE_DATA_DIR: '/d', ENGINE_REPO_URL: '/r', ENGINE_PROJECT: 'p' }).problems).toEqual([
+      'ENGINE_IMAGE is required', 'ENGINE_DOCKER_NETWORK is required', 'CLAUDE_CODE_OAUTH_TOKEN is required',
+      'GH_TOKEN is required', 'ENGINE_GIT_NAME is required', 'ENGINE_GIT_EMAIL is required',
+    ]);
+  });
+
+  it('ignores ENGINE_LOCAL_AGENT for docker', () => {
+    expect(loadEngineConfig({ ...validEnv(), ENGINE_LOCAL_AGENT: 'bogus' }).localAgent).toBe('fake');
   });
 });
