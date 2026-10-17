@@ -1,7 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Observable } from 'rxjs';
-import { BridgeEvent } from '../../repository/tasks/bridge/bridge-client';
-import { BRIDGE_CLIENT_FACTORY, BridgeClientFactory } from '../../repository/tasks/bridge/bridge-client.factory';
+import { BRIDGE_CLIENT_FACTORY, BridgeClientFactory, BridgeEvent } from './bridge-client';
 import { TaskRecordRepository } from '../../repository/tasks/task-record.repository';
 
 @Injectable()

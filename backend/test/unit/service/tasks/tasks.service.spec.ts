@@ -1,5 +1,5 @@
 import { BadGatewayException, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { BridgeError, BridgeUnreachableError } from '../../../../src/repository/tasks/bridge/bridge-client';
+import { BridgeError, BridgeUnreachableError } from '../../../../src/service/tasks/bridge-client';
 import { TasksService } from '../../../../src/service/tasks/tasks.service';
 import { AGENT_TOKEN, TASK_TOKEN, config, fakeBridge, fakeLauncher, fakeRecords, record, status } from './helpers';
 

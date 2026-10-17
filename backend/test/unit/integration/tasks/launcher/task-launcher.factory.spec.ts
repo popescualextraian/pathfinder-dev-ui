@@ -1,6 +1,6 @@
 import { EngineConfig } from '../../../../../src/commons/engine-config';
-import { DockerTaskLauncher } from '../../../../../src/repository/tasks/launcher/docker-task-launcher';
-import { createTaskLauncher } from '../../../../../src/repository/tasks/launcher/task-launcher.factory';
+import { DockerTaskLauncher } from '../../../../../src/integration/tasks/launcher/docker-task-launcher';
+import { createTaskLauncher } from '../../../../../src/integration/tasks/launcher/task-launcher.factory';
 
 const config = { launcher: 'docker', image: 'i', dockerNetwork: 'n', project: 'p', taskExtraEnv: {}, taskExtraBinds: [] } as unknown as EngineConfig;
 

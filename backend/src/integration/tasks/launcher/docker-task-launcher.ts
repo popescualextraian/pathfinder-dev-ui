@@ -1,7 +1,7 @@
 import Docker from 'dockerode';
 import { EngineConfig } from '../../../commons/engine-config';
 import { gitCredentialEnv } from './git-credential-env';
-import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from './task-launcher';
+import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from '../../../service/tasks/task-launcher';
 
 const BRIDGE_PORT = 8765;
 const STOP_TIMEOUT_SECONDS = 10;

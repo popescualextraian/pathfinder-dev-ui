@@ -2,10 +2,10 @@ import { BadGatewayException, BadRequestException, ConflictException, Inject, In
 import { randomBytes, randomInt } from 'node:crypto';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 import {
-  BridgeClient, BridgeError, BridgeEvent, BridgeQuestion, BridgeStatus, BridgeUnreachableError, waitForStatus,
-} from '../../repository/tasks/bridge/bridge-client';
-import { BRIDGE_CLIENT_FACTORY, BridgeClientFactory } from '../../repository/tasks/bridge/bridge-client.factory';
-import { TASK_LAUNCHER, TaskLauncher } from '../../repository/tasks/launcher/task-launcher';
+  BRIDGE_CLIENT_FACTORY, BridgeClient, BridgeClientFactory, BridgeError, BridgeEvent, BridgeQuestion, BridgeStatus,
+  BridgeUnreachableError, waitForStatus,
+} from './bridge-client';
+import { TASK_LAUNCHER, TaskLauncher } from '../../service/tasks/task-launcher';
 import { TaskRecord, TaskRecordRepository } from '../../repository/tasks/task-record.repository';
 
 // What clients see of a task: the record without the tokens, plus state from the bridge.

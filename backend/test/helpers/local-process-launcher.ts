@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from '../../src/repository/tasks/launcher/task-launcher';
+import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from '../../src/service/tasks/task-launcher';
 
 export const FAKE_AGENT = resolve(__dirname, '../fixtures/fake-agent.mjs');
 

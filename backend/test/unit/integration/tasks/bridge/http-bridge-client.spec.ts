@@ -1,13 +1,13 @@
 import { createServer, IncomingMessage, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { WebSocketServer } from 'ws';
+import { HttpBridgeClient } from '../../../../../src/integration/tasks/bridge/http-bridge-client';
 import {
-  BridgeClient,
   BridgeError,
   BridgeEvent,
   BridgeUnreachableError,
   waitForStatus,
-} from '../../../../../src/repository/tasks/bridge/bridge-client';
+} from '../../../../../src/service/tasks/bridge-client';
 
 const TOKEN = 'made-up-task-token-aaaaaaaa';
 
@@ -32,7 +32,7 @@ function event(seq: number): BridgeEvent {
   return { seq, ts: '2026-10-16T10:00:00Z', task: 'T-1', session: null, agent: 'claude', type: 'message', data: { n: seq } };
 }
 
-describe('BridgeClient', () => {
+describe('HttpBridgeClient', () => {
   let server: Server;
   let wss: WebSocketServer;
   let baseUrl: string;
@@ -83,8 +83,8 @@ describe('BridgeClient', () => {
     await new Promise<void>((r) => server.close(() => r()));
   });
 
-  const client = (extra: Partial<ConstructorParameters<typeof BridgeClient>[0]> = {}) =>
-    new BridgeClient({ baseUrl, taskToken: TOKEN, ...extra });
+  const client = (extra: Partial<ConstructorParameters<typeof HttpBridgeClient>[0]> = {}) =>
+    new HttpBridgeClient({ baseUrl, taskToken: TOKEN, ...extra });
 
   it('sends the bearer token and the container name as Host header', async () => {
     reply = () => ({ status: 200, body: { state: 'idle', questions: [] } });
@@ -173,18 +173,18 @@ describe('BridgeClient', () => {
     reply = () => ({ status: 401, body: { error: { code: 'unauthorized', message: 'unauthorized' } } });
     const error = (await client().status().catch((e: unknown) => e)) as Error;
     expect(error.message + String(error.stack ?? '').split('\n')[0]).not.toContain(TOKEN);
-    const dead = new BridgeClient({ baseUrl: await closedPortUrl(), taskToken: TOKEN });
+    const dead = new HttpBridgeClient({ baseUrl: await closedPortUrl(), taskToken: TOKEN });
     const unreachable = (await dead.status().catch((e: unknown) => e)) as Error;
     expect(JSON.stringify(unreachable.message)).not.toContain(TOKEN);
   });
 
   it('maps connection refused to BridgeUnreachableError', async () => {
-    const dead = new BridgeClient({ baseUrl: await closedPortUrl(), taskToken: TOKEN });
+    const dead = new HttpBridgeClient({ baseUrl: await closedPortUrl(), taskToken: TOKEN });
     await expect(dead.status()).rejects.toBeInstanceOf(BridgeUnreachableError);
   });
 
   it('maps DNS failure to BridgeUnreachableError', async () => {
-    const bad = new BridgeClient({ baseUrl: 'http://no-such-host.invalid:8765', taskToken: TOKEN });
+    const bad = new HttpBridgeClient({ baseUrl: 'http://no-such-host.invalid:8765', taskToken: TOKEN });
     await expect(bad.status()).rejects.toBeInstanceOf(BridgeUnreachableError);
   });
 
@@ -245,7 +245,7 @@ describe('BridgeClient', () => {
     });
 
     it('rejects with BridgeUnreachableError when nothing listens', async () => {
-      const dead = new BridgeClient({ baseUrl: await closedPortUrl(), taskToken: TOKEN });
+      const dead = new HttpBridgeClient({ baseUrl: await closedPortUrl(), taskToken: TOKEN });
       const run = async () => { for await (const e of dead.eventStream(0)) void e; };
       await expect(run()).rejects.toBeInstanceOf(BridgeUnreachableError);
     });
@@ -286,12 +286,12 @@ describe('BridgeClient', () => {
   describe('malformed payloads', () => {
     it('status with a non-JSON 200 body is BridgeUnreachableError', async () => {
       reply = () => ({ status: 200, raw: '<html>oops</html>' });
-      await expect(new BridgeClient({ baseUrl, taskToken: TOKEN }).status()).rejects.toBeInstanceOf(BridgeUnreachableError);
+      await expect(new HttpBridgeClient({ baseUrl, taskToken: TOKEN }).status()).rejects.toBeInstanceOf(BridgeUnreachableError);
     });
 
     it('events with a malformed line is BridgeUnreachableError', async () => {
       reply = () => ({ status: 200, raw: '{"seq":1}\nnot json\n' });
-      await expect(new BridgeClient({ baseUrl, taskToken: TOKEN }).events(0)).rejects.toBeInstanceOf(BridgeUnreachableError);
+      await expect(new HttpBridgeClient({ baseUrl, taskToken: TOKEN }).events(0)).rejects.toBeInstanceOf(BridgeUnreachableError);
     });
   });
 });

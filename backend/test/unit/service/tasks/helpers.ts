@@ -1,6 +1,6 @@
-import { BridgeStatus } from '../../../../src/repository/tasks/bridge/bridge-client';
+import { BridgeStatus } from '../../../../src/service/tasks/bridge-client';
 import { TaskRecord } from '../../../../src/repository/tasks/task-record.repository';
-import { TaskLauncher } from '../../../../src/repository/tasks/launcher/task-launcher';
+import { TaskLauncher } from '../../../../src/service/tasks/task-launcher';
 import { EngineConfig } from '../../../../src/commons/engine-config';
 
 export const TASK_TOKEN = 'task-token-' + 'a'.repeat(32);

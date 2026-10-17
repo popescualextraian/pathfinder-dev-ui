@@ -1,8 +1,8 @@
 import Docker from 'dockerode';
 import { EngineConfig } from '../../../../../src/commons/engine-config';
-import { DockerTaskLauncher } from '../../../../../src/repository/tasks/launcher/docker-task-launcher';
-import { gitCredentialEnv } from '../../../../../src/repository/tasks/launcher/git-credential-env';
-import { LaunchSpec } from '../../../../../src/repository/tasks/launcher/task-launcher';
+import { DockerTaskLauncher } from '../../../../../src/integration/tasks/launcher/docker-task-launcher';
+import { gitCredentialEnv } from '../../../../../src/integration/tasks/launcher/git-credential-env';
+import { LaunchSpec } from '../../../../../src/service/tasks/task-launcher';
 
 const OAUTH = 'made-up-oauth-token-xxxx';
 const GH = 'made-up-gh-token-yyyy';

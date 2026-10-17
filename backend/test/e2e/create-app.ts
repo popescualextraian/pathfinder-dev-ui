@@ -3,8 +3,8 @@ import { rmSync } from 'node:fs';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
-import { BRIDGE_CLIENT_FACTORY } from '../../src/repository/tasks/bridge/bridge-client.factory';
-import { TASK_LAUNCHER } from '../../src/repository/tasks/launcher/task-launcher';
+import { BRIDGE_CLIENT_FACTORY } from '../../src/service/tasks/bridge-client';
+import { TASK_LAUNCHER } from '../../src/service/tasks/task-launcher';
 import { FakeLauncher } from '../helpers/fake-launcher';
 import { setTestEnv } from '../helpers/test-env';
 

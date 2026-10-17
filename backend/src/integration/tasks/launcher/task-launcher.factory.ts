@@ -1,6 +1,6 @@
 import { EngineConfig } from '../../../commons/engine-config';
 import { DockerTaskLauncher } from './docker-task-launcher';
-import { TaskLauncher } from './task-launcher';
+import { TaskLauncher } from '../../../service/tasks/task-launcher';
 
 const LAUNCHERS: Record<string, (config: EngineConfig) => TaskLauncher> = {
   docker: (config) => new DockerTaskLauncher(config),

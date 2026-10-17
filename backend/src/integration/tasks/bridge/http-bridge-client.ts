@@ -1,46 +1,12 @@
 import { request } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { setTimeout as sleep } from 'node:timers/promises';
 import WebSocket from 'ws';
+import {
+  AnswerInput, BridgeClient, BridgeError, BridgeEvent, BridgeStatus, BridgeUnreachableError,
+} from '../../../service/tasks/bridge-client';
 
 // Client of the bridge HTTP/WebSocket API v1. Uses node:http (not fetch) so the Host header can be
 // set: the bridge only accepts loopback or the names in AGENTIC_BRIDGE_HOSTS.
-
-export type BridgeState =
-  | 'starting' | 'running' | 'waiting' | 'idle' | 'suspended' | 'stopped' | 'failed' | 'interrupted';
-
-export interface BridgeQuestion {
-  id: string;
-  source: 'permission' | 'ask';
-  text: string;
-  options: string[];
-  recommendation: string | null;
-  asked: string;
-}
-
-export interface BridgeStatus {
-  task: string;
-  state: BridgeState;
-  reason: string;
-  branch: string | null;
-  summary: string;
-  seq: number;
-  allowed_actions: string[];
-  questions: BridgeQuestion[];
-  [key: string]: unknown;
-}
-
-export type BridgeEventType = 'state' | 'message' | 'tool' | 'plan' | 'question' | 'answer' | 'gate' | 'error';
-
-export interface BridgeEvent {
-  seq: number;
-  ts: string;
-  task: string;
-  session: string | null;
-  agent: string;
-  type: BridgeEventType;
-  data: Record<string, unknown>;
-}
 
 export interface BridgeClientOptions {
   baseUrl: string;
@@ -51,29 +17,9 @@ export interface BridgeClientOptions {
   timeoutMs?: number;
 }
 
-export interface AnswerInput {
-  text: string;
-  question?: string;
-  grant?: string[];
-}
-
-export class BridgeError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) {
-    super(message);
-    this.name = 'BridgeError';
-  }
-}
-
-export class BridgeUnreachableError extends Error {
-  constructor(reason: string) {
-    super(`Bridge unreachable: ${reason}`);
-    this.name = 'BridgeUnreachableError';
-  }
-}
-
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-export class BridgeClient {
+export class HttpBridgeClient implements BridgeClient {
   private readonly url: URL;
   private readonly token: string;
   private readonly host: string;
@@ -253,27 +199,4 @@ function errorFrom(status: number, text: string): BridgeError {
 function describe(error: Error): string {
   const code = (error as NodeJS.ErrnoException).code;
   return code ?? error.message;
-}
-
-export interface WaitForStatusOptions {
-  timeoutMs: number;
-  intervalMs: number;
-}
-
-// Polls status() until the bridge answers. 503 starting and unreachable count as not yet; any other
-// bridge error (for example 401) is returned at once.
-export async function waitForStatus(client: BridgeClient, options: WaitForStatusOptions): Promise<BridgeStatus> {
-  const deadline = Date.now() + options.timeoutMs;
-  for (;;) {
-    try {
-      return await client.status();
-    } catch (error) {
-      const notYet = error instanceof BridgeUnreachableError || (error instanceof BridgeError && error.status === 503);
-      if (!notYet) throw error;
-      if (Date.now() + options.intervalMs >= deadline) {
-        throw new Error(`Bridge did not answer within ${options.timeoutMs} ms`, { cause: error });
-      }
-    }
-    await sleep(options.intervalMs);
-  }
 }

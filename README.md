@@ -164,7 +164,7 @@ daemon available and have not been run yet; `docker compose config` accepts the 
 ## Launchers
 
 A launcher runs task containers somewhere. The interface is `TaskLauncher` in
-`backend/src/repository/tasks/launcher/task-launcher.ts`:
+`backend/src/service/tasks/task-launcher.ts`:
 
 ```ts
 launch(spec: LaunchSpec): Promise<LaunchResult>   // create and start; returns the bridge base URL
@@ -178,8 +178,8 @@ countRunning(): Promise<number>                   // for the ENGINE_MAX_RUNNING 
 The bridge client does not depend on the launcher: the launcher only returns the bridge base URL, and
 the service talks to that URL with the task token. To add another launcher (for example Azure):
 
-1. Implement `TaskLauncher` in `backend/src/repository/tasks/launcher/` (it gets the `EngineConfig`).
-2. Register it in `backend/src/repository/tasks/launcher/task-launcher.factory.ts` under a new name.
+1. Implement `TaskLauncher` in `backend/src/integration/tasks/launcher/` (it gets the `EngineConfig`).
+2. Register it in `backend/src/integration/tasks/launcher/task-launcher.factory.ts` under a new name.
 3. Use that name as `ENGINE_LAUNCHER`.
 4. Add unit tests next to `docker-task-launcher.spec.ts`; the bridge URL it returns must be reachable
    from the engine, and the container needs the same environment contract as the Docker one
@@ -194,9 +194,9 @@ backend/
     app.module.ts           imports the api modules and serves dist/frontend
     api/<area>/             controllers (HTTP only, no business logic): system/, tasks/ (+ dto/)
     service/<area>/         business logic: system/, tasks/ (tasks.service.ts, task-events.service.ts)
-    repository/<area>/      data access: system/ (package.json), tasks/
-      tasks/                task-record.repository.ts (JSON files), bridge/ (bridge client),
-                            launcher/ (TaskLauncher, Docker launcher, factory)
+    integration/<area>/     external systems and runtimes: tasks/ bridge/ (HttpBridgeClient),
+                            launcher/ (Docker launcher, factory); implements the service's interfaces
+    repository/<area>/      storage only: system/ (package.json), tasks/ (task-record.repository.ts, JSON files)
     commons/                engine config, validation pipe, logging interceptor, exception filters, shared utilities
   test/
     unit/                   unit tests, mirroring src/
@@ -220,9 +220,12 @@ Build output: `dist/backend` (Nest) and `dist/frontend` (Vite).
 
 ## Layer rules
 
-- Backend dependencies go only downwards: `api` → `service` → `repository` → `commons`.
+- Backend dependencies go only downwards: `api` → `service` → `integration` / `repository` → `commons`. Integration = external systems and
+  runtimes (launchers, bridge client); repository = storage only. The service owns the interfaces it needs
+  (`TaskLauncher`, `BridgeClient` and their tokens) and imports no integration class; only its Nest module
+  imports the integration module.
 - Each area has one Nest module per layer (`<Area>ApiModule`, `<Area>ServiceModule`,
-  `<Area>RepositoryModule`); a layer's module imports only the module of the layer below.
+  `<Area>IntegrationModule`, `<Area>RepositoryModule`); a layer's module imports only the module of the layer below.
 - Routes are prefixed with the area: `/api/<area>/...`.
 - Cross-cutting concerns (validation, logging, errors) live in pipes, interceptors and filters
   in `commons/`, registered globally in `app.setup.ts`, not in each method.

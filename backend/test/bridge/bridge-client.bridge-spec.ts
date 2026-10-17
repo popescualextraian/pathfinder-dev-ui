@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { BridgeClient, BridgeError, BridgeEvent, waitForStatus } from '../../src/repository/tasks/bridge/bridge-client';
+import { HttpBridgeClient } from '../../src/integration/tasks/bridge/http-bridge-client';
+import { BridgeClient, BridgeError, BridgeEvent, waitForStatus } from '../../src/service/tasks/bridge-client';
 import { describeWithBridge, LocalProcessLauncher, until } from '../helpers/local-process-launcher';
 
 // The BridgeClient against the real agentic-bridge with the fake agent.
@@ -13,7 +14,7 @@ describeWithBridge('BridgeClient against the real bridge', () => {
     const { bridgeUrl } = await launcher.launch({
       taskId, taskToken, agentToken: randomBytes(16).toString('hex'), prompt: 'first prompt', repoUrl: 'https://example.invalid/r.git', branch: `agentic/${taskId}`,
     });
-    client = new BridgeClient({ baseUrl: bridgeUrl, taskToken });
+    client = new HttpBridgeClient({ baseUrl: bridgeUrl, taskToken });
   });
 
   afterAll(async () => {
@@ -39,7 +40,7 @@ describeWithBridge('BridgeClient against the real bridge', () => {
   });
 
   it('rejects a wrong token', async () => {
-    const wrong = new BridgeClient({ baseUrl: (await launcher.inspect(taskId)).bridgeUrl, taskToken: 'x'.repeat(32) });
+    const wrong = new HttpBridgeClient({ baseUrl: (await launcher.inspect(taskId)).bridgeUrl, taskToken: 'x'.repeat(32) });
     await expect(wrong.status()).rejects.toMatchObject({ status: 401 });
   });
 

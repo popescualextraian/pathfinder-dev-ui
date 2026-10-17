@@ -1,6 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { firstValueFrom, toArray } from 'rxjs';
-import { BridgeEvent } from '../../../../src/repository/tasks/bridge/bridge-client';
+import { BridgeEvent } from '../../../../src/service/tasks/bridge-client';
 import { TaskEventsService } from '../../../../src/service/tasks/task-events.service';
 import { fakeBridge, fakeRecords, record } from './helpers';
 
