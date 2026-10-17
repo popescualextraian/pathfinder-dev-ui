@@ -1,7 +1,7 @@
 import Docker from 'dockerode';
 import { EngineConfig } from '../../../commons/engine-config';
 import { gitCredentialEnv } from './git-credential-env';
-import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from '../../../service/tasks/task-launcher';
+import { LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../../service/tasks/task-launcher';
 
 const BRIDGE_PORT = 8765;
 const STOP_TIMEOUT_SECONDS = 10;
@@ -119,7 +119,7 @@ export class DockerTaskLauncher implements TaskLauncher {
       ...(spec.repoRef ? { AGENTIC_REPO_REF: spec.repoRef } : {}),
       AGENTIC_PROMPT: spec.prompt,
       ...(spec.model ? { AGENTIC_MODEL: spec.model } : {}),
-      AGENTIC_ALLOWED_ACTIONS: 'push',
+      AGENTIC_ALLOWED_ACTIONS: TASK_GRANTS,
       AGENTIC_WORKTREE: '1',
       AGENTIC_BRANCH: spec.branch,
       AGENTIC_BRIDGE_HOSTS: name,

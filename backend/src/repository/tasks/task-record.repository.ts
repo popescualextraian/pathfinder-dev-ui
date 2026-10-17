@@ -25,6 +25,14 @@ export interface TaskRecord {
   // Last state seen from the bridge, for listing without asking every bridge.
   lastState?: string;
   lastStatus?: unknown;
+  // The whole last final agent message and its time, from the task poller.
+  lastMessage?: string;
+  lastMessageAt?: string;
+  // Last event seq the task poller has processed.
+  lastSeq?: number;
+  // Closed by the user: container gone, record kept. Absent means not closed.
+  closed?: boolean;
+  closedAt?: string;
 }
 
 const ID = /^T-\d{8}-[a-z0-9]{4}$/;

@@ -87,11 +87,14 @@ export class TasksService {
   }
 
   async list(): Promise<TaskView[]> {
-    return (await this.records.list()).map((record) => toView(record));
+    return (await this.records.list())
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((record) => toView(record));
   }
 
   async get(id: string): Promise<TaskView> {
     const record = await this.require(id);
+    if (record.closed) return toView(record);
     const inspection = await this.launcher.inspect(id);
     if (!inspection.exists) return toView(record, { state: 'stopped', reason: 'container is gone' });
     if (!inspection.running) {
@@ -129,11 +132,13 @@ export class TasksService {
 
   async cancel(id: string): Promise<TaskView> {
     const record = await this.require(id);
+    if (record.closed) throw closedConflict(id);
     return this.observe(record, await this.bridgeFor(record).cancel());
   }
 
   async stop(id: string): Promise<TaskView> {
     const record = await this.require(id);
+    if (record.closed) return toView(record);
     try {
       await this.bridgeFor(record).stop();
     } catch {
@@ -145,10 +150,36 @@ export class TasksService {
     return toView(updated);
   }
 
-  // Allowed only for a stopped task: the container is not running and the last known state is
+  // Stops the task if it runs, removes its container and volume and keeps the record as closed
+  // (prompt, last response, branch, times). Closing a closed task changes nothing.
+  async close(id: string): Promise<TaskView> {
+    const record = await this.require(id);
+    if (record.closed) return toView(record);
+    const inspection = await this.launcher.inspect(id);
+    if (inspection.exists && inspection.running) {
+      try {
+        await this.bridgeFor(record).stop();
+      } catch {
+        // Best effort, as in stop(): the container goes either way.
+      }
+      await this.launcher.stop(id);
+    }
+    await this.launcher.remove(id);
+    const updated = await this.records.update(id, {
+      closed: true, closedAt: new Date().toISOString(), lastState: 'stopped',
+      lastStatus: { ...(record.lastStatus as object | undefined), state: 'stopped', reason: 'closed', questions: [] },
+    });
+    return toView(updated);
+  }
+
+  // Allowed only for a closed or stopped task: the container is not running and the last known state is
   // 'stopped'. A suspended container is not stopped. A record whose container is gone can go too.
   async remove(id: string): Promise<void> {
     const record = await this.require(id);
+    if (record.closed) {
+      await this.records.delete(id);
+      return;
+    }
     const inspection = await this.launcher.inspect(id);
     if (inspection.exists) {
       if (inspection.running || record.lastState !== 'stopped') {
@@ -161,6 +192,7 @@ export class TasksService {
 
   async events(id: string, since: number): Promise<BridgeEvent[]> {
     const record = await this.require(id);
+    if (record.closed) throw closedConflict(id);
     const inspection = await this.launcher.inspect(id);
     if (!inspection.exists || !inspection.running) {
       throw new ConflictException(`Task ${id} is not running; its events are not available`);
@@ -208,6 +240,7 @@ export class TasksService {
   // "Stopped" is the recorded last state, or what a reachable bridge says.
   private async wake(id: string): Promise<TaskRecord> {
     const record = await this.require(id);
+    if (record.closed) throw closedConflict(id);
     if (record.lastState === 'stopped') throw stoppedConflict(id);
     const inspection = await this.launcher.inspect(id);
     if (!inspection.exists) {
@@ -281,6 +314,10 @@ export class TasksService {
       if (!(await this.records.get(id))) return id;
     }
   }
+}
+
+function closedConflict(id: string): ConflictException {
+  return new ConflictException(`Task ${id} is closed`);
 }
 
 function stoppedConflict(id: string): ConflictException {

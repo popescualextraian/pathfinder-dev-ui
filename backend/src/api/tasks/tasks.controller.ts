@@ -55,6 +55,12 @@ export class TasksController {
     return this.tasks.cancel(id);
   }
 
+  @Post(':id/close')
+  @HttpCode(202)
+  close(@Param('id') id: string): Promise<TaskView> {
+    return this.tasks.close(id);
+  }
+
   @Post(':id/stop')
   @HttpCode(202)
   stop(@Param('id') id: string): Promise<TaskView> {
