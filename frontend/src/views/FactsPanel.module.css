@@ -1,0 +1,23 @@
+.facts {
+  margin: 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.facts dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--msg-red);
+  font-weight: 700;
+}
+.facts dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.mono {
+  font-family: var(--font-mono);
+}

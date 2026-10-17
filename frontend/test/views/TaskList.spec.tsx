@@ -10,14 +10,55 @@ import { makeTask } from '../fixtures/tasks';
 
 jest.mock('../../src/api/tasks-api');
 jest.mock('../../src/api/repositories-api');
-jest.mock('../../src/state/use-system-info', () => ({ useSystemInfo: () => ({ status: 'loading' }) }));
+jest.mock('../../src/state/use-system-info', () => ({
+  useSystemInfo: () => ({ status: 'loading' }),
+}));
 
 const tasks = [
-  makeTask({ id: 'T-w', title: 'Waiting one', state: 'waiting', section: 'needs-you', questions: [{ id: 'q', source: 'ask', text: 'Which DB?', options: [], recommendation: null, asked: '' }], lastMessage: 'ignored' }),
-  makeTask({ id: 'T-r', title: 'Running one', state: 'running', section: 'working', lastMessage: 'Working on it' }),
-  makeTask({ id: 'T-i', title: 'Idle one', state: 'idle', section: 'in-review', summary: 'All done here' }),
-  makeTask({ id: 'T-c', title: 'Closed one', state: 'idle', section: 'done', closed: true }),
-  makeTask({ id: 'T-s', title: 'Stopped one', state: 'stopped', section: 'done' }),
+  makeTask({
+    id: 'T-w',
+    title: 'Waiting one',
+    state: 'waiting',
+    section: 'needs-you',
+    questions: [
+      {
+        id: 'q',
+        source: 'ask',
+        text: 'Which DB?',
+        options: [],
+        recommendation: null,
+        asked: '',
+      },
+    ],
+    lastMessage: 'ignored',
+  }),
+  makeTask({
+    id: 'T-r',
+    title: 'Running one',
+    state: 'running',
+    section: 'working',
+    lastMessage: 'Working on it',
+  }),
+  makeTask({
+    id: 'T-i',
+    title: 'Idle one',
+    state: 'idle',
+    section: 'in-review',
+    summary: 'All done here',
+  }),
+  makeTask({
+    id: 'T-c',
+    title: 'Closed one',
+    state: 'idle',
+    section: 'done',
+    closed: true,
+  }),
+  makeTask({
+    id: 'T-s',
+    title: 'Stopped one',
+    state: 'stopped',
+    section: 'done',
+  }),
 ];
 
 describe('TaskList sections', () => {
@@ -90,13 +131,19 @@ describe('App: sidebar, filter and stream', () => {
   beforeEach(() => {
     FakeEventSource.install();
     window.location.hash = '';
+    (tasksApi.getTask as jest.Mock).mockResolvedValue(makeTask({ id: 'T-r', title: 'Running one' }));
     (reposApi.listRepositories as jest.Mock).mockResolvedValue([
       { name: 'repo-a', url: 'a', default: true },
       { name: 'repo-b', url: 'b', default: false },
     ]);
     (tasksApi.listTasks as jest.Mock).mockResolvedValue([
       ...tasks,
-      makeTask({ id: 'T-b', title: 'In B', repository: 'repo-b', createdAt: '2026-10-17T09:00:00Z' }),
+      makeTask({
+        id: 'T-b',
+        title: 'In B',
+        repository: 'repo-b',
+        createdAt: '2026-10-17T09:00:00Z',
+      }),
     ]);
   });
 
@@ -123,7 +170,7 @@ describe('App: sidebar, filter and stream', () => {
     fireEvent.click(await screen.findByText('Running one'));
     expect(window.location.hash).toBe('#/task/T-r');
     await waitFor(() =>
-      expect(screen.getByText('Running one').closest('button')?.getAttribute('aria-current')).toBe('true'),
+      expect(within(screen.getByRole('region', { name: 'Working' })).getByText('Running one').closest('button')?.getAttribute('aria-current')).toBe('true'),
     );
   });
 
@@ -132,7 +179,11 @@ describe('App: sidebar, filter and stream', () => {
     await screen.findByText('Running one');
     expect(within(screen.getByRole('region', { name: 'Working' })).getByText('Running one')).toBeTruthy();
     act(() =>
-      FakeEventSource.last.emit('task', { ...tasks[1], state: 'waiting', section: 'needs-you' }),
+      FakeEventSource.last.emit('task', {
+        ...tasks[1],
+        state: 'waiting',
+        section: 'needs-you',
+      }),
     );
     expect(within(screen.getByRole('region', { name: 'Needs you' })).getByText('Running one')).toBeTruthy();
     expect(within(screen.getByRole('region', { name: 'Working' })).queryByText('Running one')).toBeNull();

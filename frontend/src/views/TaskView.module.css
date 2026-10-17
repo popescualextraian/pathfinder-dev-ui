@@ -1,0 +1,165 @@
+.view {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 100%;
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.title {
+  margin: 0;
+  font-size: 20px;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.kicker {
+  margin: 0 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--msg-red);
+  font-weight: 700;
+}
+.block {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  color: var(--ink);
+}
+.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--msg-red);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.question {
+  border: 1px solid var(--accent-gold);
+  background: rgba(217, 164, 65, 0.1);
+  border-radius: var(--radius-card);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.row input,
+.row textarea,
+.field input,
+.field textarea,
+.field select {
+  flex: 1;
+  font: inherit;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.error {
+  color: var(--msg-red);
+  font-size: 13px;
+  margin: 0;
+}
+.runLink {
+  align-self: flex-start;
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-card);
+  padding: 8px 14px;
+  font: inherit;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.reply {
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  background: var(--paper);
+  padding-top: 8px;
+}
+.send {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--msg-red);
+  color: var(--paper);
+  cursor: pointer;
+}
+.send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.confirm {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+.empty {
+  padding: 24px;
+  color: var(--ink-soft);
+}
+.dialog {
+  position: fixed;
+  inset: 0;
+  background: rgba(29, 29, 43, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+.panel {
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  padding: 20px;
+  width: 460px;
+  max-width: 95vw;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.panel h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.field input,
+.field textarea,
+.field select {
+  font-weight: 400;
+}
