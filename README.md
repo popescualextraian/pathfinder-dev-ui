@@ -156,7 +156,7 @@ daemon available and have not been run yet; `docker compose config` accepts the 
 |---|---|
 | `npm test` | Jest unit tests: backend (`backend/test/unit/`) and frontend (`frontend/test/`, jsdom + React Testing Library) |
 | `npm run test:e2e` | Backend e2e tests (`backend/test/e2e/`, Jest + supertest; REST API with a fake launcher and a fake bridge). Needs a prior `npm run build` for the frontend tests. |
-| `npm run test:bridge` | `backend/test/bridge/`: the real `agentic-bridge` as a local process with a fake agent (`backend/test/fixtures/fake-agent.mjs`), driven through the bridge client and the task service. Skipped with a message on stderr where `agentic-bridge` is not on PATH. |
+| `npm run test:bridge` | `backend/test/bridge/`: the real `agentic-bridge` as a local process with a fake agent (`tools/fake-agent/fake-agent.mjs`), driven through the bridge client and the task service. Skipped with a message on stderr where `agentic-bridge` is not on PATH. |
 | `npm run test:docker` | `backend/test/docker/`: real Docker, real task image, fake agent: start a task, reach idle, prompt and see the echo, wake it after `docker stop`, stop it (a prompt is then refused with 409 without starting it), remove, check container and volume are gone. Needs both `ENGINE_IMAGE` (the task image) and `FAKE_AGENT_DIR` (directory holding agentic-dev-base's `bridge/test/fake-agent.mjs`, mounted at `/fake`), and a reachable Docker daemon (Linux Docker or Docker Desktop); otherwise skipped with a message on stderr. The test process never connects to container IPs: bridge requests run in a helper container from `ENGINE_IMAGE` on the test network (`node` with a small built-ins-only script, `backend/test/docker/bridge-request.cjs`) and reach the task by container name, as the UI does. It creates a temporary network, the helper container and a local git repository (bound into the task and cloned from there, no GitHub needed), and removes all of them, task containers and volumes in `afterAll`, also after a failure. Example: `ENGINE_IMAGE=agentic-pathfinder-dev-ui:local FAKE_AGENT_DIR=/path/to/agentic-dev-base/bridge/test npm run test:docker` |
 | `npm run test:ui` | Playwright (`e2e/`). Builds and starts the app on port 3100, uses the Chromium under `PLAYWRIGHT_BROWSERS_PATH` if set. |
 | `npm run lint` | ESLint for `backend/src/` and `backend/test/` |
@@ -203,7 +203,8 @@ backend/
     e2e/                    Nest + supertest tests and their Jest config
     bridge/                 real-bridge suite (npm run test:bridge)
     docker/                 real-Docker suite (npm run test:docker)
-    fixtures/, helpers/     fake agent, fake bridge, fake and local-process launchers
+    helpers/                fake bridge, fake and local-process launchers
+tools/fake-agent/           fake agent (fake-agent.mjs) used by the bridge suite
 frontend/
   src/
     api/                    the only code that calls the backend

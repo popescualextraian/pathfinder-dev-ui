@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from '../../src/service/tasks/task-launcher';
 
-export const FAKE_AGENT = resolve(__dirname, '../fixtures/fake-agent.mjs');
+export const FAKE_AGENT = resolve(__dirname, '../../../tools/fake-agent/fake-agent.mjs');
 
 // True when the real bridge executable is on PATH.
 export function bridgeAvailable(): boolean {

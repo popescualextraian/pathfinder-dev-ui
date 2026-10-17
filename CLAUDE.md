@@ -38,7 +38,7 @@ Task engine (`backend/src/service/tasks`, `backend/src/integration/tasks`, `back
 - Bridge events are relayed to clients as SSE (`task-events.service.ts`). Bridge errors map to HTTP via `bridge-error.filter.ts` (400/404/409/503 pass through, anything else is 502).
 - `engine-config.ts` validates env at startup and names the bad variable without printing values.
 
-Test helpers (`backend/test/helpers`, `fixtures`) provide a fake bridge, fake launcher, local-process launcher and fake agent used by the e2e/bridge/docker suites.
+Test helpers (`backend/test/helpers`; the fake agent is `tools/fake-agent/fake-agent.mjs`) provide a fake bridge, fake launcher, local-process launcher and fake agent used by the e2e/bridge/docker suites.
 
 ## Notes
 
