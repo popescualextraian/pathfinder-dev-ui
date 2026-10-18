@@ -225,6 +225,24 @@ describeWithDocker('TasksService against real Docker', () => {
     await inState('idle');
   });
 
+  it('reads the task ledger from /task: nothing without one, the text with one', async () => {
+    expect(await launcher!.readLedger(task.id)).toBeUndefined();
+    const line = (session: string, input: number) => JSON.stringify({
+      schema: 'cost-record/v1', ts: '2026-10-18T10:00:00Z', project: 'docker-test', harness: 'claude', session,
+      context: { kind: 'task', task: task.id }, models: [],
+      totals: { input, output: 2, cache_read: 3, cache_write: 4, cost: { estimate: 0.5 } },
+    });
+    const ledger = `${line('s1', 10)}\n${line('s2', 20)}\n`;
+    const exec = await docker.getContainer(`agentic-ui-task-${task.id}`).exec({
+      Cmd: ['sh', '-c', `printf %s ${Buffer.from(ledger).toString('base64')} | base64 -d > /task/ledger.jsonl`],
+      AttachStdout: true, AttachStderr: true,
+    });
+    const stream = await exec.start({ Detach: false, Tty: false });
+    await new Promise((done) => { stream.on('end', done); stream.on('close', done); stream.resume(); });
+    expect((await exec.inspect()).ExitCode).toBe(0);
+    expect(await launcher!.readLedger(task.id)).toBe(ledger);
+  });
+
   it('wakes a container stopped with docker stop when prompted', async () => {
     await docker.getContainer(`agentic-ui-task-${task.id}`).stop({ t: 10 });
     expect((await tasks.get(task.id)).state).toBe('suspended');
