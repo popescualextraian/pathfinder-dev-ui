@@ -28,3 +28,5 @@ setup:
   - add mcp playwright -- mcp-server-playwright --headless
   - add marketplace /opt/agentic/marketplace
   - add plugin cost@agentic
+  - add marketplace DietrichGebert/ponytail
+  - add plugin ponytail@ponytail
