@@ -1,4 +1,6 @@
 import { expect, test, Page, APIRequestContext } from '@playwright/test';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const section = (page: Page, name: string) => page.getByRole('region', { name, exact: true });
 const card = (page: Page, name: string, title: string) =>
@@ -91,4 +93,33 @@ test('task lifecycle: start, ask, answer, follow-up, full run, close, delete', a
   await card(page, 'In review', askTitle).click();
   await askView.getByRole('button', { name: 'Close task' }).click();
   await expect(card(page, 'In review', askTitle)).toHaveCount(0, { timeout: 30_000 });
+});
+
+test('facts panel shows the cost: a dash without one, the ledger sum after a turn', async ({ page, request }) => {
+  const id = Date.now().toString(36);
+  testId = id;
+  const title = `cost ${id}`;
+  await page.goto('/');
+  await startTask(page, title);
+  const view = page.getByRole('article', { name: title });
+  await expect(card(page, 'In review', title)).toBeVisible({ timeout: 30_000 });
+  const facts = page.locator('dl', { has: page.getByText('Task id') });
+  const costRow = facts.locator('div', { has: page.getByText('Cost', { exact: true }) });
+  await expect(costRow).toHaveText(/—/);
+
+  // seed the ledger the cost plugin would write, then end another turn so the engine reads it
+  const tasks = (await (await request.get('/api/tasks')).json()) as { id: string; title: string }[];
+  const task = tasks.find((t) => t.title === title)!;
+  const record = {
+    schema: 'cost-record/v1', ts: '2026-10-17T10:00:00Z', project: 'p', harness: 'claude-code', session: 's1',
+    context: { kind: 'task', task: task.id }, models: [],
+    totals: { input: 12300, output: 45600, cache_read: 1_200_000, cache_write: 80_000, cost: { estimate: 1.84 } },
+  };
+  const dir = join(process.cwd(), '.local', '3100', 'local-tasks', task.id, 'task');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'ledger.jsonl'), `${JSON.stringify(record)}\n`);
+  await view.getByLabel('Follow-up').fill('again');
+  await view.getByLabel('Follow-up').press('Enter');
+  await expect(costRow).toContainText('$1.84 (estimate)', { timeout: 30_000 });
+  await expect(costRow).toContainText('in 12.3k · out 45.6k · cache 1.2M read / 80k write');
 });

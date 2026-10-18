@@ -130,6 +130,14 @@ Inside the engine the same layering applies: the service owns the `TaskLauncher`
 interfaces and never imports an integration class; `TasksServiceModule` wires the implementations.
 Details follow.
 
+## Task cost
+
+The cost plugin in the task container appends `cost-record/v1` snapshots to `ledger.jsonl` in the directory
+named by `AGENTIC_COST_LEDGER_DIR` (both launchers set it to the task directory, `/task` in a container). The engine reads
+that file through the launcher (also from a stopped container) when a turn ends and for the next two poll rounds, and on stop and close, keeps the
+latest snapshot per session, and stores the sum as `cost` in the task record and API view. Lines that are not valid
+records of this task are skipped; a closed task keeps its last cost. The UI shows it in the facts panel.
+
 ## Engine overview
 
 The engine starts and drives agentic-dev-base tasks. A task is one container running the project's
@@ -220,6 +228,7 @@ All under `/api`, JSON, times are ISO 8601 UTC strings. A task view contains the
 | `state`, `reason?`, `section` | `state` is the last known one (`starting` `running` `waiting` `idle` `suspended` `stopped` `failed` `interrupted`); `section` is computed: `closed` or `stopped` → `done`; `waiting`, `failed`, `interrupted` → `needs-you`; `starting`, `running` → `working`; `idle`, `suspended` → `in-review` |
 | `questions` | open questions only: `{id, source, text, options, recommendation, asked}` |
 | `lastMessage?`, `lastMessageAt?`, `summary?` | the whole last agent message (from the poller) and its time; `summary` is the bridge's, cut to 300 characters, a fallback |
+| `cost?` | what the task cost: `{input, output, cacheRead, cacheWrite, usd: {estimate?, billedCredits?, unknown?}, sessions, snapshotAt, readAt}`; USD per source, never summed across sources (see Task cost) |
 | `createdAt`, `updatedAt`, `closed`, `closedAt?` | `updatedAt` is the last change of the record; a record without `closed` counts as not closed |
 
 | Route | Does | Success |
