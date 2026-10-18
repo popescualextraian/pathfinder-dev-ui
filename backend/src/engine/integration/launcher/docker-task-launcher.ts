@@ -115,6 +115,7 @@ export class DockerTaskLauncher implements TaskLauncher {
       AGENTIC_TASK_ID: spec.taskId,
       AGENTIC_PROJECT: this.config.project,
       AGENTIC_TASK_DIR: '/task',
+      AGENTIC_COST_LEDGER_DIR: '/task',
       AGENTIC_REPO_URL: spec.repoUrl,
       ...(spec.repoRef ? { AGENTIC_REPO_REF: spec.repoRef } : {}),
       AGENTIC_PROMPT: spec.prompt,

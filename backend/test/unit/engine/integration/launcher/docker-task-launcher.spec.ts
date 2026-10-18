@@ -105,6 +105,7 @@ describe('DockerTaskLauncher.launch', () => {
       AGENTIC_TASK_ID: 'T-20261016-ab12',
       AGENTIC_PROJECT: 'proj',
       AGENTIC_TASK_DIR: '/task',
+      AGENTIC_COST_LEDGER_DIR: '/task',
       AGENTIC_REPO_URL: 'https://github.com/o/r.git',
       AGENTIC_PROMPT: 'do the thing',
       AGENTIC_ALLOWED_ACTIONS: 'push,open-pr',

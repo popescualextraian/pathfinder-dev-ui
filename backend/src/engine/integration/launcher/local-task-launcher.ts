@@ -51,6 +51,7 @@ export function bridgeEnv({ config, spec, taskDir, workDir, port, path, fakeAgen
     AGENTIC_TASK_ID: spec.taskId,
     AGENTIC_PROJECT: config.project,
     AGENTIC_TASK_DIR: join(taskDir, 'task'),
+    AGENTIC_COST_LEDGER_DIR: join(taskDir, 'task'),
     AGENTIC_PROMPT: spec.prompt,
     AGENTIC_WORKTREE: '1',
     AGENTIC_BRANCH: spec.branch,

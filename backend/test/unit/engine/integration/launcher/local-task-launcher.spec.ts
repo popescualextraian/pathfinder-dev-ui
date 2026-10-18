@@ -27,6 +27,7 @@ describe('bridgeEnv', () => {
       PATH: '/usr/bin', HOME: '/data/local-tasks/T-1', AGENTIC_TASK_TOKEN: TASK_TOKEN, AGENTIC_AGENT_TOKEN: AGENT_TOKEN,
       AGENTIC_PROJECT: 'proj', AGENTIC_WORKTREE: '1', AGENTIC_BRANCH: 'agentic/T-1', AGENTIC_BRIDGE_PORT: '4321',
       AGENTIC_WORK: '/data/local-tasks/T-1/work', AGENTIC_MODEL: 'm1', AGENTIC_ALLOWED_ACTIONS: 'push,open-pr',
+      AGENTIC_TASK_DIR: '/data/local-tasks/T-1/task', AGENTIC_COST_LEDGER_DIR: '/data/local-tasks/T-1/task',
     });
     expect(JSON.parse(env.AGENTIC_ACP_CMD)).toEqual(['node', '/repo/tools/fake-agent/fake-agent.mjs']);
     const text = JSON.stringify(env);
