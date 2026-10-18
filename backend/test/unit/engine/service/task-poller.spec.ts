@@ -66,6 +66,13 @@ describe('TaskPoller cost', () => {
     expect(costs.refresh).toHaveBeenCalledTimes(3);
   });
 
+  it('one failing recheck does not stop the others', async () => {
+    const { poller, costs } = setup({ [ids[0]]: { lastState: 'idle', costRecheck: 2 }, [ids[1]]: { lastState: 'idle', costRecheck: 2 } });
+    costs.refresh.mockRejectedValueOnce(new Error('gone'));
+    await poller.tick();
+    expect(costs.refresh).toHaveBeenCalledTimes(2);
+  });
+
   it('no turn end, no read; a closed task is not read', async () => {
     const { poller, bridges, costs } = setup({ [id]: { lastState: 'running' }, [ids[1]]: { lastState: 'idle', closed: true, costRecheck: 2 } });
     bridges.get(id)!.push('state', { state: 'running', reason: '' });

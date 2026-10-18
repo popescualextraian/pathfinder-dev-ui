@@ -1,19 +1,10 @@
+import type { TaskCost } from '../repository/task-record.repository';
 // What a task cost so far: token counts and USD per source (estimate, billed credits, unknown;
 // never summed across sources), from the cost plugin's ledger in the task container.
 // Poll rounds in which a task whose turn ended gets its ledger re-read (the hook may write late).
 export const COST_RECHECKS = 3;
 
-export interface TaskCost {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  usd: { estimate?: number; billedCredits?: number; unknown?: number };
-  sessions: number;
-  // Timestamp of the latest snapshot in the ledger, and when the engine read it.
-  snapshotAt: string;
-  readAt: string;
-}
+export type { TaskCost };
 
 interface Totals { input: number; output: number; cache_read: number; cache_write: number; cost: Record<string, number> }
 interface Snapshot { ts: string; totals: Totals }
@@ -24,7 +15,7 @@ const SOURCE_KEYS: Record<string, 'estimate' | 'billedCredits' | 'unknown'> = {
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isCount = (v: unknown): boolean => typeof v === 'number' && Number.isInteger(v) && v >= 0;
 const isTokens = (v: unknown): boolean => isObject(v) && [v.input, v.output, v.cache_read, v.cache_write].every(isCount);
-const isSource = (v: string): boolean => v in SOURCE_KEYS;
+const isSource = (v: string): boolean => Object.hasOwn(SOURCE_KEYS, v);
 
 // The same check as valid_record in the cost plugin's record.jq (schema/cost-record.schema.json).
 function validRecord(r: unknown, task: string): r is Record<string, unknown> & { harness: string; session: string; ts: string; totals: Totals } {

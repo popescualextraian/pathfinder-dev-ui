@@ -28,4 +28,9 @@ describe('formatCost', () => {
     expect(formatCost(cost({ usd: { billedCredits: 0.4, unknown: 1 } })).usd).toBe('$0.40 credits +?');
     expect(formatCost(cost({ usd: { unknown: 1 } })).usd).toBe('+?');
   });
+  it('switches the unit on the rounded value and shows a dash for an empty usd', () => {
+    expect(formatCost(cost({ input: 999_999 })).tokens).toContain('in 1M');
+    expect(formatCost(cost({ input: 999_949 })).tokens).toContain('in 999.9k');
+    expect(formatCost(cost({ usd: {} })).usd).toBe('—');
+  });
 });

@@ -20,13 +20,24 @@ export class TaskCostReader {
   async refresh(record: TaskRecord): Promise<void> {
     try {
       const text = await this.launcher.readLedger(record.id);
-      const cost = text === undefined ? undefined : summarizeLedger(text, record.id, new Date().toISOString());
-      if (cost === undefined) {
-        this.logger.warn(`No cost for ${record.id}: no ledger or no valid record in it`);
+      if (text === undefined) {
+        this.logger.debug(`No ledger for ${record.id} yet`);
         return;
       }
-      const updated = await this.records.update(record.id, { cost });
-      if (viewsDiffer(toView(record), toView(updated))) this.updates.changed(toView(updated));
+      const cost = summarizeLedger(text, record.id, new Date().toISOString());
+      if (cost === undefined) {
+        this.logger.warn(`No cost for ${record.id}: no valid record in the ledger`);
+        return;
+      }
+      let before: TaskRecord | undefined;
+      const updated = await this.records.update(record.id, (current) => {
+        before = current;
+        const old = current.cost;
+        // Keep a newer stored snapshot; skip the write when only readAt would change.
+        if (old && (old.snapshotAt > cost.snapshotAt || JSON.stringify({ ...old, readAt: '' }) === JSON.stringify({ ...cost, readAt: '' }))) return undefined;
+        return { cost };
+      });
+      if (before && updated !== before && viewsDiffer(toView(before), toView(updated))) this.updates.changed(toView(updated));
     } catch (error) {
       this.logger.warn(`Cost of ${record.id} not read: ${error instanceof Error ? error.message : 'unknown error'}`);
     }

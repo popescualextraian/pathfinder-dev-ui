@@ -3,9 +3,21 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promise
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
-import type { TaskCost } from '../service/task-cost';
 
 // The only place the per-task tokens are stored. They never leave the backend.
+// What a task cost so far (see service/task-cost.ts).
+export interface TaskCost {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  usd: { estimate?: number; billedCredits?: number; unknown?: number };
+  sessions: number;
+  // Timestamp of the latest snapshot in the ledger, and when the engine read it.
+  snapshotAt: string;
+  readAt: string;
+}
+
 export interface TaskRecord {
   id: string;
   // Absent in records of older versions: derived from the prompt.

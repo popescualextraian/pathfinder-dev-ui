@@ -19,24 +19,24 @@ function hasStatus(error: unknown, ...codes: number[]): boolean {
   return status !== undefined && codes.includes(status);
 }
 
-// The content of the first file in a tar stream, or 'too-large' (without reading it) over the cap.
-// Only what getArchive of a single file returns: ustar header, size in octal at offset 124.
+// The content of the first regular file in a tar stream, or 'too-large' (without reading it) over the cap.
+// Skips PAX (x, g) and GNU (L, K) extension entries. Size is octal at offset 124, typeflag at 156.
 async function firstTarFile(stream: Readable, maxBytes: number): Promise<Buffer | 'too-large'> {
-  const chunks: Buffer[] = [];
-  let have = 0;
-  let size: number | undefined;
+  let buf = Buffer.alloc(0);
+  let pos = 0;
   for await (const chunk of stream) {
-    chunks.push(chunk as Buffer);
-    have += (chunk as Buffer).length;
-    if (size === undefined && have >= 512) {
-      size = parseInt(Buffer.concat(chunks).toString('ascii', 124, 136).replace(/\0.*$/s, '').trim() || '0', 8);
+    buf = Buffer.concat([buf, chunk as Buffer]);
+    for (;;) {
+      if (buf.length < pos + 512) break;
+      const size = parseInt(buf.toString('ascii', pos + 124, pos + 136).replace(/\0.*$/s, '').trim() || '0', 8);
       if (!(size <= maxBytes)) { stream.destroy(); return 'too-large'; }
+      const flag = String.fromCharCode(buf[pos + 156] || 48);
+      if (buf.length < pos + 512 + size) break;
+      if (flag === '0') return buf.subarray(pos + 512, pos + 512 + size);
+      pos += 512 + Math.ceil(size / 512) * 512;
     }
-    if (size !== undefined && have >= 512 + size) break;
   }
-  const all = Buffer.concat(chunks);
-  if (size === undefined || all.length < 512 + size) throw new Error('Truncated archive');
-  return all.subarray(512, 512 + size);
+  throw new Error('Truncated archive');
 }
 
 // Runs each task in its own container next to the UI, on the shared Docker network.

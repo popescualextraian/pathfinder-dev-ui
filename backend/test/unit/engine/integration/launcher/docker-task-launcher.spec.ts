@@ -300,6 +300,15 @@ describe('DockerTaskLauncher.readLedger', () => {
     await expect(launcher.readLedger('T-1')).rejects.toThrow('docker 500');
   });
 
+  it('skips a PAX header entry and reads the first regular file', async () => {
+    const { launcher, container } = setup();
+    const text = '{"a":1}\n';
+    const pax = tarOf('pax', Buffer.from('30 mtime=1\n'));
+    pax.write('x', 156, 'ascii');
+    container.getArchive.mockResolvedValue(archive(Buffer.concat([pax.subarray(0, 1024), tarOf('ledger.jsonl', Buffer.from(text))])));
+    await expect(launcher.readLedger('T-1')).resolves.toBe(text);
+  });
+
   it('returns undefined and logs when the file is over the cap, without reading it', async () => {
     const { launcher, container } = setup();
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();

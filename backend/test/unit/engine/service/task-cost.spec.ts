@@ -78,4 +78,9 @@ describe('summarizeLedger', () => {
   it('has an empty usd when a record carries no cost', () => {
     expect(summarizeLedger(rec({}, { cost: {} }), TASK, READ)!.usd).toEqual({});
   });
+
+  it('does not accept inherited property names as cost sources', () => {
+    expect(summarizeLedger(rec({}, { cost: { constructor: 1 } }), TASK, READ)).toBeUndefined();
+    expect(summarizeLedger(rec({}, { cost: { ["__proto__"]: 1 } }), TASK, READ)).toBeUndefined();
+  });
 });

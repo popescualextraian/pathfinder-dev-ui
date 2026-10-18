@@ -77,8 +77,12 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
   private async recheckCosts(): Promise<void> {
     for (const record of await this.records.list()) {
       if (record.closed || !(record.costRecheck && record.costRecheck > 0)) continue;
-      await this.costs.refresh(record);
-      await this.records.update(record.id, (c) => ({ costRecheck: Math.max(0, (c.costRecheck ?? 0) - 1) }));
+      try {
+        await this.costs.refresh(record);
+        await this.records.update(record.id, (c) => ({ costRecheck: Math.max(0, (c.costRecheck ?? 0) - 1) }));
+      } catch (error) {
+        this.logger.warn(`Cost recheck of ${record.id} failed: ${describe(error)}`);
+      }
     }
   }
 
