@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { PassThrough, Readable } from 'node:stream';
-import { BridgeError, BridgeUnreachableError } from '../../../src/service/tasks/bridge-client';
+import { BridgeError, BridgeUnreachableError } from '../../../src/engine/service/bridge-client';
 import {
   demux, HELPER_SCRIPT, HelperContainer, HelperRequest, InNetworkBridgeClient, nodeCommand, parseHelperReply, replyBody,
 } from '../../docker/in-network-bridge';

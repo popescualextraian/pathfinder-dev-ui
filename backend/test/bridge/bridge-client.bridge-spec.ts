@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { HttpBridgeClient } from '../../src/integration/tasks/bridge/http-bridge-client';
-import { BridgeClient, BridgeError, BridgeEvent, waitForStatus } from '../../src/service/tasks/bridge-client';
+import { HttpBridgeClient } from '../../src/engine/integration/bridge/http-bridge-client';
+import { BridgeClient, BridgeError, BridgeEvent, waitForStatus } from '../../src/engine/service/bridge-client';
 import { describeWithBridge, LocalProcessLauncher, until } from '../helpers/local-process-launcher';
 
 // The BridgeClient against the real agentic-bridge with the fake agent.

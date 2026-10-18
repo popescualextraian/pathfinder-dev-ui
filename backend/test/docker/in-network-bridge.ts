@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import {
   AnswerInput, BridgeError, BridgeEvent, BridgeStatus, BridgeUnreachableError,
-} from '../../src/service/tasks/bridge-client';
+} from '../../src/engine/service/bridge-client';
 
 // The docker suite's way to reach task bridges: from INSIDE the test network, by container name,
 // as the UI does in production. Docker Desktop (WSL2, macOS) cannot route from the host to

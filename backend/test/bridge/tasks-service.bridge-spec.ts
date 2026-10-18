@@ -4,10 +4,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { firstValueFrom } from 'rxjs';
 import { filter, take, toArray } from 'rxjs/operators';
 import { AppModule } from '../../src/app.module';
-import { BridgeEvent } from '../../src/service/tasks/bridge-client';
-import { TASK_LAUNCHER } from '../../src/service/tasks/task-launcher';
-import { TaskEventsService } from '../../src/service/tasks/task-events.service';
-import { TasksService, TaskView } from '../../src/service/tasks/tasks.service';
+import { BridgeEvent } from '../../src/engine/service/bridge-client';
+import { TASK_LAUNCHER } from '../../src/engine/service/task-launcher';
+import { TaskEventsService } from '../../src/engine/service/task-events.service';
+import { TasksService, TaskView } from '../../src/engine/service/tasks.service';
 import { describeWithBridge, LocalProcessLauncher, until } from '../helpers/local-process-launcher';
 import { setTestEnv } from '../helpers/test-env';
 

@@ -1,4 +1,4 @@
-import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from '../../src/service/tasks/task-launcher';
+import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from '../../src/engine/service/task-launcher';
 
 // In-memory TaskLauncher: "containers" are map entries; every task's bridge is at `bridgeUrl`.
 export class FakeLauncher implements TaskLauncher {

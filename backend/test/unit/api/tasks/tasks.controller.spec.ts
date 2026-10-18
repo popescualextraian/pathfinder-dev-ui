@@ -1,10 +1,10 @@
 import 'reflect-metadata';
 import { firstValueFrom, of, throwError, toArray } from 'rxjs';
 import { TasksController } from '../../../../src/api/tasks/tasks.controller';
-import { TaskUpdates } from '../../../../src/service/tasks/task-updates';
-import { toView } from '../../../../src/service/tasks/task-view';
-import { record } from '../../service/tasks/helpers';
-import { BridgeError, TaskEvent as BridgeEvent, BridgeUnreachableError } from '../../../../src/service/tasks/task-errors';
+import { TaskUpdates } from '../../../../src/engine/service/task-updates';
+import { toView } from '../../../../src/engine/service/task-view';
+import { record } from '../../engine/service/helpers';
+import { BridgeError, TaskEvent as BridgeEvent, BridgeUnreachableError } from '../../../../src/engine';
 
 const view = { id: 'T-1', state: 'idle' };
 const event = (seq: number): BridgeEvent => ({ seq, ts: 't', task: 'T-1', session: null, agent: 'a', type: 'message', data: { n: seq } });

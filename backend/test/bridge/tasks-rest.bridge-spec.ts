@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
-import { TASK_LAUNCHER } from '../../src/service/tasks/task-launcher';
+import { TASK_LAUNCHER } from '../../src/engine/service/task-launcher';
 import { describeWithBridge, LocalProcessLauncher, until } from '../helpers/local-process-launcher';
 import { setTestEnv } from '../helpers/test-env';
 

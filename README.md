@@ -1,8 +1,117 @@
-# agentic-dev-base UI
+# pathfinder-dev-ui
 
-A NestJS (TypeScript) backend that serves a React frontend, and the task engine behind it. The
-frontend so far shows one slice of the layers: `GET /api/system/info` returns
-`{ name, version, uptimeSeconds }`. The engine is a REST API (below) with no UI yet.
+A web UI for [agentic-dev-base](https://github.com/popescualextraian/agentic-dev-base) tasks. You pick a
+repository, write a prompt, and the app starts a container with the repository's agentic image, runs the
+agent in it and shows you the run: its state, its questions, its last answer and the full event stream.
+You can reply, answer questions, cancel a turn, close the task when it is done, or open the branch it
+pushed.
+
+One Node process (NestJS, Node 22+) serves the React frontend and the REST/SSE API under `/api`. Behind
+the API sits the **task engine** (`backend/src/engine`): the part that starts task containers, talks to
+their bridges and keeps the task records. It is its own package with no dependency on the rest of the
+backend except `commons`, so it can later move to a project of its own.
+
+```sh
+npm install && npm run build
+cp .env.example .env   # set ENGINE_IMAGE and your tokens, see Configuration
+npm start              # http://localhost:3000
+```
+
+No Docker at hand? `npm run start:local` runs tasks as local processes (see Local launcher).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  user([Browser])
+  subgraph app["pathfinder-dev-ui (one Node process)"]
+    FE["React frontend<br/>views → state → api"]
+    subgraph be["NestJS backend"]
+      API["api<br/>controllers, DTOs, SSE"]
+      UIS["service / repository<br/>system info, repositories"]
+      ENG[["engine<br/>task engine package"]]
+      COM["commons<br/>config, pipes, filters, utils"]
+    end
+  end
+  TASK["task container<br/>agentic-bridge + agent"]
+  DATA[("ENGINE_DATA_DIR<br/>task records")]
+  GIT[("git remote")]
+
+  user --> FE
+  FE -- "REST + SSE /api" --> API
+  API --> UIS
+  API -- "engine/index.ts only" --> ENG
+  UIS --> COM
+  ENG --> COM
+  ENG -- "Docker API or child process" --> TASK
+  ENG -- "HTTP + WebSocket, task token" --> TASK
+  ENG --> DATA
+  TASK -- "clone, push branch" --> GIT
+```
+
+- **Frontend** (`frontend/src`): task list, task view, full run. Only `api/` calls the backend.
+- **api** (`backend/src/api`): HTTP only: routes, DTO validation, SSE, error mapping. Tasks routes call
+  the engine through `backend/src/engine/index.ts`.
+- **service / repository** (`backend/src/service`, `backend/src/repository`): what only the UI needs,
+  the system info footer and the configured repositories.
+- **engine** (`backend/src/engine`): everything about tasks, below.
+- **commons** (`backend/src/commons`): engine configuration from `ENGINE_*` variables, global pipes,
+  interceptor and filters, small utilities. The only code the engine may import from outside itself
+  (checked by `backend/test/unit/engine/engine-boundary.spec.ts`).
+
+## Task engine
+
+```mermaid
+flowchart TB
+  API["api/tasks<br/>(outside the engine)"]
+  subgraph engine["backend/src/engine"]
+    IDX["index.ts<br/>public surface"]
+    subgraph svc["service"]
+      TS["TasksService<br/>start, prompt, answer, cancel,<br/>stop, close, delete"]
+      TE["TaskEventsService<br/>full-run events"]
+      TP["TaskPoller<br/>every ENGINE_POLL_SECONDS"]
+      TU["TaskUpdates<br/>status stream"]
+      IF{{"TaskLauncher, BridgeClient<br/>interfaces and tokens"}}
+    end
+    subgraph integ["integration"]
+      DL["DockerTaskLauncher"]
+      LL["LocalTaskLauncher"]
+      HB["HttpBridgeClient"]
+    end
+    subgraph repo["repository"]
+      RR["TaskRecordRepository<br/>JSON file per task, mode 600"]
+    end
+  end
+  TASK["task container<br/>agentic-bridge"]
+
+  API --> IDX
+  IDX --> TS & TE & TU
+  TS & TP --> TU
+  TS & TE & TP --> IF
+  TS & TE & TP --> RR
+  DL & LL -. implement .-> IF
+  HB -. implements .-> IF
+  DL & LL -- "run" --> TASK
+  HB -- "HTTP API v1 + events" --> TASK
+```
+
+A task is one container (or, with the `local` launcher, one process) running the project's agentic
+image with `agentic-bridge` as its command:
+
+1. `TasksService.start` writes the record (prompt, two random tokens) and asks the launcher
+   (`ENGINE_LAUNCHER`) to create the container, with the prompt in its environment; it gets back the
+   bridge's base URL.
+2. The container clones the repository, starts the bridge on branch `agentic/<task-id>` in a worktree,
+   and the agent takes the first prompt.
+3. `TaskPoller` reads each active task's status view and stores state, questions and the last message in
+   the record. Every change goes out on `TaskUpdates` (`GET /api/tasks/stream`).
+4. `TaskEventsService` relays one task's full event stream (`GET /api/tasks/:id/events`).
+5. Prompt and answer wake a container that is not running (not one stopped with `/stop`, that is
+   final); `close` removes container and volume and keeps the record.
+
+Inside the engine the same layering applies: the service owns the `TaskLauncher` and `BridgeClient`
+interfaces and never imports an integration class; `TasksServiceModule` wires the implementations.
+Details follow.
 
 ## Engine overview
 
@@ -225,7 +334,7 @@ daemon available and have not been run yet; `docker compose config` accepts the 
 ## Launchers
 
 A launcher runs task containers somewhere. The interface is `TaskLauncher` in
-`backend/src/service/tasks/task-launcher.ts`:
+`backend/src/engine/service/task-launcher.ts`:
 
 ```ts
 launch(spec: LaunchSpec): Promise<LaunchResult>   // create and start; returns the bridge base URL
@@ -239,8 +348,8 @@ countRunning(): Promise<number>                   // for the ENGINE_MAX_RUNNING 
 The bridge client does not depend on the launcher: the launcher only returns the bridge base URL, and
 the service talks to that URL with the task token. To add another launcher (for example Azure):
 
-1. Implement `TaskLauncher` in `backend/src/integration/tasks/launcher/` (it gets the `EngineConfig`).
-2. Register it in `backend/src/integration/tasks/launcher/task-launcher.factory.ts` under a new name.
+1. Implement `TaskLauncher` in `backend/src/engine/integration/launcher/` (it gets the `EngineConfig`).
+2. Register it in `backend/src/engine/integration/launcher/task-launcher.factory.ts` under a new name.
 3. Use that name as `ENGINE_LAUNCHER`.
 4. Add unit tests next to `docker-task-launcher.spec.ts`; the bridge URL it returns must be reachable
    from the engine, and the container needs the same environment contract as the Docker one
@@ -254,10 +363,13 @@ backend/
     main.ts, app.setup.ts   bootstrap; global prefix /api, pipe, interceptor, filters
     app.module.ts           imports the api modules and serves dist/frontend
     api/<area>/             controllers (HTTP only, no business logic): system/, repositories/, tasks/ (+ dto/)
-    service/<area>/         business logic: system/, repositories/, tasks/ (tasks.service.ts, task-poller.ts, task-updates.ts, task-view.ts, task-events.service.ts)
-    integration/<area>/     external systems and runtimes: tasks/ bridge/ (HttpBridgeClient),
-                            launcher/ (Docker and local launchers, factory); implements the service's interfaces
-    repository/<area>/      storage only: system/ (package.json), tasks/ (task-record.repository.ts, JSON files)
+    service/<area>/         UI business logic: system/, repositories/
+    repository/<area>/      UI storage: system/ (package.json)
+    engine/                 the task engine package; others import only engine/index.ts
+      service/              tasks.service.ts, task-poller.ts, task-updates.ts, task-view.ts, task-events.service.ts,
+                            the TaskLauncher and BridgeClient interfaces
+      integration/          bridge/ (HttpBridgeClient), launcher/ (Docker and local launchers, factory)
+      repository/           task-record.repository.ts (JSON files)
     commons/                engine config, validation pipe, logging interceptor, exception filters, shared utilities
   test/
     unit/                   unit tests, mirroring src/
@@ -287,6 +399,9 @@ Build output: `dist/backend` (Nest) and `dist/frontend` (Vite).
   runtimes (launchers, bridge client); repository = storage only. The service owns the interfaces it needs
   (`TaskLauncher`, `BridgeClient` and their tokens) and imports no integration class; only its Nest module
   imports the integration module.
+- The task engine (`engine/`) keeps the same layers inside itself, imports nothing from the backend
+  but `commons/`, and is used from outside only through `engine/index.ts`
+  (`backend/test/unit/engine/engine-boundary.spec.ts` checks both).
 - Each area has one Nest module per layer (`<Area>ApiModule`, `<Area>ServiceModule`,
   `<Area>IntegrationModule`, `<Area>RepositoryModule`); a layer's module imports only the module of the layer below.
 - Routes are prefixed with the area: `/api/<area>/...`.

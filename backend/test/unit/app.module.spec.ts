@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
 import { ENGINE_CONFIG } from '../../src/commons/engine-config';
-import { TASK_LAUNCHER } from '../../src/service/tasks/task-launcher';
+import { TASK_LAUNCHER } from '../../src/engine/service/task-launcher';
 
 describe('AppModule', () => {
   it('compiles', async () => {

@@ -1,7 +1,7 @@
 import { createServer, IncomingMessage, Server, ServerResponse } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer } from 'ws';
-import { BridgeEvent, BridgeQuestion, BridgeState } from '../../src/service/tasks/bridge-client';
+import { BridgeEvent, BridgeQuestion, BridgeState } from '../../src/engine/service/bridge-client';
 
 // A small stateful stand-in for ONE task bridge (HTTP + WebSocket, API v1), started on a free
 // loopback port. Enough behaviour for the REST e2e tests; not a copy of the real bridge.

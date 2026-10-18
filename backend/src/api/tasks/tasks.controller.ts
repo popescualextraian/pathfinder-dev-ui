@@ -2,10 +2,7 @@ import {
   Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Query, Sse, UseFilters, UseGuards, MessageEvent,
 } from '@nestjs/common';
 import { catchError, interval, map, merge, Observable, throwError } from 'rxjs';
-import { BridgeError, BridgeUnreachableError, TaskEvent } from '../../service/tasks/task-errors';
-import { TaskEventsService } from '../../service/tasks/task-events.service';
-import { TaskUpdates } from '../../service/tasks/task-updates';
-import { TasksService, TaskView } from '../../service/tasks/tasks.service';
+import { BridgeError, BridgeUnreachableError, TaskEvent, TaskEventsService, TasksService, TaskUpdates, TaskView } from '../../engine';
 import { BridgeErrorFilter, describeBridgeError } from './bridge-error.filter';
 import { AnswerDto } from './dto/answer.dto';
 import { PromptDto } from './dto/prompt.dto';

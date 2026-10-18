@@ -1,6 +1,6 @@
 import { ArgumentsHost } from '@nestjs/common';
 import { BridgeErrorFilter } from '../../../../src/api/tasks/bridge-error.filter';
-import { BridgeError, BridgeUnreachableError } from '../../../../src/service/tasks/task-errors';
+import { BridgeError, BridgeUnreachableError } from '../../../../src/engine';
 
 function run(error: BridgeError | BridgeUnreachableError) {
   const json = jest.fn();

@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Request } from 'express';
-import { TaskEventsService } from '../../service/tasks/task-events.service';
+import { TaskEventsService } from '../../engine';
 
 // Answers 404 for an unknown task before a response is started (see TasksController.stream).
 @Injectable()
