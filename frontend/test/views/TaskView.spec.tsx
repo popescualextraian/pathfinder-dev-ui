@@ -206,6 +206,16 @@ describe('FactsPanel', () => {
     expect(screen.getByText('agentic/T-1')).toBeTruthy();
     expect(screen.getByText('opus')).toBeTruthy();
   });
+
+  it('shows the cost, or a dash without one', () => {
+    const { unmount } = render(<FactsPanel task={idle()} />);
+    expect(screen.getByText('Cost').nextElementSibling?.textContent).toBe('—');
+    unmount();
+    const cost = { input: 1500, output: 20, cacheRead: 0, cacheWrite: 0, usd: { estimate: 1.84 }, sessions: 1, snapshotAt: 'x', readAt: 'y' };
+    render(<FactsPanel task={idle({ cost })} />);
+    expect(screen.getByText('$1.84 (estimate)')).toBeTruthy();
+    expect(screen.getByText('in 1.5k · out 20 · cache 0 read / 0 write')).toBeTruthy();
+  });
 });
 
 describe('NewTaskDialog', () => {

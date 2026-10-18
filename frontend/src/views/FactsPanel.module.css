@@ -21,3 +21,9 @@
 .mono {
   font-family: var(--font-mono);
 }
+.sub {
+  display: block;
+  font-size: 11px;
+  color: var(--ink);
+  opacity: 0.7;
+}

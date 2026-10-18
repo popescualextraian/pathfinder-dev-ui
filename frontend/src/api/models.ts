@@ -24,6 +24,17 @@ export interface TaskQuestion {
   asked: string;
 }
 
+export interface TaskCost {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  usd: { estimate?: number; billedCredits?: number; unknown?: number };
+  sessions: number;
+  snapshotAt: string;
+  readAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -44,6 +55,7 @@ export interface Task {
   updatedAt: string;
   closed: boolean;
   closedAt?: string;
+  cost?: TaskCost;
 }
 
 export interface StartTaskRequest {
