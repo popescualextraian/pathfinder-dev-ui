@@ -2,7 +2,7 @@ import { Logger } from '@nestjs/common';
 import { BadGatewayException, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { BridgeError, BridgeUnreachableError } from '../../../../src/engine/service/bridge-client';
 import { TaskUpdates } from '../../../../src/engine/service/task-updates';
-import { TaskCostReader } from '../../../../src/engine/service/task-cost-reader';
+import { TaskCostService } from '../../../../src/engine/service/cost/task-cost.service';
 import { TasksService } from '../../../../src/engine/service/tasks.service';
 import { AGENT_TOKEN, TASK_TOKEN, config, fakeBridge, fakeLauncher, fakeRecords, record, status } from './helpers';
 
@@ -15,7 +15,7 @@ function setup(opts: { records?: ReturnType<typeof record>[]; launcher?: Record<
   const published: unknown[] = [];
   updates.changes.subscribe((change) => published.push(change));
   const service = new TasksService(
-    records as never, launcher as never, factory as never, config, updates, new TaskCostReader(records as never, launcher as never, updates),
+    records as never, launcher as never, factory as never, config, updates, new TaskCostService(records as never, launcher as never),
     { waitTimeoutMs: 50, waitIntervalMs: 1 },
   );
   return { records, launcher, bridge, factory, service, updates, published };

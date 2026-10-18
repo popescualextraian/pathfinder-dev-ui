@@ -2,7 +2,8 @@ import { Logger } from '@nestjs/common';
 import { BridgeError, BridgeEvent, BridgeUnreachableError } from '../../../../src/engine/service/bridge-client';
 import { applyEvents, TaskPoller } from '../../../../src/engine/service/task-poller';
 import { TaskUpdates } from '../../../../src/engine/service/task-updates';
-import { fakeRecords, record, status } from './helpers';
+import { TaskCostService } from '../../../../src/engine/service/cost/task-cost.service';
+import { fakeLauncher, fakeRecords, record, status } from './helpers';
 
 // A scripted bridge per task: serves GET /events?view=status after `since` from its list.
 class Bridge {
@@ -42,7 +43,8 @@ function setup(states: Record<string, Partial<ReturnType<typeof record>>>, pollS
   const updates = new TaskUpdates();
   const published: { kind: string; task?: { id: string; state: string; section: string; lastMessage?: string; questions: { id: string }[] } }[] = [];
   updates.changes.subscribe((c) => published.push(c as never));
-  const costs = { refresh: jest.fn(async () => undefined) };
+  const costs = new TaskCostService(records as never, fakeLauncher() as never);
+  jest.spyOn(costs, 'refresh').mockResolvedValue(undefined);
   const poller = new TaskPoller(records as never, factory as never, updates, { pollSeconds }, costs as never);
   return { poller, records, bridges, updates, published, factory, clients, costs };
 }
@@ -68,7 +70,7 @@ describe('TaskPoller cost', () => {
 
   it('one failing recheck does not stop the others', async () => {
     const { poller, costs } = setup({ [ids[0]]: { lastState: 'idle', costRecheck: 2 }, [ids[1]]: { lastState: 'idle', costRecheck: 2 } });
-    costs.refresh.mockRejectedValueOnce(new Error('gone'));
+    (costs.refresh as jest.Mock).mockRejectedValueOnce(new Error('gone'));
     await poller.tick();
     expect(costs.refresh).toHaveBeenCalledTimes(2);
   });

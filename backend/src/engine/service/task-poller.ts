@@ -2,8 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nest
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 import { TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
 import { BRIDGE_CLIENT_FACTORY, BridgeClientFactory, BridgeEvent, BridgeQuestion, BridgeStatus } from './bridge-client';
-import { TaskCostReader } from './task-cost-reader';
-import { COST_RECHECKS } from './task-cost';
+import { TaskCostService } from './cost/task-cost.service';
 import { TaskUpdates } from './task-updates';
 import { toView, viewsDiffer } from './task-view';
 
@@ -31,7 +30,7 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
     @Inject(BRIDGE_CLIENT_FACTORY) private readonly bridgeFor: BridgeClientFactory,
     private readonly updates: TaskUpdates,
     @Inject(ENGINE_CONFIG) private readonly config: Pick<EngineConfig, 'pollSeconds'>,
-    private readonly costs: TaskCostReader,
+    private readonly costs: TaskCostService,
   ) {}
 
   onModuleInit(): void {
@@ -70,20 +69,7 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
       }
     };
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, due.length) }, worker));
-    await this.recheckCosts();
-  }
-
-  // Every task whose turn ended recently: read its ledger again, for a few rounds.
-  private async recheckCosts(): Promise<void> {
-    for (const record of await this.records.list()) {
-      if (record.closed || !(record.costRecheck && record.costRecheck > 0)) continue;
-      try {
-        await this.costs.refresh(record);
-        await this.records.update(record.id, (c) => ({ costRecheck: Math.max(0, (c.costRecheck ?? 0) - 1) }));
-      } catch (error) {
-        this.logger.warn(`Cost recheck of ${record.id} failed: ${describe(error)}`);
-      }
-    }
+    for (const view of await this.costs.recheckDue()) this.updates.changed(view);
   }
 
   private async pollTask(polled: TaskRecord): Promise<void> {
@@ -106,7 +92,7 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
       if (current.closed || current.lastState === 'stopped') return undefined;
       const patch = applyEvents(current, events);
       const ended = POLLED_STATES.has(current.lastState ?? 'starting') && patch?.lastState !== undefined && !POLLED_STATES.has(patch.lastState);
-      return ended ? { ...patch, costRecheck: COST_RECHECKS } : patch;
+      return ended ? { ...patch, ...this.costs.armRecheck() } : patch;
     });
     if (before && updated !== before && viewsDiffer(toView(before), toView(updated))) this.updates.changed(toView(updated));
   }

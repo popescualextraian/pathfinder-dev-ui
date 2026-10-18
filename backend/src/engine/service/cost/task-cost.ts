@@ -1,10 +1,8 @@
-import type { TaskCost } from '../repository/task-record.repository';
+import type { TaskCost } from '../../repository/task-record.repository';
 // What a task cost so far: token counts and USD per source (estimate, billed credits, unknown;
 // never summed across sources), from the cost plugin's ledger in the task container.
 // Poll rounds in which a task whose turn ended gets its ledger re-read (the hook may write late).
 export const COST_RECHECKS = 3;
-
-export type { TaskCost };
 
 interface Totals { input: number; output: number; cache_read: number; cache_write: number; cost: Record<string, number> }
 interface Snapshot { ts: string; totals: Totals }

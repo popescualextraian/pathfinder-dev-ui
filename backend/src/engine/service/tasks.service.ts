@@ -8,11 +8,10 @@ import {
 import { TASK_LAUNCHER, TaskLauncher } from './task-launcher';
 import { TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
 import { repoNameOf } from '../../commons/repo-name';
-import { TaskCostReader } from './task-cost-reader';
+import { TaskCostService } from './cost/task-cost.service';
 import { TaskUpdates } from './task-updates';
 import { Live, titleFrom, toView, TaskView, viewsDiffer } from './task-view';
 
-import { COST_RECHECKS } from './task-cost';
 
 export type { TaskView } from './task-view';
 
@@ -49,7 +48,7 @@ export class TasksService {
     @Inject(BRIDGE_CLIENT_FACTORY) private readonly bridgeFor: BridgeClientFactory,
     @Inject(ENGINE_CONFIG) private readonly config: EngineConfig,
     private readonly updates: TaskUpdates,
-    private readonly costs: TaskCostReader,
+    private readonly costs: TaskCostService,
     @Optional() @Inject(TASKS_SERVICE_OPTIONS) options?: TasksServiceOptions,
   ) {
     this.waitTimeoutMs = options?.waitTimeoutMs ?? 60_000;
@@ -154,7 +153,7 @@ export class TasksService {
       // container is stopped below, otherwise the task could never be stopped or removed.
     }
     await this.launcher.stop(id);
-    await this.costs.refresh(record);
+    await this.refreshCost(record);
     return this.persist(record, { lastState: 'stopped' });
   }
 
@@ -172,7 +171,7 @@ export class TasksService {
       }
       await this.launcher.stop(id);
     }
-    await this.costs.refresh(record); // the container must still exist; a failed read never blocks the close
+    await this.refreshCost(record); // the container must still exist; a failed read never blocks the close
     await this.launcher.remove(id);
     this.updates.clearActed(id);
     return this.persist(record, {
@@ -307,9 +306,14 @@ export class TasksService {
     // A task that left starting/running without the poller seeing it still has events to read.
     if (['starting', 'running'].includes(record.lastState ?? 'starting') && !['starting', 'running'].includes(status.state)) {
       this.updates.markActed(record.id);
-      return this.persist(record, { lastState: status.state, lastStatus: status, costRecheck: COST_RECHECKS }, live);
+      return this.persist(record, { lastState: status.state, lastStatus: status, ...this.costs.armRecheck() }, live);
     }
     return this.persist(record, { lastState: status.state, lastStatus: status }, live);
+  }
+
+  private async refreshCost(record: TaskRecord): Promise<void> {
+    const view = await this.costs.refresh(record);
+    if (view) this.updates.changed(view);
   }
 
   // Writes the patch and announces the task on the status stream when its view changed.

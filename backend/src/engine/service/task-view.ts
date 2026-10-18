@@ -1,6 +1,6 @@
 import { repoNameOf } from '../../commons/repo-name';
 import { TaskRecord } from '../repository/task-record.repository';
-import { TaskCost } from './task-cost';
+import type { TaskCost } from '../repository/task-record.repository';
 import { BridgeQuestion, BridgeStatus } from './bridge-client';
 
 // What clients see of a task: the record without the tokens, plus state from the bridge.
