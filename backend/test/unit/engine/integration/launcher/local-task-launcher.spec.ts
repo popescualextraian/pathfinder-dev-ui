@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { bridgeEnv, cloneEnv, findFakeAgent, LocalTaskLauncher } from '../../../../../src/engine/integration/launcher/local-task-launcher';
-import { LaunchSpec } from '../../../../../src/engine/service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchSpec } from '../../../../../src/engine/service/task-launcher';
 
 const OAUTH = 'made-up-oauth-token-111';
 const GH = 'made-up-gh-token-222';
@@ -214,6 +214,33 @@ describe('LocalTaskLauncher', () => {
     expect(String(warn.mock.calls[0][0])).toMatch(/T-1.*exited unexpectedly.*code 3/);
     expect(String(warn.mock.calls[0][0])).not.toContain('secret-output');
     await l.remove('T-1');
+    warn.mockRestore();
+  });
+});
+
+describe('LocalTaskLauncher.readLedger', () => {
+  let dataDir: string;
+  beforeEach(() => { dataDir = mkdtempSync(join(tmpdir(), 'ledger-')); });
+  afterEach(() => rmSync(dataDir, { recursive: true, force: true }));
+  const launcher = () => new LocalTaskLauncher({ ...base, dataDir, localAgent: 'fake' });
+  const ledgerPath = () => join(dataDir, 'local-tasks', 'T-1', 'task', 'ledger.jsonl');
+
+  it('reads <task dir>/task/ledger.jsonl', async () => {
+    mkdirSync(join(dataDir, 'local-tasks', 'T-1', 'task'), { recursive: true });
+    writeFileSync(ledgerPath(), 'line1\nline2\n');
+    await expect(launcher().readLedger('T-1')).resolves.toBe('line1\nline2\n');
+  });
+
+  it('returns undefined when the file or the task folder is missing', async () => {
+    await expect(launcher().readLedger('T-1')).resolves.toBeUndefined();
+  });
+
+  it('returns undefined and logs when the file is over the cap', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    mkdirSync(join(dataDir, 'local-tasks', 'T-1', 'task'), { recursive: true });
+    writeFileSync(ledgerPath(), Buffer.alloc(LEDGER_MAX_BYTES + 1, 'x'));
+    await expect(launcher().readLedger('T-1')).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('T-1'));
     warn.mockRestore();
   });
 });

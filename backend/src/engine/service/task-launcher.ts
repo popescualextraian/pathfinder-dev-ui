@@ -27,6 +27,9 @@ export interface TaskInspection {
   bridgeUrl: string;
 }
 
+// The ledger is read whole into memory: anything larger is treated as unreadable.
+export const LEDGER_MAX_BYTES = 8 * 1024 * 1024;
+
 export interface TaskLauncher {
   // Creates and starts the task's container (and volume).
   launch(spec: LaunchSpec): Promise<LaunchResult>;
@@ -38,4 +41,7 @@ export interface TaskLauncher {
   inspect(taskId: string): Promise<TaskInspection>;
   // Number of running task containers, for the ENGINE_MAX_RUNNING cap.
   countRunning(): Promise<number>;
+  // Raw text of the task's cost ledger (ledger.jsonl in the task dir); works on a stopped task.
+  // undefined when it is missing or larger than LEDGER_MAX_BYTES.
+  readLedger(taskId: string): Promise<string | undefined>;
 }

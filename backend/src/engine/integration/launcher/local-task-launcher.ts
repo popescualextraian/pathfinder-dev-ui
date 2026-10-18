@@ -1,11 +1,11 @@
 import { Logger } from '@nestjs/common';
 import { ChildProcess, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { EngineConfig } from '../../../commons/engine-config';
-import { LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
 import { gitCredentialEnv } from './git-credential-env';
 
 type LauncherConfig = Pick<
@@ -213,6 +213,20 @@ export class LocalTaskLauncher implements TaskLauncher {
 
   async countRunning(): Promise<number> {
     return [...this.tasks.values()].filter((t) => this.alive(t)).length;
+  }
+
+  async readLedger(taskId: string): Promise<string | undefined> {
+    const file = join(this.root, taskId, 'task', 'ledger.jsonl');
+    try {
+      if ((await stat(file)).size > LEDGER_MAX_BYTES) {
+        this.logger.warn(`The cost ledger of task ${taskId} is over ${LEDGER_MAX_BYTES} bytes and is not read`);
+        return undefined;
+      }
+      return await readFile(file, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    }
   }
 
   // Bridge stdout/stderr so far (the last 64 KiB), for diagnostics.

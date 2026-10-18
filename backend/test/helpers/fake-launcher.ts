@@ -4,6 +4,8 @@ import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from '../../sr
 export class FakeLauncher implements TaskLauncher {
   containers = new Map<string, { running: boolean }>();
   specs: LaunchSpec[] = [];
+  // What readLedger returns (undefined: no ledger).
+  ledger: string | undefined;
 
   constructor(public bridgeUrl = 'http://127.0.0.1:1') {}
 
@@ -28,5 +30,8 @@ export class FakeLauncher implements TaskLauncher {
   }
   async countRunning(): Promise<number> {
     return [...this.containers.values()].filter((c) => c.running).length;
+  }
+  async readLedger(): Promise<string | undefined> {
+    return this.ledger;
   }
 }

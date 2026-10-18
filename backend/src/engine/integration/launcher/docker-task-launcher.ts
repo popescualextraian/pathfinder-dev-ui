@@ -1,7 +1,9 @@
+import { Logger } from '@nestjs/common';
 import Docker from 'dockerode';
+import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../commons/engine-config';
 import { gitCredentialEnv } from './git-credential-env';
-import { LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
 
 const BRIDGE_PORT = 8765;
 const STOP_TIMEOUT_SECONDS = 10;
@@ -17,8 +19,30 @@ function hasStatus(error: unknown, ...codes: number[]): boolean {
   return status !== undefined && codes.includes(status);
 }
 
+// The content of the first file in a tar stream, or 'too-large' (without reading it) over the cap.
+// Only what getArchive of a single file returns: ustar header, size in octal at offset 124.
+async function firstTarFile(stream: Readable, maxBytes: number): Promise<Buffer | 'too-large'> {
+  const chunks: Buffer[] = [];
+  let have = 0;
+  let size: number | undefined;
+  for await (const chunk of stream) {
+    chunks.push(chunk as Buffer);
+    have += (chunk as Buffer).length;
+    if (size === undefined && have >= 512) {
+      size = parseInt(Buffer.concat(chunks).toString('ascii', 124, 136).replace(/\0.*$/s, '').trim() || '0', 8);
+      if (!(size <= maxBytes)) { stream.destroy(); return 'too-large'; }
+    }
+    if (size !== undefined && have >= 512 + size) break;
+  }
+  const all = Buffer.concat(chunks);
+  if (size === undefined || all.length < 512 + size) throw new Error('Truncated archive');
+  return all.subarray(512, 512 + size);
+}
+
 // Runs each task in its own container next to the UI, on the shared Docker network.
 export class DockerTaskLauncher implements TaskLauncher {
+  private readonly logger = new Logger('DockerTaskLauncher');
+
   constructor(
     private readonly config: LauncherConfig,
     private readonly docker: Docker = new Docker(),
@@ -93,6 +117,23 @@ export class DockerTaskLauncher implements TaskLauncher {
   async countRunning(): Promise<number> {
     const running = await this.docker.listContainers({ filters: { label: [KIND_LABEL], status: ['running'] } });
     return running.length;
+  }
+
+  // getArchive works on stopped containers; the volume holds /task.
+  async readLedger(taskId: string): Promise<string | undefined> {
+    let file: Buffer | 'too-large';
+    try {
+      const stream = (await this.docker.getContainer(this.name(taskId)).getArchive({ path: '/task/ledger.jsonl' })) as unknown as Readable;
+      file = await firstTarFile(stream, LEDGER_MAX_BYTES);
+    } catch (error) {
+      if (hasStatus(error, 404)) return undefined;
+      throw error;
+    }
+    if (file === 'too-large') {
+      this.logger.warn(`The cost ledger of task ${taskId} is over ${LEDGER_MAX_BYTES} bytes and is not read`);
+      return undefined;
+    }
+    return file.toString('utf8');
   }
 
   private name(taskId: string): string {

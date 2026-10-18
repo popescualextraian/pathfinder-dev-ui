@@ -1,8 +1,10 @@
 import Docker from 'dockerode';
+import { Logger } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../../../src/commons/engine-config';
 import { DockerTaskLauncher } from '../../../../../src/engine/integration/launcher/docker-task-launcher';
 import { gitCredentialEnv } from '../../../../../src/engine/integration/launcher/git-credential-env';
-import { LaunchSpec } from '../../../../../src/engine/service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchSpec } from '../../../../../src/engine/service/task-launcher';
 
 const OAUTH = 'made-up-oauth-token-xxxx';
 const GH = 'made-up-gh-token-yyyy';
@@ -48,6 +50,7 @@ function setup(overrides: Partial<EngineConfig> = {}) {
     stop: jest.fn().mockResolvedValue(undefined),
     remove: jest.fn().mockResolvedValue(undefined),
     inspect: jest.fn().mockResolvedValue({ State: { Running: true } }),
+    getArchive: jest.fn(),
   };
   const volume = { remove: jest.fn().mockResolvedValue(undefined) };
   const docker = {
@@ -253,5 +256,59 @@ describe('DockerTaskLauncher start, stop, remove, inspect, countRunning', () => 
     docker.listContainers.mockResolvedValue([{ Id: 'a' }, { Id: 'b' }, { Id: 'c' }]);
     expect(await launcher.countRunning()).toBe(3);
     expect(docker.listContainers).toHaveBeenCalledWith({ filters: { label: ['agentic-ui.kind=task'], status: ['running'] } });
+  });
+});
+
+// A tar of one file, as `docker cp` / getArchive returns it: 512-byte header, content padded to 512, two zero blocks.
+function tarOf(name: string, content: Buffer, declaredSize = content.length): Buffer {
+  const header = Buffer.alloc(512);
+  header.write(name, 0, 'utf8');
+  header.write(declaredSize.toString(8).padStart(11, '0') + '\0', 124, 'ascii');
+  header.write('0', 156, 'ascii');
+  const padding = Buffer.alloc((512 - (content.length % 512)) % 512);
+  return Buffer.concat([header, content, padding, Buffer.alloc(1024)]);
+}
+
+describe('DockerTaskLauncher.readLedger', () => {
+  const archive = (buffer: Buffer) => Readable.from([buffer.subarray(0, 700), buffer.subarray(700)]);
+
+  it('reads /task/ledger.jsonl from the container archive, also in several chunks', async () => {
+    const { launcher, docker, container } = setup();
+    const text = '{"a":1}\n'.repeat(200);
+    container.getArchive.mockResolvedValue(archive(tarOf('ledger.jsonl', Buffer.from(text))));
+
+    await expect(launcher.readLedger('T-1')).resolves.toBe(text);
+    expect(docker.getContainer).toHaveBeenCalledWith('agentic-ui-task-T-1');
+    expect(container.getArchive).toHaveBeenCalledWith({ path: '/task/ledger.jsonl' });
+  });
+
+  it('reads an empty file as empty text', async () => {
+    const { launcher, container } = setup();
+    container.getArchive.mockResolvedValue(archive(tarOf('ledger.jsonl', Buffer.alloc(0))));
+    await expect(launcher.readLedger('T-1')).resolves.toBe('');
+  });
+
+  it('returns undefined when the file or container is missing (404)', async () => {
+    const { launcher, container } = setup();
+    container.getArchive.mockRejectedValue(dockerError(404));
+    await expect(launcher.readLedger('T-1')).resolves.toBeUndefined();
+  });
+
+  it('rethrows other docker errors', async () => {
+    const { launcher, container } = setup();
+    container.getArchive.mockRejectedValue(dockerError(500));
+    await expect(launcher.readLedger('T-1')).rejects.toThrow('docker 500');
+  });
+
+  it('returns undefined and logs when the file is over the cap, without reading it', async () => {
+    const { launcher, container } = setup();
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const stream = archive(tarOf('ledger.jsonl', Buffer.alloc(10), LEDGER_MAX_BYTES + 1));
+    container.getArchive.mockResolvedValue(stream);
+
+    await expect(launcher.readLedger('T-1')).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('T-1'));
+    expect(stream.destroyed).toBe(true);
+    warn.mockRestore();
   });
 });
