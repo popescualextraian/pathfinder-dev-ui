@@ -23,31 +23,48 @@ No Docker at hand? `npm run start:local` runs tasks as local processes (see Loca
 
 ```mermaid
 flowchart LR
-  user([Browser])
-  subgraph app["pathfinder-dev-ui (one Node process)"]
-    FE["React frontend<br/>views → state → api"]
-    subgraph be["NestJS backend"]
-      API["api<br/>controllers, DTOs, SSE"]
-      UIS["service / repository<br/>system info, repositories"]
-      ENG[["engine<br/>task engine package"]]
-      COM["commons<br/>config, pipes, filters, utils"]
+  user(["<b>Browser</b><br/>where the user works with tasks"])
+  subgraph app["<b>pathfinder-dev-ui</b>"]
+    subgraph proc["one Node 22 process"]
+      FE["<b>Frontend</b><br/>task list, task view, full run<br/><i>React: views → state → api</i>"]
+      subgraph be["NestJS backend"]
+        API["<b>API</b><br/>routes, input validation, SSE<br/><i>controllers, DTOs</i>"]
+        UIS["<b>UI services</b><br/>system info, configured repositories"]
+        ENG[["<b>Task engine</b><br/>starts tasks, drives their bridges,<br/>keeps the task records"]]
+        COM["<b>Commons</b><br/>configuration, pipes, filters, utilities"]
+      end
     end
+    DATA[("<b>Task records</b><br/>one JSON file per task, with its tokens<br/><i>ENGINE_DATA_DIR: volume engine-data at /data</i>")]
   end
-  TASK["task container<br/>agentic-bridge + agent"]
-  DATA[("ENGINE_DATA_DIR<br/>task records")]
-  GIT[("git remote")]
+  DOCKER["<b>Docker engine</b><br/>creates and removes task containers<br/><i>/var/run/docker.sock</i>"]
+  subgraph task["<b>Pathfinder Dev Base</b> (one task container per task)"]
+    BR["<b>agentic-bridge</b><br/>task state, questions, action gate,<br/>event stream<br/><i>HTTP API v1 + WebSocket, port 8765</i>"]
+    AG["<b>Agent</b><br/>does the work on the task's branch<br/><i>Claude Code</i>"]
+    WORK[("<b>Workspace</b><br/>repository clone, branch agentic/&lt;task-id&gt;<br/><i>/work</i>")]
+  end
+  GIT[("<b>Git remote</b><br/>source repository, pushed branches<br/><i>GitHub</i>")]
 
   user --> FE
   FE -- "REST + SSE /api" --> API
   API --> UIS
   API -- "engine/index.ts only" --> ENG
-  UIS --> COM
-  ENG --> COM
-  ENG -- "Docker API or child process" --> TASK
-  ENG -- "HTTP + WebSocket, task token" --> TASK
+  UIS & ENG --> COM
   ENG --> DATA
-  TASK -- "clone, push branch" --> GIT
+  ENG -- "create, start, remove" --> DOCKER
+  DOCKER -. runs .-> task
+  ENG -- "HTTP + WebSocket, task token" --> BR
+  BR --> AG
+  AG --> WORK
+  WORK -- "clone, push branch" --> GIT
 ```
+
+The `ui` box is the compose service `ui` (or `npm start` on the host); a task container runs the
+image `ENGINE_IMAGE`, built by `agentic build`. The task records belong to the engine, not to the
+task containers: in the compose setup they are
+in the `engine-data` volume of the `ui` container, with `npm start` in the host folder
+`ENGINE_DATA_DIR` names. Each task container has its own volume (`agentic-ui-task-<id>` at `/task`),
+removed when the task is closed. With the `local` launcher a task is a process on the host instead
+of a container, and Docker is not used.
 
 - **Frontend** (`frontend/src`): task list, task view, full run. Only `api/` calls the backend.
 - **api** (`backend/src/api`): HTTP only: routes, DTO validation, SSE, error mapping. Tasks routes call
