@@ -1,14 +1,17 @@
+import { Logger } from '@nestjs/common';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { TaskUpdates } from '../../../../src/engine/service/task-updates';
+import { TaskCostReader } from '../../../../src/engine/service/task-cost-reader';
 import { TasksService } from '../../../../src/engine/service/tasks.service';
-import { config, fakeBridge, fakeLauncher, fakeRecords, record } from './helpers';
+import { config, fakeBridge, fakeLauncher, fakeRecords, ledgerLine, record } from './helpers';
 
 function setup(opts: { records?: ReturnType<typeof record>[]; launcher?: Record<string, unknown>; bridge?: Record<string, unknown> } = {}) {
   const records = fakeRecords(opts.records ?? [record()]);
   const launcher = fakeLauncher(opts.launcher);
   const bridge = fakeBridge(opts.bridge);
   const factory = jest.fn(() => bridge);
-  const service = new TasksService(records as never, launcher as never, factory as never, config, new TaskUpdates(), { waitTimeoutMs: 50, waitIntervalMs: 1 });
+  const updates = new TaskUpdates();
+  const service = new TasksService(records as never, launcher as never, factory as never, config, updates, new TaskCostReader(records as never, launcher as never, updates), { waitTimeoutMs: 50, waitIntervalMs: 1 });
   return { records, launcher, bridge, factory, service };
 }
 
@@ -128,3 +131,43 @@ describe('TasksService.list order', () => {
     expect((await service.list()).map((v) => v.id)).toEqual(['T-20260103-cccc', 'T-20260102-bbbb', 'T-20260101-aaaa']);
   });
 });
+
+describe('TasksService cost triggers', () => {
+  const ledger = (input: number) => ledgerLine(ID, input);
+
+  it('close reads the ledger after the container stop and before the remove, and the closed task keeps its cost', async () => {
+    const { service, launcher, records } = setup({ records: [record({ lastState: 'running' })] });
+    launcher.readLedger.mockResolvedValue(ledger(7));
+    const view = await service.close(ID);
+    expect(launcher.stop.mock.invocationCallOrder[0]).toBeLessThan(launcher.readLedger.mock.invocationCallOrder[0]);
+    expect(launcher.readLedger.mock.invocationCallOrder[0]).toBeLessThan(launcher.remove.mock.invocationCallOrder[0]);
+    expect(view.cost?.input).toBe(7);
+    expect(records.map.get(ID)!.cost?.input).toBe(7);
+    expect((await service.get(ID)).cost?.input).toBe(7);
+  });
+
+  it('close still removes the container when the read fails', async () => {
+    const { service, launcher } = setup();
+    launcher.readLedger.mockRejectedValue(new Error('no archive'));
+    expect((await service.close(ID)).closed).toBe(true);
+    expect(launcher.remove).toHaveBeenCalledWith(ID);
+  });
+
+  it('stop reads the ledger after the container stop and stores the cost', async () => {
+    const { service, launcher, records } = setup({ records: [record({ lastState: 'running' })] });
+    launcher.readLedger.mockResolvedValue(ledger(9));
+    const view = await service.stop(ID);
+    expect(launcher.stop.mock.invocationCallOrder[0]).toBeLessThan(launcher.readLedger.mock.invocationCallOrder[0]);
+    expect(view.cost?.input).toBe(9);
+    expect(records.map.get(ID)).toMatchObject({ lastState: 'stopped', cost: { input: 9 } });
+  });
+
+  it('a status read that sees the turn end arms the cost recheck', async () => {
+    const { service, records } = setup({ records: [record({ lastState: 'running' })] });
+    await service.get(ID); // bridge status is idle
+    expect(records.map.get(ID)!.costRecheck).toBe(3);
+  });
+});
+
+beforeEach(() => { jest.spyOn(Logger.prototype, 'warn').mockImplementation(); });
+afterEach(() => jest.restoreAllMocks());

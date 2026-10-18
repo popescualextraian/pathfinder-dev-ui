@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promise
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
+import type { TaskCost } from '../service/task-cost';
 
 // The only place the per-task tokens are stored. They never leave the backend.
 export interface TaskRecord {
@@ -33,6 +34,9 @@ export interface TaskRecord {
   // Closed by the user: container gone, record kept. Absent means not closed.
   closed?: boolean;
   closedAt?: string;
+  // Cost from the task's ledger; kept after close. costRecheck: poll rounds left to re-read it after a turn ended.
+  cost?: TaskCost;
+  costRecheck?: number;
 }
 
 export type RecordPatch = Partial<TaskRecord> | ((current: TaskRecord) => Partial<TaskRecord> | undefined);

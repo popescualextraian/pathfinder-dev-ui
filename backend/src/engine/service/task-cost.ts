@@ -1,5 +1,8 @@
 // What a task cost so far: token counts and USD per source (estimate, billed credits, unknown;
 // never summed across sources), from the cost plugin's ledger in the task container.
+// Poll rounds in which a task whose turn ended gets its ledger re-read (the hook may write late).
+export const COST_RECHECKS = 3;
+
 export interface TaskCost {
   input: number;
   output: number;

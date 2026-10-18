@@ -42,9 +42,37 @@ function setup(states: Record<string, Partial<ReturnType<typeof record>>>, pollS
   const updates = new TaskUpdates();
   const published: { kind: string; task?: { id: string; state: string; section: string; lastMessage?: string; questions: { id: string }[] } }[] = [];
   updates.changes.subscribe((c) => published.push(c as never));
-  const poller = new TaskPoller(records as never, factory as never, updates, { pollSeconds });
-  return { poller, records, bridges, updates, published, factory, clients };
+  const costs = { refresh: jest.fn(async () => undefined) };
+  const poller = new TaskPoller(records as never, factory as never, updates, { pollSeconds }, costs as never);
+  return { poller, records, bridges, updates, published, factory, clients, costs };
 }
+
+describe('TaskPoller cost', () => {
+  const id = ids[0];
+  beforeEach(() => { jest.spyOn(Logger.prototype, 'warn').mockImplementation(); });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('a turn end arms the recheck: read in the same round and the next two, then no more', async () => {
+    const { poller, bridges, records, costs } = setup({ [id]: { lastState: 'running' } });
+    bridges.get(id)!.push('state', { state: 'idle', reason: '' });
+    await poller.tick();
+    expect(costs.refresh).toHaveBeenCalledTimes(1);
+    expect(records.map.get(id)!.costRecheck).toBe(2);
+    await poller.tick();
+    await poller.tick();
+    expect(costs.refresh).toHaveBeenCalledTimes(3);
+    expect(records.map.get(id)!.costRecheck).toBe(0);
+    await poller.tick();
+    expect(costs.refresh).toHaveBeenCalledTimes(3);
+  });
+
+  it('no turn end, no read; a closed task is not read', async () => {
+    const { poller, bridges, costs } = setup({ [id]: { lastState: 'running' }, [ids[1]]: { lastState: 'idle', closed: true, costRecheck: 2 } });
+    bridges.get(id)!.push('state', { state: 'running', reason: '' });
+    await poller.tick();
+    expect(costs.refresh).not.toHaveBeenCalled();
+  });
+});
 
 describe('TaskPoller', () => {
   let warn: jest.SpyInstance;
@@ -304,7 +332,7 @@ describe('TaskPoller', () => {
       const updates = new TaskUpdates();
       const published: unknown[] = [];
       updates.changes.subscribe((c) => published.push(c));
-      const restarted = new TaskPoller(records as never, (() => b.client()) as never, updates, { pollSeconds: 15 });
+      const restarted = new TaskPoller(records as never, (() => b.client()) as never, updates, { pollSeconds: 15 }, first.costs as never);
       b.push('state', { state: 'waiting', reason: 'question Q1' });
       await restarted.tick();
       expect(b.calls[b.calls.length - 1].since).toBe(1);

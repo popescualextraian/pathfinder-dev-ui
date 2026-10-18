@@ -60,6 +60,7 @@ export function fakeLauncher(over: Partial<Record<keyof TaskLauncher, unknown>> 
     remove: jest.fn(async () => undefined),
     inspect: jest.fn(async () => ({ exists: true, running: true, bridgeUrl: 'http://bridge:8765' })),
     countRunning: jest.fn(async () => 0),
+    readLedger: jest.fn(async (): Promise<string | undefined> => undefined),
   };
   return Object.assign(base, over);
 }
@@ -75,4 +76,13 @@ export function fakeBridge(over: Record<string, unknown> = {}) {
     eventStream: jest.fn(),
   };
   return Object.assign(base, over);
+}
+
+// A valid cost-record/v1 line of a task (made-up numbers).
+export function ledgerLine(task = 'T-20260101-abcd', input = 100, session = 's1'): string {
+  return JSON.stringify({
+    schema: 'cost-record/v1', ts: '2026-01-01T00:10:00Z', project: 'p', harness: 'claude-code', session,
+    context: { kind: 'task', task }, models: [],
+    totals: { input, output: 20, cache_read: 0, cache_write: 0, cost: { estimate: 0.5 } },
+  });
 }

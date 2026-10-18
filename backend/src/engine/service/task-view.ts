@@ -1,5 +1,6 @@
 import { repoNameOf } from '../../commons/repo-name';
 import { TaskRecord } from '../repository/task-record.repository';
+import { TaskCost } from './task-cost';
 import { BridgeQuestion, BridgeStatus } from './bridge-client';
 
 // What clients see of a task: the record without the tokens, plus state from the bridge.
@@ -29,6 +30,7 @@ export interface TaskView {
   summary?: string;
   closed: boolean;
   closedAt?: string;
+  cost?: TaskCost;
 }
 
 // closed or stopped: done; waiting, failed, interrupted: needs you; idle, suspended: in review; the rest is working.
@@ -81,6 +83,7 @@ export function toView(record: TaskRecord, live: Live = {}): TaskView {
     closed,
   };
   if (record.closedAt !== undefined) view.closedAt = record.closedAt;
+  if (record.cost !== undefined) view.cost = record.cost;
   if (record.lastMessage !== undefined) view.lastMessage = record.lastMessage;
   if (record.lastMessageAt !== undefined) view.lastMessageAt = record.lastMessageAt;
   if (record.repoRef !== undefined) view.repoRef = record.repoRef;
