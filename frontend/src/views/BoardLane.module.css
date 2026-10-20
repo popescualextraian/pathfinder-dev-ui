@@ -1,0 +1,5 @@
+.lane { flex: 0 0 260px; display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--paper-soft); border: 1px solid var(--line); border-radius: var(--radius-card); min-height: 0; }
+.over { border-color: var(--msg-red); }
+.header { display: flex; justify-content: space-between; align-items: center; margin: 0; font-size: 13px; }
+.count { padding: 0 8px; background: var(--state-done-bg); color: var(--state-done-text); border-radius: var(--radius-pill); font-size: 12px; }
+.cards { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 40px; }

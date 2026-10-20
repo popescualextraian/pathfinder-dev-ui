@@ -3,12 +3,17 @@ import { useCallback, useEffect, useState } from 'react';
 export interface Route {
   repository: string | null;
   taskId: string | null;
+  view: 'tasks' | 'backlog';
 }
 
-/** Hash format: #/repo/<name>/task/<id>; either part may be absent. */
+/** Hash format: #/repo/<name>/task/<id>; either part may be absent. `#/backlog` selects the board view. */
 export function parseHash(hash: string): Route {
-  const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  const route: Route = { repository: null, taskId: null };
+  const stripped = hash.replace(/^#\/?/, '');
+  if (stripped.replace(/\/+$/, '') === 'backlog') {
+    return { repository: null, taskId: null, view: 'backlog' };
+  }
+  const parts = stripped.split('/').filter(Boolean);
+  const route: Route = { repository: null, taskId: null, view: 'tasks' };
   for (let i = 0; i + 1 < parts.length; i += 2) {
     let value: string;
     try {
@@ -23,6 +28,7 @@ export function parseHash(hash: string): Route {
 }
 
 export function buildHash(route: Route): string {
+  if (route.view === 'backlog') return '#/backlog';
   let hash = '#';
   if (route.repository) hash += `/repo/${encodeURIComponent(route.repository)}`;
   if (route.taskId) hash += `/task/${encodeURIComponent(route.taskId)}`;
@@ -50,6 +56,10 @@ export function useRoute() {
     (repository: string | null) => navigate({ ...parseHash(window.location.hash), repository }),
     [navigate],
   );
+  const selectView = useCallback(
+    (view: 'tasks' | 'backlog') => navigate({ ...parseHash(window.location.hash), view }),
+    [navigate],
+  );
 
-  return { ...route, selectTask, selectRepository };
+  return { ...route, selectTask, selectRepository, selectView };
 }

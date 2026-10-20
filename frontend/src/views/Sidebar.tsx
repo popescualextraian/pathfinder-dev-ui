@@ -9,9 +9,22 @@ interface Props {
   selectedRepository: string | null;
   onSelectRepository: (repository: string | null) => void;
   onNewTask?: () => void;
+  /** The Tasks / Backlog switch is shown only when the backlog is enabled. */
+  backlogEnabled?: boolean;
+  view?: 'tasks' | 'backlog';
+  onSelectView?: (view: 'tasks' | 'backlog') => void;
 }
 
-export function Sidebar({ repositories, tasks, selectedRepository, onSelectRepository, onNewTask }: Props) {
+export function Sidebar({
+  repositories,
+  tasks,
+  selectedRepository,
+  onSelectRepository,
+  onNewTask,
+  backlogEnabled = false,
+  view = 'tasks',
+  onSelectView,
+}: Props) {
   return (
     <div className={styles.sidebar}>
       <div className={styles.brand}>
@@ -32,9 +45,26 @@ export function Sidebar({ repositories, tasks, selectedRepository, onSelectRepos
         onSelect={onSelectRepository}
       />
       <h2 className={styles.kicker}>Show</h2>
-      <ul className={styles.show}>
-        <li aria-current="true">Tasks</li>
-      </ul>
+      {backlogEnabled ? (
+        <ul className={styles.show}>
+          {(['tasks', 'backlog'] as const).map((v) => (
+            <li key={v}>
+              <button
+                type="button"
+                className={styles.switch}
+                aria-current={view === v ? 'true' : undefined}
+                onClick={() => onSelectView?.(v)}
+              >
+                {v === 'tasks' ? 'Tasks' : 'Backlog'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <ul className={styles.show}>
+          <li aria-current="true">Tasks</li>
+        </ul>
+      )}
     </div>
   );
 }
