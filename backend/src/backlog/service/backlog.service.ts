@@ -50,8 +50,9 @@ export class BacklogService implements OnModuleInit {
     return item;
   }
 
-  // Reads the source, publishes what differs from the cache and saves. An unreachable source keeps the cache.
-  async refresh(): Promise<Item[]> {
+  // Reads the source, publishes what differs from the cache and saves. An unreachable source keeps the cache
+  // and returns it; with `strict` (a user asked for the refresh) the failure is also thrown as unreachable.
+  async refresh(options: { strict?: boolean } = {}): Promise<Item[]> {
     await this.ensureLoaded();
     const started = this.generation;
     let fresh: Item[];
@@ -59,7 +60,9 @@ export class BacklogService implements OnModuleInit {
       fresh = await this.connector.list();
     } catch (error) {
       this.logger.warn(`Refresh failed: ${safeMessage(error)}`);
-      this.updates.publish({ kind: 'error', message: error instanceof BacklogUnreachableError ? error.message : 'Backlog source failed' });
+      const message = error instanceof BacklogUnreachableError ? error.message : 'Backlog source failed';
+      this.updates.publish({ kind: 'error', message });
+      if (options.strict) throw new BacklogUnreachableError(message);
       return this.sorted();
     }
     const seen = new Set<string>();
