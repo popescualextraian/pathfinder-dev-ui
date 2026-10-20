@@ -49,6 +49,7 @@ Backlog (`backend/src/backlog`, its own package like the engine; optional: on on
 - Task records are one mode-600 JSON file per task in `ENGINE_DATA_DIR` (`task-record.repository.ts`). They contain tokens, which must never appear in API responses or container labels.
 - The task container clones the repo itself (start step `05-workspace`) before the bridge starts; with `AGENTIC_WORKTREE=1` the bridge exits if `/work` isn't a git checkout with a commit. Git push credentials are injected via `GIT_CONFIG_*` env referencing `GH_TOKEN` (`git-credential-env.ts`), never a token value or file.
 - `ENGINE_MAX_RUNNING` caps running containers (409 beyond it). Prompt/answer wake a non-running container, except a task that was stopped via `/stop` (final; 409 immediately).
+- Sessions: a task holds several bridge sessions (`main` by default); the record and view carry `sessions`, questions carry `session`, the poller keeps the last message per session. `session` is optional on prompt/cancel and events (the engine filters the bridge's unfiltered WS by event `name`; events without `name` show in every session); `POST /tasks/:id/sessions` adds one (README, Sessions).
 - Bridge events are relayed to clients as SSE (`task-events.service.ts`). Bridge errors map to HTTP via `bridge-error.filter.ts` (400/404/409/503 pass through, anything else is 502).
 - `engine-config.ts` validates env at startup and names the bad variable without printing values.
 
@@ -61,7 +62,7 @@ Test helpers (`backend/test/helpers`; the fake agent is `tools/fake-agent/fake-a
 - `state/` (hooks): `useRoute`, `useRepositories`, `useTasks(filter)` (list once, then status stream; reloads on reconnect), `useTask(id, live)`, `useTaskRun(id)` (stream opened only while `FullRun` is mounted; merges message chunks), `use-task-actions` (start, prompt, answer, cancel, close, delete with pending/error), `useSystemInfo`.
 - `views/` (components, no API calls, one CSS module each): AppShell, Sidebar, RepositoryList, TaskList, TaskSection, TaskCard, TaskView, PromptBlock, LastResponse, QuestionCard, FullRun, ReplyBox, FactsPanel, NewTaskDialog, StatePill, Button, SystemInfoView (footer). `App.tsx` wires them.
 - Styling: design tokens are CSS variables in `theme.css` (`--msg-red`, `--ink`, `--paper`, `--line`, state colors); components use only these in their `*.module.css`. No external fonts or CDNs.
-- URL hash state: `#/repo/<name>/task/<id>` (either part optional) holds the repository filter and selected task, so reload and links keep them.
+- URL hash state: `#/repo/<name>/task/<id>` (either part optional, `#/tasks/<id>` without a repository) holds the repository filter and selected task, with `?session=<name>` for the selected session tab (default main, unknown falls back), so reload and links keep them. Task view has a `SessionTabs` row and `AddSessionDialog`; `SessionPanel` shows one session.
 - Tests (`frontend/test`, jest + Testing Library, jsdom): CSS is mapped to `frontend/test/style-stub.js` (CSS modules return no class names). The API is tested with `fetch` and `EventSource` mocked (`test/api/fake-event-source.ts`, `test/fixtures/tasks.ts`); views mock `api/*` modules.
 - See the screens: `npm run dev:frontend` (Vite proxies `/api` to :3000, run `npm start` alongside), or `npm run start:local` (see "Test your version") and open the port.
 

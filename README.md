@@ -245,14 +245,16 @@ All under `/api`, JSON, times are ISO 8601 UTC strings. A task view contains the
 | `POST /api/tasks` `{prompt, title?, repository?, repoUrl?, repoRef?, model?}` | Starts a task and waits for its bridge. `repository` is a name from `/api/repositories`; with `repoUrl` too it is 400, as is an unknown name. `repoUrl` must be https without credentials, on an allowed host (see `ENGINE_ALLOWED_REPO_HOSTS`). With neither, the default repository (`ENGINE_REPO_URL`). | 201 task |
 | `GET /api/tasks` | All tasks, newest `createdAt` first, closed ones included, as last recorded (no bridge call) | 200 |
 | `GET /api/tasks/:id` | Task with live bridge status (state, reason, open questions, summary, branch); a closed task is read from its record | 200 |
-| `POST /api/tasks/:id/prompt` `{text}` | Sends a prompt; wakes a container that is not running first; 409 for a closed or stopped task | 202 task |
+| `POST /api/tasks/:id/prompt` `{text, session?}` | Sends a prompt (to `session`, default `main`); wakes a container that is not running first; 409 for a closed or stopped task | 202 task |
 | `POST /api/tasks/:id/answer` `{text, question?}` | Answers a question; default is the oldest open one; wakes like prompt; 409 for a closed or stopped task, or without an open question | 202 task |
-| `POST /api/tasks/:id/cancel` | Cancels the running turn; 409 for a closed task | 202 task |
+| `POST /api/tasks/:id/cancel` `{session?}` | Cancels the running turn (of `session`, default `main`); 409 for a closed task | 202 task |
 | `POST /api/tasks/:id/close` | Stops the task if it runs, removes container and volume, keeps the record with `closed: true`. Closing a closed task is 202 as well | 202 task |
 | `POST /api/tasks/:id/stop` | Bridge `/stop`, then stops the container | 202 task |
 | `DELETE /api/tasks/:id` | Removes the record (and container and volume, if still there); 409 unless the task is closed or stopped | 204 |
-| `GET /api/tasks/:id/events?since=N` | Events after sequence number N as a JSON array; 409 when the container is not running (always for a closed task) | 200 |
-| `GET /api/tasks/:id/events/stream?since=N` | The full run: the same events, then live ones, as SSE (`id` is the event `seq`; `Last-Event-ID`, which EventSource sends on reconnect, takes precedence over `since` when present) | 200 |
+| `GET /api/tasks/:id/sessions` | The task's sessions (see Sessions) | 200 |
+| `POST /api/tasks/:id/sessions` `{name, model?, forkFrom?, prompt?}` | Adds a session; wakes the task like prompt does (see Sessions) | 201 task |
+| `GET /api/tasks/:id/events?since=N&session=NAME` | Events after sequence number N as a JSON array; 409 when the container is not running (always for a closed task) | 200 |
+| `GET /api/tasks/:id/events/stream?since=N&session=NAME` | The full run: the same events, then live ones, as SSE (`id` is the event `seq`; `Last-Event-ID`, which EventSource sends on reconnect, takes precedence over `since` when present) | 200 |
 | `GET /api/tasks/stream` | The status stream, SSE: `event: task` with the task view when a task is created or changed (state, questions, last message, title, closed), `event: removed` with `{"id"}` when one is deleted, and a `: ping` comment every 25 seconds. Nothing is replayed on connect: load `GET /api/tasks` first (and again after a reconnect), then apply the events. | 200 |
 | `GET /api/system/info` | `{ name, version, uptimeSeconds }` | 200 |
 
@@ -260,6 +262,32 @@ Errors: bridge 400, 404, 409 and 503 pass through with the bridge's message; any
 (including 401/403) and an unreachable bridge give 502 with a fixed message. An unknown task is 404;
 starting beyond `ENGINE_MAX_RUNNING` is 409. Limits: `prompt`/`text` at most 20000 characters and not
 blank, `title` at most 200 (shortened to 80). Errors have the body `{statusCode, message, path}` (a validation error is 400 with `message` as a list of strings). Errors inside an SSE stream that already started arrive as an SSE `error` event.
+
+## Sessions
+
+A task can hold several agent sessions (conversations) that run, ask and get answered independently. Every
+task has `main`; without a `session` parameter every route works on `main` as before. The task view lists
+them as `sessions: [{name, model?, state, reason?, forkOf?, createdAt, lastMessage?, lastMessageAt?, questions}]`
+in creation order; each open question carries its `session`. The task-level `state`, `section` and
+`lastMessage` stay: a question in any session puts the task under Needs you, and `lastMessage` is the most
+recent final message of any session. A record from before sessions shows one `main` session.
+
+- `POST /api/tasks/:id/sessions` `{name, model?, forkFrom?, prompt?}`: `name` matches `[a-z0-9][a-z0-9_-]{0,31}`;
+  `forkFrom` copies the conversation of an existing, idle session; `prompt` is the first turn. 400 for a bad
+  name or model, 404 for an unknown `forkFrom`, 409 for a name already taken, the session limit, a busy source
+  or a stopped task.
+- `session` on `prompt` and `cancel`; an answer goes to the session its question belongs to, and without a
+  question id the oldest open question (of `session`, when given) is answered.
+- `GET .../events` and `.../events/stream` with `session=NAME` return that session's events only (the engine
+  filters by the event's `name`). Events without a `name` (task-level ones such as container or state events)
+  appear in every session's view. Without `session` all events are returned.
+
+In the UI, a tab row above the run shows one tab per session (name, state, a mark for an open question) and a
+`+ Session` button (name, optional model, optional "copy conversation from" an idle session, optional first
+prompt). The selected tab shows that session's last response, questions, reply box, cancel and full run;
+title, facts, stop and close stay task-level. The task cards show `N sessions` when there are several and
+which session asks. The route is `#/tasks/<id>?session=<name>` (or `#/repo/<name>/task/<id>?session=<name>`);
+`main` is the default and an unknown name falls back to it.
 
 ## Backlog
 
