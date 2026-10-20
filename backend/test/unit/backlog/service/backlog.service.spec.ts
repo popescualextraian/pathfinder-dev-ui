@@ -81,23 +81,25 @@ describe('BacklogService', () => {
     expect((await service.get('1')).lane).toBe('doing');
   });
 
-  it('move to an unknown lane is not found', async () => {
+  it('move to an unknown lane is invalid', async () => {
     const { connector, service } = setup([item('1')], [item('1')]);
-    await expect(service.move('1', 'todo', 'nope')).rejects.toEqual(new BacklogNotFoundError('lane'));
+    await expect(service.move('1', 'todo', 'nope')).rejects.toEqual(new BacklogInvalidError('Unknown lane'));
     expect(connector.moves).toEqual([]);
   });
 
   it('lanes returns the user once read at init and the configured lanes', async () => {
     const { service } = setup();
     expect(service.lanes().me).toBe('');
-    await service.onModuleInit();
+    service.onModuleInit();
+    await new Promise((r) => setTimeout(r, 0));
     expect(service.lanes()).toEqual({ me: 'me', lanes: [{ id: 'todo', title: 'To do' }, { id: 'plan', title: 'Plan' }, { id: 'doing', title: 'Doing' }] });
   });
 
   it('a failing me() is tolerated', async () => {
     const { connector, service } = setup();
     connector.failure = new BacklogUnreachableError();
-    await service.onModuleInit();
+    service.onModuleInit();
+    await new Promise((r) => setTimeout(r, 0));
     expect(service.lanes().me).toBe('');
   });
 
@@ -136,7 +138,8 @@ describe('BacklogService', () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     connector.failure = new Error('https://gitlab.example/secret-token-abc');
     await service.refresh();
-    await service.onModuleInit();
+    service.onModuleInit();
+    await new Promise((r) => setTimeout(r, 0));
     expect(JSON.stringify(changes)).not.toContain('secret-token-abc');
     expect(changes).toEqual([{ kind: 'error', message: 'Backlog source failed' }]);
     expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-token-abc');
@@ -211,5 +214,84 @@ describe('BacklogService', () => {
     connector.failure = new BacklogUnreachableError();
     await expect(service.update('1', { title: 'V' })).rejects.toBeInstanceOf(BacklogUnreachableError);
     warn.mockRestore();
+  });
+
+  it('onModuleInit does not wait for the current user and a later refresh fills it', async () => {
+    const { connector, service } = setup([item('1')], []);
+    let release!: (v: string) => void;
+    connector.me = () => new Promise<string>((r) => { release = r; });
+    service.onModuleInit(); // returns at once although me() never settles
+    expect(service.lanes().me).toBe('');
+    release('late');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(service.lanes().me).toBe('late');
+  });
+
+  it('a refresh re-reads the current user while it is unknown', async () => {
+    const { connector, service } = setup([item('1')], []);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    connector.me = async () => { throw new BacklogUnreachableError(); };
+    service.onModuleInit();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(service.lanes().me).toBe('');
+    connector.me = async () => 'back';
+    await service.refresh();
+    expect(service.lanes().me).toBe('back');
+    warn.mockRestore();
+  });
+
+  it('a move keeps the cached file links when the source answers without them', async () => {
+    const links = [{ repo: 'g/p', path: 'a.md' }];
+    const { connector, service } = setup([item('1')], [item('1', { fileLinks: links })]);
+    const moveToLane = connector.moveToLane.bind(connector);
+    connector.moveToLane = async (...a) => ({ ...(await moveToLane(...a)), fileLinks: [] });
+    const moved = await service.move('1', 'todo', 'doing');
+    expect(moved.fileLinks).toEqual(links);
+    expect((await service.get('1')).fileLinks).toEqual(links);
+  });
+
+  it('an update keeps the cached file links when the source answers without them', async () => {
+    const links = [{ repo: 'g/p', path: 'a.md' }];
+    const { connector, service } = setup([item('1')], [item('1', { fileLinks: links })]);
+    const update = connector.update.bind(connector);
+    connector.update = async (...a) => ({ ...(await update(...a)), fileLinks: [] });
+    const updated = await service.update('1', { title: 'X' });
+    expect(updated.fileLinks).toEqual(links);
+    expect((await service.get('1')).fileLinks).toEqual(links);
+  });
+
+  it('a move into the lane the item is already in writes nothing and emits no event', async () => {
+    const { connector, service, changes, events } = setup([item('1', { lane: 'plan' })], [item('1', { lane: 'plan' })]);
+    const result = await service.move('1', 'plan', 'plan');
+    expect(result.lane).toBe('plan');
+    expect(connector.moves).toEqual([]);
+    expect(changes).toEqual([]);
+    expect(events).toEqual([]);
+    await expect(service.move('1', 'plan', 'nope')).rejects.toBeInstanceOf(BacklogInvalidError);
+  });
+
+  it('concurrent refreshes share one read of the source and a strict caller still gets the failure', async () => {
+    const { connector, service } = setup([item('1')], []);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    let reads = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    connector.list = async () => { reads++; await gate; throw new BacklogUnreachableError(); };
+    const lenient = service.refresh();
+    const strict = service.refresh({ strict: true });
+    release();
+    await expect(lenient).resolves.toEqual([]);
+    await expect(strict).rejects.toBeInstanceOf(BacklogUnreachableError);
+    expect(reads).toBe(1);
+    warn.mockRestore();
+  });
+
+  it('a move of an item deleted in the source drops it from the board', async () => {
+    const { connector, service, changes } = setup([], [item('1')]);
+    await expect(service.move('1', 'todo', 'plan')).rejects.toBeInstanceOf(BacklogNotFoundError);
+    expect(changes).toEqual([{ kind: 'removed', id: '1' }]);
+    expect(await service.list()).toEqual([]);
+    expect(connector.moves).toEqual([]);
   });
 });

@@ -176,7 +176,7 @@ export class GitlabConnector implements BacklogConnector {
         note = await this.ownedNote(id);
       } catch (error) {
         if (!bestEffortLinks) throw error;
-        this.logger.warn(`Could not read the file links after a move: ${safeMessage(error)}`);
+        this.logger.warn(`Could not read the file links of the item: ${safeMessage(error)}`);
       }
     }
     return {

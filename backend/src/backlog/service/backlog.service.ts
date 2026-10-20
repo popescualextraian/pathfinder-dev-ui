@@ -15,6 +15,8 @@ export class BacklogService implements OnModuleInit {
   private generation = 0;
   private readonly touched = new Map<string, number>();
   private me = '';
+  private readingMe?: Promise<void>;
+  private refreshing?: Promise<{ items: Item[]; failure?: BacklogUnreachableError }>;
 
   constructor(
     @Inject(BACKLOG_CONNECTOR) private readonly connector: BacklogConnector,
@@ -24,12 +26,17 @@ export class BacklogService implements OnModuleInit {
     @Inject(BACKLOG_CONFIG) private readonly config: Pick<BacklogConfig, 'lanes'>,
   ) {}
 
-  async onModuleInit(): Promise<void> {
-    try {
-      this.me = await this.connector.me();
-    } catch (error) {
-      this.logger.warn(`Could not read the current user: ${safeMessage(error)}`);
-    }
+  // Started, not awaited: an unreachable source must not hold the application up. Refreshes retry while it is unknown.
+  onModuleInit(): void {
+    void this.readMe();
+  }
+
+  private readMe(): Promise<void> {
+    this.readingMe ??= this.connector.me().then(
+      (me) => { this.me = me; },
+      (error: unknown) => { this.logger.warn(`Could not read the current user: ${safeMessage(error)}`); },
+    ).finally(() => { this.readingMe = undefined; });
+    return this.readingMe;
   }
 
   lanes(): { me: string; lanes: Array<{ id: string; title: string }> } {
@@ -52,9 +59,18 @@ export class BacklogService implements OnModuleInit {
 
   // Reads the source, publishes what differs from the cache and saves. An unreachable source keeps the cache
   // and returns it; with `strict` (a user asked for the refresh) the failure is also thrown as unreachable.
+  // Concurrent callers (poller, POST /refresh) share one read, so an older snapshot cannot finish after a newer one.
   async refresh(options: { strict?: boolean } = {}): Promise<Item[]> {
-    await this.ensureLoaded();
+    this.refreshing ??= this.runRefresh().finally(() => { this.refreshing = undefined; });
+    const { items, failure } = await this.refreshing;
+    if (failure && options.strict) throw failure;
+    return items;
+  }
+
+  private async runRefresh(): Promise<{ items: Item[]; failure?: BacklogUnreachableError }> {
     const started = this.generation;
+    await this.ensureLoaded();
+    if (!this.me) await this.readMe();
     let fresh: Item[];
     try {
       fresh = await this.connector.list();
@@ -62,8 +78,7 @@ export class BacklogService implements OnModuleInit {
       this.logger.warn(`Refresh failed: ${safeMessage(error)}`);
       const message = error instanceof BacklogUnreachableError ? error.message : 'Backlog source failed';
       this.updates.publish({ kind: 'error', message });
-      if (options.strict) throw new BacklogUnreachableError(message);
-      return this.sorted();
+      return { items: this.sorted(), failure: new BacklogUnreachableError(message) };
     }
     const seen = new Set<string>();
     let changed = false;
@@ -86,20 +101,23 @@ export class BacklogService implements OnModuleInit {
       changed = true;
     }
     if (changed) await this.save();
-    return this.sorted();
+    return { items: this.sorted() };
   }
 
   async move(id: string, from: string, to: string): Promise<Item> {
     await this.ensureLoaded();
     const lane = this.config.lanes.find((l) => l.id === to);
-    if (!lane) throw new BacklogNotFoundError('lane');
+    if (!lane) throw new BacklogInvalidError('Unknown lane');
+    if (from === to) return this.get(id);
     let item: Item;
     try {
       item = await this.connector.moveToLane(id, from, to);
     } catch (error) {
       if (error instanceof BacklogConflictError) await this.reload(id);
+      if (error instanceof BacklogNotFoundError) await this.drop(id);
       throw error;
     }
+    item = this.keepLinks(item);
     await this.put(item);
     if (lane.trigger) this.triggers.emit({ itemId: id, from, to, trigger: lane.trigger, at: new Date().toISOString() });
     return item;
@@ -116,7 +134,7 @@ export class BacklogService implements OnModuleInit {
 
   async update(id: string, patch: ItemPatch): Promise<Item> {
     await this.ensureLoaded();
-    const item = await this.connector.update(id, patch);
+    const item = this.keepLinks(await this.connector.update(id, patch));
     await this.put(item);
     return item;
   }
@@ -136,6 +154,18 @@ export class BacklogService implements OnModuleInit {
     } catch (error) {
       this.logger.warn(`Could not reload item ${id}: ${safeMessage(error)}`);
     }
+  }
+
+  // Links change only through setFileLinks and the poll; a move or update whose notes read failed must not erase them.
+  private keepLinks(item: Item): Item {
+    return { ...item, fileLinks: this.cache.get(item.id)?.fileLinks ?? item.fileLinks };
+  }
+
+  private async drop(id: string): Promise<void> {
+    if (!this.cache.delete(id)) return;
+    this.touched.set(id, ++this.generation);
+    this.updates.publish({ kind: 'removed', id });
+    await this.save();
   }
 
   private async put(item: Item): Promise<void> {
