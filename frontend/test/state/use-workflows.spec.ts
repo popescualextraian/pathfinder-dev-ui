@@ -19,11 +19,12 @@ describe('useWorkflows', () => {
 
   it('loads definitions and refused once', async () => {
     const refused = [{ file: 'bad.yaml', error: 'bad' }];
-    listWorkflows.mockResolvedValue({ definitions: [makeWorkflow()], refused });
+    listWorkflows.mockResolvedValue({ definitions: [makeWorkflow()], refused, writable: false });
     const { result } = renderHook(() => useWorkflows());
     await waitFor(() => expect(result.current.enabled).toBe(true));
     expect(result.current.definitions.map((d) => d.id)).toEqual(['plan-implement-review']);
     expect(result.current.refused).toEqual(refused);
+    expect(result.current.writable).toBe(false);
     expect(result.current.loading).toBe(false);
     expect(listWorkflows).toHaveBeenCalledTimes(1);
   });

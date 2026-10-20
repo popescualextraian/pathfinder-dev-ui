@@ -59,7 +59,7 @@ describe('App workflows wiring', () => {
 
   it('workflows on: the card offers a workflow and shows its run', async () => {
     window.location.hash = '#/backlog?item=7';
-    m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [makeWorkflow()], refused: [] });
+    m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [makeWorkflow()], refused: [], writable: true });
     render(<App />);
     const card = await screen.findByTestId('backlog-card-7');
     await waitFor(() => expect(within(card).getByTestId('workflow-run-line')).toBeTruthy());
@@ -69,7 +69,7 @@ describe('App workflows wiring', () => {
 
   it('task view shows the run line of the selected task', async () => {
     window.location.hash = '#/tasks/T-1';
-    m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [makeWorkflow()], refused: [] });
+    m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [makeWorkflow()], refused: [], writable: true });
     render(<App />);
     expect((await screen.findByTestId('task-workflow-line')).textContent).toContain('step Plan');
   });
@@ -95,7 +95,7 @@ describe('App workflows not loaded', () => {
     ['when runs fail to load', () => Promise.reject(new Error('runs down'))],
   ])('refuses a drag %s', async (_, runs) => {
     window.location.hash = '#/backlog';
-    m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [makeWorkflow()], refused: [] });
+    m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [makeWorkflow()], refused: [], writable: true });
     m(workflowsApi.listRuns).mockImplementation(runs);
     render(<App />);
     const card = await screen.findByTestId('backlog-card-7');

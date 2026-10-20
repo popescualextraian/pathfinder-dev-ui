@@ -7,6 +7,7 @@ export function useWorkflows() {
   const [enabled, setEnabled] = useState(false);
   const [definitions, setDefinitions] = useState<WorkflowSummary[]>([]);
   const [refused, setRefused] = useState<RefusedWorkflow[]>([]);
+  const [writable, setWritable] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -18,6 +19,7 @@ export function useWorkflows() {
         if (response) {
           setDefinitions(response.definitions);
           setRefused(response.refused);
+          setWritable(response.writable !== false);
           setEnabled(true);
         }
       })
@@ -32,5 +34,5 @@ export function useWorkflows() {
     };
   }, []);
 
-  return { enabled, loading, error, definitions, refused };
+  return { enabled, loading, error, definitions, refused, writable };
 }

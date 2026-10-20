@@ -163,11 +163,56 @@ export interface WorkflowSummary {
 export interface RefusedWorkflow {
   file: string;
   error: string;
+  /** For deleting the file; absent when it could not be read. */
+  version?: string;
 }
 
 export interface WorkflowList {
   definitions: WorkflowSummary[];
   refused: RefusedWorkflow[];
+  /** False when the definitions folder is read-only. */
+  writable: boolean;
+}
+
+export interface WorkflowSessionDef {
+  name: string;
+  prompt: string;
+  fork?: string;
+  model?: string;
+}
+
+export interface WorkflowStepDef {
+  id: string;
+  title: string;
+  stage?: string;
+  gate: WorkflowGate;
+  sessions: WorkflowSessionDef[];
+  requires?: string[];
+  exitPrompt?: string;
+}
+
+/** The full definition (with prompts), as the editor reads and writes it. */
+export interface WorkflowDefinition {
+  title: string;
+  steps: WorkflowStepDef[];
+  doneStage?: string;
+}
+
+export interface StoredWorkflow {
+  definition: WorkflowDefinition & { id?: string };
+  /** Of the file content; sent back on update and delete. */
+  version: string;
+}
+
+/** Where a definition rule was broken. */
+export interface WorkflowErrorLocation {
+  stepId?: string;
+  session?: string;
+  field?: string;
+}
+
+export interface WorkflowValidationError extends WorkflowErrorLocation {
+  message: string;
 }
 
 export type WorkflowRunState =

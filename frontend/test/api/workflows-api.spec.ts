@@ -1,4 +1,7 @@
-import { advanceRun, listRuns, listWorkflows, startRun, stopRun } from '../../src/api/workflows-api';
+import {
+  advanceRun, createWorkflow, deleteRefusedWorkflow, deleteWorkflow, listRuns, listWorkflows, readWorkflow, startRun,
+  stopRun, updateWorkflow, validateWorkflow,
+} from '../../src/api/workflows-api';
 import { ApiError } from '../../src/api/http';
 
 const json = (status: number, body: unknown) =>
@@ -12,8 +15,8 @@ describe('workflows-api', () => {
   });
 
   it('listWorkflows returns the response, null on 404, rethrows others', async () => {
-    fetchMock.mockReturnValue(json(200, { definitions: [], refused: [] }));
-    expect(await listWorkflows()).toEqual({ definitions: [], refused: [] });
+    fetchMock.mockReturnValue(json(200, { definitions: [], refused: [], writable: true }));
+    expect(await listWorkflows()).toEqual({ definitions: [], refused: [], writable: true });
     expect(fetchMock).toHaveBeenCalledWith('/api/workflows', undefined);
     fetchMock.mockReturnValue(json(404, { message: 'Cannot GET' }));
     expect(await listWorkflows()).toBeNull();
@@ -52,5 +55,58 @@ describe('workflows-api', () => {
   it('startRun rejects with the API error', async () => {
     fetchMock.mockReturnValue(json(409, { message: 'active run' }));
     await expect(startRun('7', 'wf')).rejects.toMatchObject({ status: 409, message: 'active run' });
+  });
+
+  describe('editing', () => {
+    const def = { title: 'T', steps: [] };
+    it('readWorkflow encodes the id', async () => {
+      fetchMock.mockReturnValue(json(200, { definition: def, version: 'v1' }));
+      expect(await readWorkflow('a b')).toEqual({ definition: def, version: 'v1' });
+      expect(fetchMock).toHaveBeenCalledWith('/api/workflows/a%20b', undefined);
+    });
+
+    it('validateWorkflow posts the definition and returns the errors', async () => {
+      fetchMock.mockReturnValue(json(200, { errors: [{ message: 'bad', stepId: 's' }] }));
+      expect(await validateWorkflow(def)).toEqual([{ message: 'bad', stepId: 's' }]);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('/api/workflows/validate');
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body)).toEqual({ definition: def });
+    });
+
+    it('createWorkflow posts id and definition', async () => {
+      fetchMock.mockReturnValue(json(201, { definition: def, version: 'v1' }));
+      await createWorkflow('wf', def);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect([url, init.method]).toEqual(['/api/workflows', 'POST']);
+      expect(JSON.parse(init.body)).toEqual({ id: 'wf', definition: def });
+    });
+
+    it('updateWorkflow puts definition and version', async () => {
+      fetchMock.mockReturnValue(json(200, { definition: def, version: 'v2' }));
+      await updateWorkflow('wf', def, 'v1');
+      const [url, init] = fetchMock.mock.calls[0];
+      expect([url, init.method]).toEqual(['/api/workflows/wf', 'PUT']);
+      expect(JSON.parse(init.body)).toEqual({ definition: def, version: 'v1' });
+    });
+
+    it('deletes send the version in the query', async () => {
+      fetchMock.mockReturnValue(Promise.resolve({ ok: true, status: 204 } as Response));
+      await deleteWorkflow('wf', 'v/1');
+      expect(fetchMock).toHaveBeenLastCalledWith('/api/workflows/wf?version=v%2F1', { method: 'DELETE' });
+      await deleteRefusedWorkflow('bad one.yaml', 'v1');
+      expect(fetchMock).toHaveBeenLastCalledWith('/api/workflows/refused/bad%20one.yaml?version=v1', {
+        method: 'DELETE',
+      });
+    });
+
+    it('errors carry status and the location of a rule violation', async () => {
+      fetchMock.mockReturnValue(json(400, { message: 'no prompt', location: { stepId: 's', field: 'prompt' } }));
+      const e = await updateWorkflow('wf', def, 'v1').catch((x: unknown) => x);
+      expect(e).toBeInstanceOf(ApiError);
+      expect(e).toMatchObject({ status: 400, message: 'no prompt', location: { stepId: 's', field: 'prompt' } });
+      fetchMock.mockReturnValue(json(409, { message: 'changed' }));
+      await expect(updateWorkflow('wf', def, 'v1')).rejects.toMatchObject({ status: 409, location: undefined });
+    });
   });
 });
