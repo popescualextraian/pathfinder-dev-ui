@@ -1,4 +1,4 @@
-import { parseWorkflowDefinition, WorkflowDefinitionError } from '../../../../src/workflow/service/parse-workflow';
+import { parseWorkflowDefinition, validateWorkflowDefinition, WorkflowDefinitionError } from '../../../../src/workflow/service/parse-workflow';
 
 const VALID = `
 title: Plan, implement, review
@@ -126,5 +126,50 @@ describe('parseWorkflowDefinition', () => {
 
   it('names WorkflowDefinitionError', () => {
     try { parseWorkflowDefinition('wf', 'x: 1'); } catch (e) { expect(e).toBeInstanceOf(WorkflowDefinitionError); }
+  });
+});
+
+describe('validateWorkflowDefinition (on the parsed object)', () => {
+  const session = (o: object = {}) => ({ name: 'main', prompt: 'p', ...o });
+  const step = (o: object = {}) => ({ id: 's1', title: 'S', gate: 'auto', sessions: [session()], ...o });
+  const doc = (o: object = {}) => ({ title: 'T', steps: [step()], ...o });
+  const err = (d: unknown, opts = {}): WorkflowDefinitionError => {
+    try { validateWorkflowDefinition('x', d, opts); } catch (e) { return e as WorkflowDefinitionError; }
+    throw new Error('did not throw');
+  };
+
+  it('returns the normalized definition and drops unknown keys', () => {
+    expect(validateWorkflowDefinition('x', doc({ extra: 1 }))).toEqual({
+      id: 'x', title: 'T', steps: [{ id: 's1', title: 'S', gate: 'auto', sessions: [{ name: 'main', prompt: 'p' }] }],
+    });
+  });
+
+  it.each([
+    ['title', doc({ title: '' }), { field: 'title' }],
+    ['steps', doc({ steps: [] }), { field: 'steps' }],
+    ['step title', doc({ steps: [step({ title: ' ' })] }), { stepId: 's1', field: 'title' }],
+    ['gate', doc({ steps: [step({ gate: 'x' })] }), { stepId: 's1', field: 'gate' }],
+    ['stage', doc({ steps: [step({ stage: 'nope' })] }), { stepId: 's1', field: 'stage' }],
+    ['duplicate step', doc({ steps: [step(), step()] }), { stepId: 's1', field: 'id' }],
+    ['first session name', doc({ steps: [step({ sessions: [session({ name: 'other' })] })] }), { stepId: 's1', session: 'other', field: 'name' }],
+    ['duplicate session', doc({ steps: [step({ sessions: [session(), session()] })] }), { stepId: 's1', session: 'main', field: 'name' }],
+    ['prompt placeholder', doc({ steps: [step({ sessions: [session({ prompt: '{{nope}}' })] })] }), { stepId: 's1', session: 'main', field: 'prompt' }],
+    ['task placeholder in first prompt', doc({ steps: [step({ sessions: [session({ prompt: '{{task.id}}' })] })] }), { stepId: 's1', session: 'main', field: 'prompt' }],
+    ['fork', doc({ steps: [step({ sessions: [session(), session({ name: 'b', fork: 'zz' })] })] }), { stepId: 's1', session: 'b', field: 'fork' }],
+    ['model', doc({ steps: [step({ sessions: [session({ model: '' })] })] }), { stepId: 's1', session: 'main', field: 'model' }],
+    ['requires', doc({ steps: [step({ requires: ['../x'] })] }), { stepId: 's1', field: 'requires' }],
+    ['exitPrompt', doc({ steps: [step({ exitPrompt: '{{bad}}' })] }), { stepId: 's1', field: 'exitPrompt' }],
+    ['doneStage', doc({ doneStage: 'nope' }), { field: 'doneStage' }],
+  ])('locates %s', (_n, d, location) => {
+    expect(err(d, { stages: ['plan'] }).location).toEqual(location);
+  });
+
+  it('reports the first error only, in document order', () => {
+    const e = err(doc({ steps: [step({ gate: 'x', sessions: [] })] }));
+    expect(e.location).toEqual({ stepId: 's1', field: 'gate' });
+  });
+
+  it('parseWorkflowDefinition gives the same error with the same text', () => {
+    expect(() => parseWorkflowDefinition('x', 'title: T\nsteps:\n  - id: a\n    title: A\n    gate: nope\n    sessions: []\n')).toThrow('steps[0].gate must be "human" or "auto"');
   });
 });

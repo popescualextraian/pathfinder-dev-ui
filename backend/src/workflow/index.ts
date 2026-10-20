@@ -1,5 +1,7 @@
 // Public surface of the workflow component.
-export { parseWorkflowDefinition, WorkflowDefinitionError, PLACEHOLDERS } from './service/parse-workflow';
+export { parseWorkflowDefinition, validateWorkflowDefinition, WorkflowDefinitionError, PLACEHOLDERS, WORKFLOW_ID } from './service/parse-workflow';
+export type { ParseOptions, WorkflowErrorLocation } from './service/parse-workflow';
+export { serializeWorkflowDefinition } from './service/serialize-workflow';
 export type { Gate, RefusedWorkflow, SessionDef, StepDef, WorkflowDefinition, WorkflowDefinitions } from './service/workflow-definition';
 export { WORK_ITEMS } from './service/work-items';
 export type { WorkItem, WorkItems } from './service/work-items';
