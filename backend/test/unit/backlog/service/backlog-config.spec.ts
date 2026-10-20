@@ -96,6 +96,18 @@ describe('parseBacklogConfig', () => {
     warn.mockRestore();
   });
 
+  it('memory connector: lanes need no gitlab mapping; memory.items seed the items, naming bad keys', () => {
+    const lanes = 'lanes:\n  - { id: todo, title: Todo, default: true }\n  - { id: plan, title: Plan }\n';
+    const c = parseBacklogConfig(`connector: memory\n${lanes}memory:\n  items:\n    - { title: First, description: Text }\n    - { title: Second, lane: plan }\n`, ENV);
+    expect(c.gitlab).toBeUndefined();
+    expect(c.memory).toEqual({ items: [{ title: 'First', description: 'Text' }, { title: 'Second', lane: 'plan' }] });
+    expect(parseBacklogConfig(`connector: memory\n${lanes}`, ENV).memory).toEqual({ items: [] });
+    expect(problemsOf(`connector: memory\n${lanes}memory: { items: [{ lane: nowhere }, x] }\n`).problems).toEqual([
+      'memory.items[0].title is required', 'memory.items[0].lane is not a lane id', 'memory.items[1] must be a mapping',
+    ]);
+    expect(problemsOf(`connector: memory\n${lanes}memory: { items: x }\n`).problems).toEqual(['memory.items must be a list']);
+  });
+
   it('requires BACKLOG_DATA_DIR', () => {
     expect(problemsOf(VALID, { GITLAB_TOKEN: 'x' }).problems.join()).toContain('BACKLOG_DATA_DIR');
   });

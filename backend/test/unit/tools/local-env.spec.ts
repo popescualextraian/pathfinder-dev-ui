@@ -36,6 +36,26 @@ describe('buildAppEnv', () => {
     expect(build({ ...backlog, ENGINE_LOCAL_AGENT: 'claude' })).toMatchObject(backlog);
   });
 
+  it('allows the memory backlog connector (only start:local does)', () => {
+    expect(build({}).BACKLOG_ALLOW_MEMORY_CONNECTOR).toBe('1');
+    expect(build({ BACKLOG_ALLOW_MEMORY_CONNECTOR: '0' }).BACKLOG_ALLOW_MEMORY_CONNECTOR).toBe('1');
+  });
+
+  it('passes the workflow variables through, made absolute against the checkout', () => {
+    const env = build({ BACKLOG_CONFIG: '/c.yaml', BACKLOG_DATA_DIR: '/d', WORKFLOWS_DIR: 'e2e/fixtures/workflows', WORKFLOWS_DATA_DIR: '/runs' });
+    expect(env).toMatchObject({ BACKLOG_CONFIG: '/c.yaml', BACKLOG_DATA_DIR: '/d', WORKFLOWS_DIR: '/co/e2e/fixtures/workflows', WORKFLOWS_DATA_DIR: '/runs' });
+    expect(build({ WORKFLOWS_DIR: '/w', WORKFLOWS_DATA_DIR: 'runs' }).WORKFLOWS_DATA_DIR).toBe('/co/runs');
+  });
+
+  it('puts the backlog and workflow data under the data dir unless given', () => {
+    const env = build({ BACKLOG_CONFIG: 'e2e/fixtures/backlog.yaml', WORKFLOWS_DIR: '/w' });
+    expect(env).toMatchObject({
+      BACKLOG_CONFIG: '/co/e2e/fixtures/backlog.yaml', BACKLOG_DATA_DIR: '/co/.local/3100/backlog', WORKFLOWS_DATA_DIR: '/co/.local/3100/workflow-runs',
+    });
+    const off = build({});
+    for (const name of ['BACKLOG_CONFIG', 'BACKLOG_DATA_DIR', 'WORKFLOWS_DIR', 'WORKFLOWS_DATA_DIR']) expect(off).not.toHaveProperty(name);
+  });
+
   it('claude agent keeps both tokens', () => {
     const env = build({ ENGINE_LOCAL_AGENT: 'claude', CLAUDE_CODE_OAUTH_TOKEN: 'o', GH_TOKEN: 'g' });
     expect(env).toMatchObject({ CLAUDE_CODE_OAUTH_TOKEN: 'o', GH_TOKEN: 'g' });

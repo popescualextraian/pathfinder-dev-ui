@@ -13,9 +13,18 @@ export interface LaneConfig {
   gitlab?: { label?: string; state?: 'closed' };
 }
 
+// An item the memory connector starts with (lane: a lane id, default: the default lane).
+export interface MemorySeedItem {
+  title: string;
+  description?: string;
+  lane?: string;
+}
+
 export interface BacklogConfig {
   connector: string;
   gitlab?: { baseUrl: string; project: string; token: string };
+  // Only for the memory connector (development and UI tests, see connector.factory.ts).
+  memory?: { items: MemorySeedItem[] };
   pollSeconds: number;
   doneDays: number;
   dataDir: string;
@@ -144,8 +153,38 @@ export function parseBacklogConfig(yamlText: string, env: NodeJS.ProcessEnv): Ba
     if (defaults !== 1) problems.push(`lanes: exactly one lane must be default (found ${defaults})`);
   }
 
+  const memory = connector === 'memory' ? parseMemory(root.memory, new Set(lanes.map((l) => l.id)), problems) : undefined;
+
   if (problems.length > 0) throw new BacklogConfigError(problems);
-  return { connector, gitlab, pollSeconds, doneDays, dataDir, lanes };
+  return { connector, gitlab, ...(memory && { memory }), pollSeconds, doneDays, dataDir, lanes };
+}
+
+function parseMemory(raw: unknown, laneIds: Set<string>, problems: string[]): BacklogConfig['memory'] {
+  const list = isObj(raw) ? raw.items : undefined;
+  if (list === undefined) return { items: [] };
+  if (!Array.isArray(list)) {
+    problems.push('memory.items must be a list');
+    return { items: [] };
+  }
+  const items: MemorySeedItem[] = [];
+  list.forEach((entry: unknown, i: number) => {
+    const at = `memory.items[${i}]`;
+    if (!isObj(entry)) {
+      problems.push(`${at} must be a mapping`);
+      return;
+    }
+    const title = str(entry.title);
+    if (!title) problems.push(`${at}.title is required`);
+    const item: MemorySeedItem = { title: title ?? '' };
+    if (typeof entry.description === 'string') item.description = entry.description;
+    if (entry.lane !== undefined) {
+      const lane = str(entry.lane);
+      if (!lane || !laneIds.has(lane)) problems.push(`${at}.lane is not a lane id`);
+      else item.lane = lane;
+    }
+    items.push(item);
+  });
+  return { items };
 }
 
 // undefined when BACKLOG_CONFIG is unset: the backlog is optional.
