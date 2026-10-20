@@ -25,6 +25,10 @@ interface Props {
   onChange: (change: (draft: WorkflowDefinition) => WorkflowDefinition) => void;
 }
 
+/** An error on doneStage names the field and no step. */
+export const doneStageError = (error: (WorkflowErrorLocation & { message: string }) | null): boolean =>
+  errorAt(error, { field: 'doneStage' }) && error?.stepId === undefined && error?.stepIndex === undefined;
+
 const NO_MOVE = "— don't move —";
 
 function LaneSelect({ id, label, value, lanes, disabled, invalid, onChange }: {
@@ -110,7 +114,7 @@ export function WorkflowInspector({ draft, step: index, lanes, error, readOnly, 
           value={draft.doneStage}
           lanes={lanes}
           disabled={readOnly}
-          invalid={errorAt(error, { field: 'doneStage' }) && error?.stepId === undefined}
+          invalid={doneStageError(error)}
           onChange={(lane) => onChange((d) => setDoneStage(d, lane))}
         />
         <p className={styles.hint}>Select a step in the flow to edit it.</p>
@@ -201,7 +205,7 @@ export function WorkflowInspector({ draft, step: index, lanes, error, readOnly, 
             <PromptField
               label={`Session ${n} prompt`}
               value={s.prompt}
-              rows={5}
+              rows={6}
               disabled={readOnly}
               invalid={sbad('prompt')}
               onChange={(v) => onChange((d) => updateSession(d, index, j, { prompt: v }))}

@@ -169,6 +169,32 @@ describe('WorkflowEditor', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
+  it('gives prompts at least 6 rows and the exit prompt 3', async () => {
+    renderEditor();
+    await screen.findByDisplayValue('Two steps');
+    expect(Number(screen.getByLabelText('Session 1 prompt').getAttribute('rows'))).toBeGreaterThanOrEqual(6);
+    expect(Number(screen.getByLabelText('Exit prompt').getAttribute('rows'))).toBeGreaterThanOrEqual(3);
+  });
+
+  it('does not allow deleting the first step', async () => {
+    renderEditor();
+    await screen.findByDisplayValue('Two steps');
+    fireEvent.click(screen.getByTestId('step-box-1'));
+    expect(screen.getByRole('button', { name: 'Delete step' })).toBeDisabled();
+    fireEvent.click(screen.getByTestId('step-box-2'));
+    expect(screen.getByRole('button', { name: 'Delete step' })).toBeEnabled();
+  });
+
+  it('marks the end box for an error on doneStage', async () => {
+    m(api.validateWorkflow).mockResolvedValue([{ message: 'doneStage "x" is not a stage of the work items', field: 'doneStage' }]);
+    renderEditor();
+    await screen.findByDisplayValue('Two steps');
+    type('Session 1 prompt', 'changed');
+    await screen.findByTestId('validation-error');
+    expect(screen.getByTestId('end-box')).toHaveAttribute('data-error', 'true');
+    expect(screen.getByTestId('step-box-1')).not.toHaveAttribute('data-error');
+  });
+
   it('marks a step and session located by index when the id or name is empty', async () => {
     m(api.validateWorkflow).mockResolvedValue([{ message: 'steps[1].sessions[1].name must be a non-empty string', stepIndex: 1, sessionIndex: 1, field: 'name' }]);
     renderEditor();

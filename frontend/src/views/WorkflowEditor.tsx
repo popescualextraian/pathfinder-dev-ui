@@ -4,7 +4,7 @@ import type { WorkflowEditor as Editor } from '../state/use-workflow-editor';
 import { addStep, canMoveStep, errorAt, moveStep, removeStep, toggleGate } from '../state/workflow-draft';
 import { Button } from './Button';
 import { ConfirmDialog } from './Dialog';
-import { WorkflowInspector } from './WorkflowInspector';
+import { WorkflowInspector, doneStageError } from './WorkflowInspector';
 import styles from './WorkflowEditor.module.css';
 
 interface Props {
@@ -21,6 +21,7 @@ export function WorkflowEditor({ editor, lanes, onClose, onSaved }: Props) {
   const [selected, setSelected] = useState<number | null>(0);
   const [asking, setAsking] = useState<'cancel' | 'delete-step' | null>(null);
   const laneTitle = (id: string) => lanes.find((l) => l.id === id)?.title ?? id;
+  const endBad = doneStageError(error);
   const step = selected !== null ? draft.steps[selected] : undefined;
   const sel = step ? selected : null;
 
@@ -149,14 +150,16 @@ export function WorkflowEditor({ editor, lanes, onClose, onSaved }: Props) {
             <li className={styles.item}>
               <button
                 type="button"
-                className={`${styles.box} ${styles.end} ${sel === null ? styles.selected : ''}`}
+                className={`${styles.box} ${styles.end} ${sel === null ? styles.selected : ''} ${endBad ? styles.bad : ''}`}
+                aria-invalid={endBad || undefined}
+                data-error={endBad ? 'true' : undefined}
                 aria-pressed={sel === null}
                 aria-label="End of the workflow"
                 data-testid="end-box"
                 onClick={() => setSelected(null)}
               >
                 <span className={styles.boxTitle}>
-                  when done → {draft.doneStage ? laneTitle(draft.doneStage) : "don't move"}
+                  {endBad && '⚠ '}when done → {draft.doneStage ? laneTitle(draft.doneStage) : "don't move"}
                 </span>
               </button>
             </li>
@@ -196,7 +199,7 @@ export function WorkflowEditor({ editor, lanes, onClose, onSaved }: Props) {
               >
                 →
               </Button>
-              <Button variant="danger" aria-label="Delete step" onClick={() => setAsking('delete-step')}>
+              <Button variant="danger" aria-label="Delete step" disabled={sel === 0} onClick={() => setAsking('delete-step')}>
                 Delete step
               </Button>
             </div>

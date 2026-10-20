@@ -2,7 +2,8 @@
 .inspector h2, .inspector h3 { margin: 0; font-size: 15px; }
 .field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink-soft); }
 .field input, .field select, .field textarea { font: inherit; font-size: 13px; color: var(--ink); padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
-.field textarea { resize: vertical; font-family: var(--font-mono); }
+.field > label { display: flex; flex-direction: column; gap: 3px; }
+.field textarea { display: block; width: 100%; box-sizing: border-box; resize: vertical; font-family: var(--font-mono); }
 .field [aria-invalid='true'] { border-color: var(--msg-red); background: var(--paper); box-shadow: 0 0 0 1px var(--msg-red); }
 .group { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; margin: 0; }
 .group legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
