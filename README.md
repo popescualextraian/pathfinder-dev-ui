@@ -343,8 +343,8 @@ File links are stored in GitLab as one comment per issue, written by the token's
 never adds a second one); edits made to it by hand are overwritten, and only comments by the token's own user count.
 
 Trigger events `{itemId, from, to, trigger, at}` are emitted in-process (`BacklogTriggers`, exported by
-`backlog/index.ts`) only for moves made through this API into a lane with a `trigger`. Changes found by
-polling never emit one. Nothing listens yet.
+`backlog/index.ts`) only for moves made through `BacklogService.move` into a lane with a `trigger`: board moves through this
+API and the card moves of workflows. Changes found by polling never emit one. Nothing listens yet.
 
 ## Workflows
 
@@ -399,22 +399,28 @@ doneStage: done                  # optional: the card goes there when the workfl
   (`human` or `auto`); `requires` and `exitPrompt` are optional. A session needs a `name` (`[a-z0-9][a-z0-9_-]{0,31}`, unique in the
   workflow) and a `prompt`; `fork` (the name of an earlier session) and `model` are optional. The sessions of a step run one after another.
 - Placeholders in prompts, `exitPrompt` and `requires`: `{{item.id}}`, `{{item.title}}`, `{{item.description}}`, `{{item.url}}`,
-  `{{task.id}}`, `{{task.branch}}`, `{{step.id}}`. An unknown placeholder is a load error.
-- A file with invalid YAML, a broken rule, a `stage` that is not a lane id, or a `fork` of a session that is not earlier is refused with an
-  error naming the file; the other files still load. `GET /api/workflows` lists the refused files with their errors.
+  `{{task.id}}`, `{{task.branch}}`, `{{step.id}}`. An unknown placeholder is a load error. `{{task.id}}` and `{{task.branch}}` are
+  refused in the prompt of the first step's first session: that prompt starts the task, so they are not known yet (use them in its
+  `exitPrompt` or later sessions).
+- A file with invalid YAML, a broken rule, a `stage` that is not a lane id, a `fork` of a session that is not earlier, or the same id as an
+  earlier file (`one.yaml` and `one.yml`: the second is refused) is refused with an error naming the file; the other files still load. `GET /api/workflows` lists the refused files with their errors.
 - Gates: after the last session of a step is done, `auto` goes on at once, `human` waits (`awaiting-approval`) for **Continue**.
   Continuing sends the step's `exitPrompt` (if any) to its last session and waits for it, then checks the next step's `requires`, moves
   the card and starts the next step. After the last step the run is `done` and the card goes to `doneStage` if set.
-- `requires`: paths relative to the task's worktree (`/work/.worktrees/<task id>` in Docker, the agent's working directory), no `..`.
+- `requires`: paths relative to the task's worktree (`/work/.worktrees/<task id>` in Docker, the agent's working directory). An absolute
+  path or a `..` segment is a load error; a path that becomes one once filled in (e.g. from the item's title) fails the run.
   They are checked with the next step's placeholders filled in, before the card moves. A missing file puts the run in `blocked` with a
   warning naming the files; **Start anyway** (`force`) goes on regardless. It checks that the files exist, not their content.
 - Run states: `running`, `needs-you` (a session of the run has an open question), `awaiting-approval`, `blocked`, `done`, `stopped`
-  (the task is left as it is), `failed` (the task failed or vanished; the run gives the reason). A card has at most one active run.
+  (the task is left as it is), `failed` (the task failed, vanished or was stopped; the run gives the reason). A card has at most one active run.
+- When an action of the run fails (moving the card, starting a session, sending the exit prompt, checking files), the run keeps its state,
+  shows the error as `warning` and retries on the next change of the task and on a timer (5 s, doubling up to 60 s). From **Continue**
+  the error is returned instead and the run stays as it was.
 
 | Route | Does | Success |
 |---|---|---|
 | `GET /api/workflows` | `{definitions: [{id, title, doneStage?, steps: [{id, title, stage, gate, sessions: [name]}]}], refused: [{file, error}]}` | 200 |
-| `GET /api/workflow-runs[?itemId=]` | Runs, oldest first, all states | 200 |
+| `GET /api/workflow-runs[?itemId=]` | Active runs and the 50 most recently finished ones (of the item, if given), oldest first | 200 |
 | `GET /api/workflow-runs/:id` | One run | 200 |
 | `POST /api/workflow-runs` `{itemId, workflowId}` | Starts a run (creates the task, moves the card to the first stage). Unknown workflow or item 404; the item already has an active run 409; engine errors (cap 409, bridge 502) pass through | 201 run |
 | `POST /api/workflow-runs/:id/advance` `{force?}` | Continue; only while `awaiting-approval` or `blocked`, else 409 | 200 run |
