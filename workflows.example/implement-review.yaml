@@ -1,0 +1,22 @@
+# Example workflow for the lanes of backlog.example.yaml: implement on its own, then a human-gated review.
+title: Implement, review
+steps:
+  - id: implement
+    title: Implement
+    stage: in-progress
+    sessions:
+      - name: main
+        prompt: |
+          Implement backlog item #{{item.id}}: {{item.title}}
+          {{item.description}}
+          Work test-first and commit per step.
+    gate: auto                      # goes on as soon as the session is done
+  - id: review
+    title: Review
+    stage: review
+    sessions:
+      - name: review
+        fork: main
+        prompt: Review the branch of {{task.branch}} for item #{{item.id}} and fix what is real.
+    gate: human                     # waits for "Finish"
+doneStage: done

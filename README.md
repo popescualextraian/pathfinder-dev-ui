@@ -346,6 +346,100 @@ Trigger events `{itemId, from, to, trigger, at}` are emitted in-process (`Backlo
 `backlog/index.ts`) only for moves made through this API into a lane with a `trigger`. Changes found by
 polling never emit one. Nothing listens yet.
 
+## Workflows
+
+A workflow carries one backlog card through steps. From a card the user starts a workflow: it creates one task
+named `#<item id> <item title>` (default repository) and runs the steps one after another. A step is one or more
+sessions of that task; when it starts, the card moves into the step's lane. Steps hand work over through files in the
+task's worktree. Workflows are on only when `BACKLOG_CONFIG` **and** `WORKFLOWS_DIR` are set (`WORKFLOWS_DIR` alone is
+ignored: no routes, no buttons); then `WORKFLOWS_DATA_DIR` is required.
+
+| Variable | Meaning |
+|---|---|
+| `WORKFLOWS_DIR` | Absolute directory of the definitions, one YAML per workflow (copy from `workflows.example/`). Re-read on every list, no restart needed. |
+| `WORKFLOWS_DATA_DIR` | Absolute directory of the runs, one mode-600 JSON file per run. Required when workflows are on. |
+
+A definition (file name without extension = workflow id; `.yaml` or `.yml`):
+
+```yaml
+title: Plan, implement, review
+steps:
+  - id: plan
+    title: Plan
+    stage: plan                  # a lane id of the backlog; the card moves there when the step starts
+    sessions:
+      - name: main               # the first session of the first step is the task's main session: it must be named main
+        prompt: |
+          You plan backlog item #{{item.id}}: {{item.title}}
+          {{item.description}}
+    gate: human                  # human: wait for "Continue"; auto: go on when the sessions are done
+    exitPrompt: Make sure the plan is complete in plans/{{item.id}}.md and committed.
+  - id: implement
+    title: Implement
+    stage: in-progress
+    requires:                    # block list or quoted items: [plans/{{item.id}}.md] is not valid YAML
+      - "plans/{{item.id}}.md"
+    sessions:
+      - name: impl
+        prompt: Implement plans/{{item.id}}.md.
+    gate: auto
+  - id: review
+    title: Review
+    stage: review
+    sessions:
+      - name: review
+        fork: impl               # optional: start as a copy of that earlier session's conversation
+        model: sonnet            # optional
+        prompt: Review the branch against plans/{{item.id}}.md.
+    gate: human
+doneStage: done                  # optional: the card goes there when the workflow ends
+```
+
+- `title` and a non-empty `steps` are required. A step needs a unique `id`, `title`, `stage`, a non-empty `sessions` and a `gate`
+  (`human` or `auto`); `requires` and `exitPrompt` are optional. A session needs a `name` (`[a-z0-9][a-z0-9_-]{0,31}`, unique in the
+  workflow) and a `prompt`; `fork` (the name of an earlier session) and `model` are optional. The sessions of a step run one after another.
+- Placeholders in prompts, `exitPrompt` and `requires`: `{{item.id}}`, `{{item.title}}`, `{{item.description}}`, `{{item.url}}`,
+  `{{task.id}}`, `{{task.branch}}`, `{{step.id}}`. An unknown placeholder is a load error.
+- A file with invalid YAML, a broken rule, a `stage` that is not a lane id, or a `fork` of a session that is not earlier is refused with an
+  error naming the file; the other files still load. `GET /api/workflows` lists the refused files with their errors.
+- Gates: after the last session of a step is done, `auto` goes on at once, `human` waits (`awaiting-approval`) for **Continue**.
+  Continuing sends the step's `exitPrompt` (if any) to its last session and waits for it, then checks the next step's `requires`, moves
+  the card and starts the next step. After the last step the run is `done` and the card goes to `doneStage` if set.
+- `requires`: paths relative to the task's worktree (`/work/.worktrees/<task id>` in Docker, the agent's working directory), no `..`.
+  They are checked with the next step's placeholders filled in, before the card moves. A missing file puts the run in `blocked` with a
+  warning naming the files; **Start anyway** (`force`) goes on regardless. It checks that the files exist, not their content.
+- Run states: `running`, `needs-you` (a session of the run has an open question), `awaiting-approval`, `blocked`, `done`, `stopped`
+  (the task is left as it is), `failed` (the task failed or vanished; the run gives the reason). A card has at most one active run.
+
+| Route | Does | Success |
+|---|---|---|
+| `GET /api/workflows` | `{definitions: [{id, title, doneStage?, steps: [{id, title, stage, gate, sessions: [name]}]}], refused: [{file, error}]}` | 200 |
+| `GET /api/workflow-runs[?itemId=]` | Runs, oldest first, all states | 200 |
+| `GET /api/workflow-runs/:id` | One run | 200 |
+| `POST /api/workflow-runs` `{itemId, workflowId}` | Starts a run (creates the task, moves the card to the first stage). Unknown workflow or item 404; the item already has an active run 409; engine errors (cap 409, bridge 502) pass through | 201 run |
+| `POST /api/workflow-runs/:id/advance` `{force?}` | Continue; only while `awaiting-approval` or `blocked`, else 409 | 200 run |
+| `POST /api/workflow-runs/:id/stop` | Marks the run `stopped`; 409 if not active | 200 run |
+| `GET /api/workflow-runs/stream` | SSE: `event: run` with the run after every change, `: ping` every 25 seconds. Nothing is replayed | 200 |
+
+A run: `{id, workflowId, definition (snapshot taken at start), itemId, item (snapshot), taskId, stepIndex, phase, sessions: {<name>: {status: pending|running|done}},
+state, warning?, failureReason?, createdAt, updatedAt, finishedAt?}`. It never contains tokens. Errors have the usual `{statusCode, message, path}` body.
+
+In the UI (board, `#/backlog`): a card without a run has a **Workflow** button (a picker when there are several definitions, then a confirmation).
+A card with a run shows a line with the workflow title, the step (`Plan · 1/3`) and the state (marked for `needs-you`, `awaiting-approval`,
+`blocked`, `failed`), and the buttons **Open step** (the task view on the current session), **Continue** (or **Finish** after the last step),
+**Start anyway** (when blocked) and **Stop workflow** (asks first). The detail panel lists the steps. Dragging a card with an active run is refused
+("This card is driven by its workflow") except onto the lane of the next step while awaiting approval, which asks to continue. The task view shows
+the workflow and step under the title, with a link back to the card.
+
+Known limits: runs follow the engine's task changes, so a task that is `starting` and never comes up keeps its run waiting (no timeout; stop
+the workflow); with the local launcher a restart of the app loses the tasks, and their runs fail with that reason; a run keeps the definition it
+started with, later edits of the file affect only new runs. There is no editor, no storage in the project repository and no catalog yet.
+
+With `npm run start:local`, `WORKFLOWS_DIR` and `WORKFLOWS_DATA_DIR` (default `.local/<port>/workflow-runs`) are made absolute against the
+checkout. For local testing without GitLab, `connector: memory` in the lanes YAML keeps the items in memory, seeded from `memory.items`
+(`{title, description?, lane?}`); it is refused unless `BACKLOG_ALLOW_MEMORY_CONNECTOR=1`, which only `start:local` sets. Try it with the Playwright fixtures:
+`BACKLOG_CONFIG=e2e/fixtures/backlog.yaml WORKFLOWS_DIR=e2e/fixtures/workflows PORT=3101 npm run start:local`, then open `#/backlog`.
+
 ## Install
 
 ```sh
@@ -432,6 +526,10 @@ compose mounts it read-only at `/etc/pathfinder/backlog.yaml`, sets `BACKLOG_CON
 `BACKLOG_DATA_DIR=/data/backlog` (inside the `engine-data` volume, which the `node` user can write). The token variable named in the YAML (`GITLAB_TOKEN`)
 comes from `.env`. Without `BACKLOG_CONFIG_FILE` the backlog is off.
 
+Workflows in Docker: set `WORKFLOWS_DIR_HOST` to the host directory of the definitions (for example a copy of `workflows.example/`);
+compose mounts it read-only at `/etc/pathfinder/workflows`, sets `WORKFLOWS_DIR` to it and `WORKFLOWS_DATA_DIR=/data/workflows`. They need the
+backlog (`BACKLOG_CONFIG_FILE`) too; without `WORKFLOWS_DIR_HOST` workflows are off. The `Dockerfile` needs no change.
+
 Warning: access to the Docker socket is root on the host. Whoever controls this container, or can
 call its API, can control the host. Run it only where that is acceptable.
 
@@ -506,6 +604,10 @@ backend/
       service/              BacklogService, config, poller, updates, triggers, the connector interface
       integration/          gitlab/ (client, connector, file-links comment), connector factory
       repository/           backlog-cache.repository.ts (JSON file)
+    workflow/               the optional workflow package; others import only workflow/index.ts
+      service/              WorkflowRunner, definition parser, placeholders, the WorkflowTasks and WorkItems interfaces
+      repository/           definition files (YAML), run files (JSON)
+    integration/workflow/   adapters of WorkflowTasks (engine) and WorkItems (backlog), wiring module
     commons/                engine config, validation pipe, logging interceptor, exception filters, shared utilities
   test/
     unit/                   unit tests, mirroring src/
@@ -525,6 +627,7 @@ e2e/                        Playwright tests (whole app)
 package.json                one, at the root
 Dockerfile, compose.yaml    the UI image and its compose setup (see Run in Docker)
 backlog.example.yaml        lanes config of the backlog (BACKLOG_CONFIG)
+workflows.example/          example workflow definitions (WORKFLOWS_DIR)
 .env.example                engine and backlog configuration template
 ```
 

@@ -31,11 +31,16 @@ services:
       # The token variable named by gitlab.tokenEnv (GITLAB_TOKEN) comes from .env.
       BACKLOG_CONFIG: ${BACKLOG_CONFIG_FILE:+/etc/pathfinder/backlog.yaml}
       BACKLOG_DATA_DIR: /data/backlog
+      # Workflows (optional, need the backlog): set WORKFLOWS_DIR_HOST to the host directory of the definitions to turn them on.
+      WORKFLOWS_DIR: ${WORKFLOWS_DIR_HOST:+/etc/pathfinder/workflows}
+      WORKFLOWS_DATA_DIR: /data/workflows
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - engine-data:/data
       # Read-only lanes config; without BACKLOG_CONFIG_FILE the example is mounted and the backlog stays off.
       - ${BACKLOG_CONFIG_FILE:-./backlog.example.yaml}:/etc/pathfinder/backlog.yaml:ro
+      # Read-only workflow definitions; without WORKFLOWS_DIR_HOST the example is mounted and workflows stay off.
+      - ${WORKFLOWS_DIR_HOST:-./workflows.example}:/etc/pathfinder/workflows:ro
     group_add:
       - "${DOCKER_GID:?set DOCKER_GID to the numeric group id of /var/run/docker.sock}"
     networks:
