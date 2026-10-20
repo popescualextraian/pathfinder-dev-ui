@@ -16,5 +16,6 @@ module.exports = {
       moduleNameMapper: { '\\.css$': '<rootDir>/style-stub.js' },
       transform: { '^.+\\.tsx?$': ['ts-jest', { tsconfig: '<rootDir>/../tsconfig.jest.json' }] },
     },
+    '<rootDir>/socket-filter/jest.config.js',
   ],
 };

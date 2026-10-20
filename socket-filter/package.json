@@ -1,0 +1,16 @@
+{
+  "name": "docker-socket-filter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Allowlisting filter in front of the Docker socket for the agentic UI task launcher",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "test": "jest --config jest.config.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "~5.9"
+  }
+}
