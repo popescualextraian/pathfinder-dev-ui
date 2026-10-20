@@ -34,6 +34,7 @@ const run3 = (over: Partial<WorkflowRun> = {}) =>
 
 const board = (over: Partial<WorkflowBoard> = {}, runs: WorkflowRun[] = []): WorkflowBoard => ({
   definitions: [makeWorkflow()],
+  ready: true,
   runsByItem: new Map(runs.map((r) => [r.itemId, r])),
   actionState: () => ({ pending: false, error: null }),
   start: jest.fn().mockResolvedValue({ ok: true }),
@@ -344,5 +345,49 @@ describe('board selection from outside', () => {
     expect(screen.getByRole('complementary', { name: 'Item detail' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Close detail' }));
     expect(onSelect).toHaveBeenCalledWith(null);
+  });
+});
+
+describe('runs not loaded', () => {
+  it('refuses any drag (also of a card without a run), no move', () => {
+    const { onMove } = renderBoard(board({ ready: false }), [item({ lane: 'plan' })]);
+    drag('Review');
+    expect(onMove).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toContain('Workflow state is not loaded yet');
+    expect(within(screen.getByRole('region', { name: 'Plan' })).getByTestId('backlog-card-7')).toBeTruthy();
+  });
+});
+
+describe('continue dialog follows the run', () => {
+  const awaiting = (over: Partial<WorkflowRun> = {}) => run3({ state: 'awaiting-approval', phase: 'awaiting-approval', ...over });
+  const props = (wf: WorkflowBoard) => ({
+    lanes, items: [item({ lane: 'plan' })], me: 'me', onMove: jest.fn(), onCreate: jest.fn(), onUpdate: jest.fn(), workflows: wf,
+  });
+
+  it('closes when the run no longer awaits approval', () => {
+    const { rerender } = render(<BoardView {...props(board({}, [awaiting()]))} />);
+    drag('In progress');
+    expect(screen.getByRole('dialog', { name: 'Continue the workflow to Implement?' })).toBeTruthy();
+    rerender(<BoardView {...props(board({}, [run3({ stepIndex: 1, state: 'running', phase: 'sessions' })]))} />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('advances the current run', async () => {
+    const wf = board({}, [awaiting({ updatedAt: '2026-10-20T11:00:00Z' })]);
+    const { rerender } = render(<BoardView {...props(board({}, [awaiting()]))} />);
+    drag('In progress');
+    rerender(<BoardView {...props(wf)} />);
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Continue' }));
+    });
+    expect(wf.advance).toHaveBeenCalledWith('R-20261020-aaaaaaaa');
+  });
+});
+
+describe('action errors on the board', () => {
+  it('shows a failed workflow action in the board error banner too', () => {
+    renderBoard(board({ actionState: (id) => ({ pending: false, error: id === '7' ? 'stop failed' : null }) }, [run3()]));
+    const alerts = screen.getAllByRole('alert').map((a) => a.textContent);
+    expect(alerts.filter((t) => t === 'stop failed')).toHaveLength(2);
   });
 });

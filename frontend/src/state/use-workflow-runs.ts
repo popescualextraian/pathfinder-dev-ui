@@ -37,6 +37,8 @@ export function useWorkflowRuns(enabled: boolean) {
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
+  // A load succeeded since the hook was enabled: until then runsByItem may miss active runs.
+  const [loaded, setLoaded] = useState(false);
   const [actions, setActions] = useState<Record<string, RunActionState>>({});
   const latestLoad = useRef(0);
   // Changes seen on the stream while a load runs: the (older) GET must not undo them.
@@ -60,6 +62,7 @@ export function useWorkflowRuns(enabled: boolean) {
           return merged.sort(oldestFirst);
         });
         setError(null);
+        setLoaded(true);
       })
       .catch((e: unknown) => {
         if (seq === latestLoad.current) setError(e instanceof Error ? e.message : String(e));
@@ -77,6 +80,7 @@ export function useWorkflowRuns(enabled: boolean) {
   useEffect(() => {
     if (!enabled) {
       setLoading(false);
+      setLoaded(false);
       return;
     }
     const stop = openWorkflowRunsStream({ onOpen: () => void load(), onRun: applyRun });
@@ -125,5 +129,5 @@ export function useWorkflowRuns(enabled: boolean) {
   );
   const stop = useCallback((runId: string) => perform(itemOf(runId), () => stopRun(runId)), [perform]);
 
-  return { runs, loading, error, runsByItem, runByTask, actionState, start, advance, stop };
+  return { runs, loading, loaded, error, runsByItem, runByTask, actionState, start, advance, stop };
 }

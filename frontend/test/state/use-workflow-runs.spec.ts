@@ -27,6 +27,24 @@ describe('useWorkflowRuns', () => {
     expect(result.current.runs).toEqual([]);
   });
 
+  it('loaded turns true only after a successful load once enabled', async () => {
+    let resolve!: (v: unknown) => void;
+    listRuns.mockReturnValue(new Promise((r) => (resolve = r)));
+    const { result, rerender } = renderHook(({ on }) => useWorkflowRuns(on), { initialProps: { on: false } });
+    expect(result.current.loaded).toBe(false);
+    rerender({ on: true });
+    expect(result.current.loaded).toBe(false);
+    await act(async () => resolve([run1]));
+    expect(result.current.loaded).toBe(true);
+  });
+
+  it('loaded stays false when the load fails', async () => {
+    listRuns.mockRejectedValue(new Error('down'));
+    const { result } = renderHook(() => useWorkflowRuns(true));
+    await waitFor(() => expect(result.current.error).toBe('down'));
+    expect(result.current.loaded).toBe(false);
+  });
+
   it('loads, applies stream updates, reloads on reconnect', async () => {
     const { result } = renderHook(() => useWorkflowRuns(true));
     await waitFor(() => expect(result.current.loading).toBe(false));

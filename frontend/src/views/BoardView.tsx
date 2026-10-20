@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { BacklogItem, ItemDraft, ItemPatch, Lane, WorkflowRun, WorkflowRunStep } from '../api/models';
+import { useEffect, useState } from 'react';
+import type { BacklogItem, ItemDraft, ItemPatch, Lane } from '../api/models';
 import { BoardLane } from './BoardLane';
 import { Button } from './Button';
 import { ItemDetail } from './ItemDetail';
@@ -21,17 +21,29 @@ interface Props {
   selectedId?: string | null;
   /** Absent when workflows are off: no workflow controls, drags as usual. */
   workflows?: WorkflowBoard;
+  /** Not yet known whether workflows are on: every drag is refused (a card may have an active run). */
+  workflowsPending?: boolean;
 }
 
 export const DRIVEN_BY_WORKFLOW = 'This card is driven by its workflow';
+export const WORKFLOWS_NOT_LOADED = 'Workflow state is not loaded yet';
 
-export function BoardView({ lanes, items, me, error, onMove, onCreate, onUpdate, onSelect, selectedId: routeSelected, workflows }: Props) {
+export function BoardView({ lanes, items, me, error, onMove, onCreate, onUpdate, onSelect, selectedId: routeSelected, workflows, workflowsPending }: Props) {
   const [mineOnly, setMineOnly] = useState(false);
   const [assignee, setAssignee] = useState('');
   const [ownSelected, setOwnSelected] = useState<string | null>(null);
   const selectedId = routeSelected !== undefined ? routeSelected : ownSelected;
   const [notice, setNotice] = useState<string | null>(null);
-  const [continuing, setContinuing] = useState<{ run: WorkflowRun; step: WorkflowRunStep } | null>(null);
+  // The drop to continue names the run only; the step is derived from the run as it is now.
+  const [continuing, setContinuing] = useState<{ itemId: string; runId: string } | null>(null);
+  const continuingRun = continuing ? workflows?.runsByItem.get(continuing.itemId) : undefined;
+  const continuingStep =
+    continuingRun && continuingRun.id === continuing?.runId && awaitingApproval(continuingRun) ? nextStep(continuingRun) : undefined;
+  useEffect(() => {
+    if (continuing && !continuingStep) setContinuing(null);
+  }, [continuing, continuingStep]);
+  const actionError = workflows ? items.map((i) => workflows.actionState(i.id).error).find(Boolean) : null;
+  const shownError = error ?? actionError ?? null;
   // `true` creates; an item edits.
   const [dialog, setDialog] = useState<true | BacklogItem | null>(null);
 
@@ -48,6 +60,10 @@ export function BoardView({ lanes, items, me, error, onMove, onCreate, onUpdate,
   // A card with an active run moves only with its workflow: a drop on the next step's lane while it awaits approval
   // asks to continue (the backend then moves the card); any other drop is refused.
   const move = (id: string, laneId: string) => {
+    if (workflowsPending || (workflows && !workflows.ready)) {
+      setNotice(WORKFLOWS_NOT_LOADED);
+      return;
+    }
     const run = workflows?.runsByItem.get(id);
     if (!run || !isActiveRun(run)) {
       setNotice(null);
@@ -57,7 +73,7 @@ export function BoardView({ lanes, items, me, error, onMove, onCreate, onUpdate,
     const next = nextStep(run);
     if (awaitingApproval(run) && next && next.stage === laneId) {
       setNotice(null);
-      setContinuing({ run, step: next });
+      setContinuing({ itemId: id, runId: run.id });
     } else {
       setNotice(DRIVEN_BY_WORKFLOW);
     }
@@ -65,9 +81,9 @@ export function BoardView({ lanes, items, me, error, onMove, onCreate, onUpdate,
 
   return (
     <div className={styles.board}>
-      {error && (
+      {shownError && (
         <p role="alert" className={styles.error}>
-          {error}
+          {shownError}
         </p>
       )}
       {notice && (
@@ -131,16 +147,15 @@ export function BoardView({ lanes, items, me, error, onMove, onCreate, onUpdate,
           onClose={() => setDialog(null)}
         />
       )}
-      {continuing && workflows && (
+      {continuingRun && continuingStep && workflows && (
         <ConfirmDialog
-          title={`Continue the workflow to ${continuing.step.title}?`}
-          message={`#${continuing.run.itemId} ${continuing.run.definition.title}`}
+          title={`Continue the workflow to ${continuingStep.title}?`}
+          message={`#${continuingRun.itemId} ${continuingRun.definition.title}`}
           confirmLabel="Continue"
           onCancel={() => setContinuing(null)}
           onConfirm={() => {
-            const runId = continuing.run.id;
             setContinuing(null);
-            void workflows.advance(runId);
+            void workflows.advance(continuingRun.id);
           }}
         />
       )}

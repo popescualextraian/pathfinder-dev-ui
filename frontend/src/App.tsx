@@ -28,6 +28,7 @@ export function App() {
   const workflowBoard: WorkflowBoard | undefined = workflowsOn
     ? {
         definitions: workflows.definitions,
+        ready: runs.loaded && !runs.error,
         runsByItem: runs.runsByItem,
         actionState: runs.actionState,
         start: runs.start,
@@ -66,6 +67,7 @@ export function App() {
               selectedId={route.item}
               onSelect={route.selectItem}
               workflows={workflowBoard}
+              workflowsPending={workflows.loading || workflows.error !== null}
             />
           ) : undefined
         }

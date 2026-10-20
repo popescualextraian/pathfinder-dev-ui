@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../../src/App';
 import * as backlogApi from '../../src/api/backlog-api';
 import * as backlogStream from '../../src/api/backlog-stream';
@@ -39,7 +39,7 @@ beforeEach(() => {
   m(tasksApi.listTasks).mockResolvedValue([makeTask()]);
   m(tasksApi.getTask).mockResolvedValue(makeTask());
   m(statusStream.openTaskStatusStream).mockReturnValue(() => undefined);
-  m(backlogApi.getLanes).mockResolvedValue({ me: 'me', lanes: [{ id: 'plan', title: 'Plan' }] });
+  m(backlogApi.getLanes).mockResolvedValue({ me: 'me', lanes: [{ id: 'plan', title: 'Plan' }, { id: 'doing', title: 'Doing' }] });
   m(backlogApi.getItems).mockResolvedValue([item]);
   m(backlogStream.openBacklogStream).mockReturnValue(() => undefined);
   m(runsStream.openWorkflowRunsStream).mockReturnValue(() => undefined);
@@ -72,5 +72,40 @@ describe('App workflows wiring', () => {
     m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [makeWorkflow()], refused: [] });
     render(<App />);
     expect((await screen.findByTestId('task-workflow-line')).textContent).toContain('step Plan');
+  });
+});
+
+describe('App workflows not loaded', () => {
+  it('refuses a drag while it is not yet known whether workflows are on', async () => {
+    window.location.hash = '#/backlog';
+    m(workflowsApi.listWorkflows).mockReturnValue(new Promise(() => undefined));
+    render(<App />);
+    const card = await screen.findByTestId('backlog-card-7');
+    const data: Record<string, string> = {};
+    const dt = { setData: (k: string, v: string) => (data[k] = v), getData: (k: string) => data[k] ?? '', effectAllowed: '', dropEffect: '' };
+    fireEvent.dragStart(card, { dataTransfer: dt });
+    fireEvent.drop(screen.getByRole('region', { name: 'Doing' }), { dataTransfer: dt });
+    expect(backlogApi.moveItem).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toContain('Workflow state is not loaded yet');
+    expect(screen.queryByRole('button', { name: 'Start workflow on #7' })).toBeNull();
+  });
+
+  it.each([
+    ['while runs load', () => new Promise(() => undefined)],
+    ['when runs fail to load', () => Promise.reject(new Error('runs down'))],
+  ])('refuses a drag %s', async (_, runs) => {
+    window.location.hash = '#/backlog';
+    m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [makeWorkflow()], refused: [] });
+    m(workflowsApi.listRuns).mockImplementation(runs);
+    render(<App />);
+    const card = await screen.findByTestId('backlog-card-7');
+    await waitFor(() => expect(workflowsApi.listRuns).toHaveBeenCalled());
+    await act(async () => undefined);
+    const data: Record<string, string> = {};
+    const dt = { setData: (k: string, v: string) => (data[k] = v), getData: (k: string) => data[k] ?? '', effectAllowed: '', dropEffect: '' };
+    fireEvent.dragStart(card, { dataTransfer: dt });
+    fireEvent.drop(screen.getByRole('region', { name: 'Doing' }), { dataTransfer: dt });
+    expect(backlogApi.moveItem).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toContain('Workflow state is not loaded yet');
   });
 });

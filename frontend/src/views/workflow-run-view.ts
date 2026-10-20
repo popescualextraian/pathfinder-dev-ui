@@ -4,6 +4,8 @@ import { isActiveRun } from '../state/use-workflow-runs';
 /** What the board needs from useWorkflows/useWorkflowRuns; absent when workflows are off. */
 export interface WorkflowBoard {
   definitions: WorkflowSummary[];
+  /** Runs are loaded (not loading, no load error): until then no card may be dragged. */
+  ready: boolean;
   runsByItem: Map<string, WorkflowRun>;
   actionState: (itemId: string) => { pending: boolean; error: string | null };
   start: (itemId: string, workflowId: string) => Promise<unknown>;
