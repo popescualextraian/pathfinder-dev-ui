@@ -290,6 +290,8 @@ and closes or reopens the issue for a `state: closed` lane. Missing lane labels 
 | `GET /api/backlog/lanes` | `{me, lanes: [{id, title}]}` in board order | 200 |
 | `GET /api/backlog/items` | All items from the cache: `{id, title, description, lane, assignees, url, fileLinks, updatedAt}` | 200 |
 | `GET /api/backlog/items/:id` | One item | 200 |
+| `POST /api/backlog/items` `{title, description?, lane?}` | Creates an issue (title 1-255 characters, description up to 100000). Without `lane` it goes to the default lane; a lane that GitLab closes (state `closed`) or an unknown lane is 400 | 201 item |
+| `PATCH /api/backlog/items/:id` `{title?, description?, assignees?}` | Changes the given fields (at least one, else 400). `assignees` are usernames (at most 20); an unknown user is 400, `[]` unassigns everyone. The lane never changes here, only moves change it. Unknown item is 404 | 200 item |
 | `POST /api/backlog/items/:id/move` `{from, to}` | Moves the item to lane `to`. `from` is the lane the client believes it is in: if the source has it elsewhere the move is refused with 409 and nothing is written (the board reloads the item). Unknown item or lane is 404 | 200 item |
 | `PUT /api/backlog/items/:id/file-links` `{links: [{repo, path, ref?, note?}]}` | Replaces the item's file links (at most 100) | 200 links |
 | `POST /api/backlog/refresh` | Reads GitLab now; 503 when it is unreachable (the cache stays) | 200 items |
