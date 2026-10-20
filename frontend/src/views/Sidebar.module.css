@@ -6,3 +6,5 @@
 .newTask button { width: 100%; }
 .kicker { margin: 16px 16px 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.55); font-weight: 600; }
 .show { list-style: none; margin: 0; padding: 0 18px; font-size: 14px; }
+.switch { padding: 2px 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; opacity: 0.75; }
+.switch[aria-current='true'] { opacity: 1; font-weight: 600; }

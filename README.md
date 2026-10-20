@@ -30,6 +30,7 @@ flowchart LR
       subgraph be["NestJS backend"]
         API["<b>API</b><br/>routes, input validation, SSE<br/><i>controllers, DTOs</i>"]
         UIS["<b>UI services</b><br/>system info, configured repositories"]
+        BL[["<b>Backlog</b><br/>lanes and items of a GitLab project,<br/>cache, trigger events<br/><i>optional: BACKLOG_CONFIG</i>"]]
         ENG[["<b>Task engine</b><br/>starts tasks, drives their bridges,<br/>keeps the task records"]]
         COM["<b>Commons</b><br/>configuration, pipes, filters, utilities"]
       end
@@ -42,13 +43,16 @@ flowchart LR
     AG["<b>Agent</b><br/>does the work on the task's branch<br/><i>Claude Code</i>"]
     WORK[("<b>Workspace</b><br/>repository clone, branch agentic/&lt;task-id&gt;<br/><i>/work</i>")]
   end
+  GITLAB[("<b>GitLab project</b><br/>issues with status:: labels<br/><i>source of truth of the backlog</i>")]
   GIT[("<b>Git remote</b><br/>source repository, pushed branches<br/><i>GitHub</i>")]
 
   user --> FE
   FE -- "REST + SSE /api" --> API
   API --> UIS
   API -- "engine/index.ts only" --> ENG
-  UIS & ENG --> COM
+  API -- "backlog/index.ts only" --> BL
+  BL -- "REST, project token" --> GITLAB
+  UIS & ENG & BL --> COM
   ENG --> DATA
   ENG -- "create, start, remove" --> DOCKER
   DOCKER -. runs .-> task
@@ -66,12 +70,15 @@ in the `engine-data` volume of the `ui` container, with `npm start` in the host 
 removed when the task is closed. With the `local` launcher a task is a process on the host instead
 of a container, and Docker is not used.
 
-- **Frontend** (`frontend/src`): task list, task view, full run. Only `api/` calls the backend.
+- **Frontend** (`frontend/src`): task list, task view, full run, and the backlog board at `#/backlog`. Only `api/` calls the backend.
 - **api** (`backend/src/api`): HTTP only: routes, DTO validation, SSE, error mapping. Tasks routes call
   the engine through `backend/src/engine/index.ts`.
 - **service / repository** (`backend/src/service`, `backend/src/repository`): what only the UI needs,
   the system info footer and the configured repositories.
 - **engine** (`backend/src/engine`): everything about tasks, below.
+- **backlog** (`backend/src/backlog`, optional): the lanes board of one GitLab project, see Backlog. Same
+  boundary as the engine: imports only `commons/`, used only through `backlog/index.ts`
+  (`backend/test/unit/backlog/backlog-boundary.spec.ts`).
 - **commons** (`backend/src/commons`): engine configuration from `ENGINE_*` variables, global pipes,
   interceptor and filters, small utilities. The only code the engine may import from outside itself
   (checked by `backend/test/unit/engine/engine-boundary.spec.ts`).
@@ -186,7 +193,8 @@ git checkout with at least one commit. In the Docker launcher the `05-workspace`
 clone from `AGENTIC_REPO_URL`.
 
 The engine has no authentication of its own: whoever can reach port 3000 can start tasks that use
-your tokens. Do not expose it beyond a trusted network.
+your tokens. With the backlog on, anyone who can reach the unauthenticated API can also write GitLab
+issues through `/api/backlog`. Do not expose it beyond a trusted network.
 
 ## Configuration
 
@@ -253,6 +261,63 @@ Errors: bridge 400, 404, 409 and 503 pass through with the bridge's message; any
 starting beyond `ENGINE_MAX_RUNNING` is 409. Limits: `prompt`/`text` at most 20000 characters and not
 blank, `title` at most 200 (shortened to 80). Errors have the body `{statusCode, message, path}` (a validation error is 400 with `message` as a list of strings). Errors inside an SSE stream that already started arrive as an SSE `error` event.
 
+## Backlog
+
+An optional board of the issues of one GitLab project, in lanes (todo, plan, in progress, ...). It is off
+unless `BACKLOG_CONFIG` is set; while it is unset there are no `/api/backlog` routes and no board. GitLab stays the
+source of truth; the app keeps a cache and polls it.
+
+| Variable | Meaning |
+|---|---|
+| `BACKLOG_CONFIG` | Path of the lanes YAML (copy `backlog.example.yaml`). Unset or empty: the backlog is off. |
+| `BACKLOG_DATA_DIR` | Directory of the cache (relative paths resolve against the working directory), one file `backlog.json`. Required when `BACKLOG_CONFIG` is set. |
+| the token variable | Named by `gitlab.tokenEnv` in the YAML (`GITLAB_TOKEN` in the example); a GitLab token with the `api` scope. The YAML never holds the value, and the value is never logged or returned. |
+
+The YAML is read at start-up (a restart applies changes); a bad key is refused naming the key, never a value:
+
+```yaml
+connector: gitlab
+gitlab:
+  baseUrl: https://gitlab.zt.msg.team
+  project: moldovaa/vans-factory-rotation
+  tokenEnv: GITLAB_TOKEN
+pollSeconds: 60        # optional, default 60
+doneDays: 14           # optional, default 14: closed issues updated within this many days are listed
+lanes:                 # in board order; ids unique; exactly one lane has default: true
+  - { id: todo, title: Todo, default: true, gitlab: { label: "status::todo" } }
+  - { id: plan, title: Plan, trigger: plan.enter, gitlab: { label: "status::plan" } }
+  - { id: done, title: Done, gitlab: { state: closed } }
+```
+
+Lane keys: `id`, `title` (required), `default` (items that match no lane land here), `trigger` (an opaque
+name emitted when an item is moved into the lane), `gitlab` (the only part the GitLab connector reads:
+`label`, or `state: closed`). An issue's lane is the lane whose label it carries, else the `state: closed`
+lane when it is closed, else the default lane. A move replaces the issue's lane label (other labels stay)
+and closes or reopens the issue for a `state: closed` lane. Missing lane labels are created at the first sync.
+
+| Route | Does | Success |
+|---|---|---|
+| `GET /api/backlog/lanes` | `{me, lanes: [{id, title}]}` in board order | 200 |
+| `GET /api/backlog/items` | All items from the cache: `{id, title, description, lane, assignees, url, fileLinks, updatedAt}` | 200 |
+| `GET /api/backlog/items/:id` | One item | 200 |
+| `POST /api/backlog/items` `{title, description?, lane?}` | Creates an issue (title 1-255 characters, description up to 100000). Without `lane` it goes to the default lane; a lane that GitLab closes (state `closed`) or an unknown lane is 400 | 201 item |
+| `PATCH /api/backlog/items/:id` `{title?, description?, assignees?}` | Changes the given fields (at least one, else 400). `assignees` are usernames (at most 20); an unknown user is 400, `[]` unassigns everyone. The lane never changes here, only moves change it. Unknown item is 404 | 200 item |
+| `POST /api/backlog/items/:id/move` `{from, to}` | Moves the item to lane `to`. `from` is the lane the client believes it is in: if the source has it elsewhere the move is refused with 409 and nothing is written (the board reloads the item). Unknown item is 404, unknown lane is 400 | 200 item |
+| `PUT /api/backlog/items/:id/file-links` `{links: [{repo, path, ref?, note?}]}` | Replaces the item's file links (at most 100) | 200 links |
+| `POST /api/backlog/refresh` | Reads GitLab now; 503 when it is unreachable (the cache stays) | 200 items |
+| `GET /api/backlog/stream` | SSE: `event: item` with the item when one is added or changed, `event: removed` with `{"id"}`, `event: error` with `{"message"}` when GitLab could not be read, and a `: ping` comment every 25 seconds. Nothing is replayed: load `items` first | 200 |
+
+Errors have the usual `{statusCode, message, path}` body: invalid request 400 (also what GitLab answers with 400 or 422), not found 404, changed in the source 409, GitLab
+unreachable 503 (also any other unexpected GitLab answer), with fixed messages (no tokens, URLs or upstream bodies).
+
+File links are stored in GitLab as one comment per issue, written by the token's user: an HTML comment marker
+`<!-- pathfinder:file-links v1`, the links as JSON, then a readable list. The app rewrites that comment (it
+never adds a second one); edits made to it by hand are overwritten, and only comments by the token's own user count.
+
+Trigger events `{itemId, from, to, trigger, at}` are emitted in-process (`BacklogTriggers`, exported by
+`backlog/index.ts`) only for moves made through this API into a lane with a `trigger`. Changes found by
+polling never emit one. Nothing listens yet.
+
 ## Install
 
 ```sh
@@ -283,7 +348,7 @@ There is **no isolation** between tasks or from the app: development only. The a
 at start-up. The fake agent's `SHELL:` prompt runs commands as the app's user, so anyone who can send a prompt
 can read what the app's user can read (including the app's environment); keep real tokens out of such an app.
 `npm run start:local` therefore drops `CLAUDE_CODE_OAUTH_TOKEN` from the app's environment when the agent is `fake`,
-and `GH_TOKEN` as well when `ENGINE_REPO_URL` is a local path. `ENGINE_MAX_RUNNING` applies as usual. Stopping the app (SIGINT/SIGTERM) stops the bridges (each bridge runs in its own process group, which is killed as a whole).
+and `GH_TOKEN` as well when `ENGINE_REPO_URL` is a local path. `BACKLOG_CONFIG`, `BACKLOG_DATA_DIR` and the backlog token variable (`GITLAB_TOKEN`) pass through unchanged, so with a backlog configured the fake agent's `SHELL:` could read that token: use a project access token for the test project only (an api-scope personal token gives account-wide access, and the app and the bridges listen on 0.0.0.0 without authentication). `ENGINE_MAX_RUNNING` applies as usual. Stopping the app (SIGINT/SIGTERM) stops the bridges (each bridge runs in its own process group, which is killed as a whole).
 Local tasks do not survive an app crash or restart: after a SIGKILL of the app, bridges may be left running and must be stopped
 manually. `ENGINE_TASK_EXTRA_ENV` and `ENGINE_TASK_EXTRA_BINDS` are ignored by `local`, and SSH-form repository URLs
 (`git@host:path`) are not supported (use https or a local path). The clone is aborted after 120 seconds.
@@ -297,7 +362,7 @@ PORT=3101 npm run start:local   # builds, then runs in the foreground; Ctrl-C st
 and recreated at every start (`.local/` is git-ignored). Defaults that your environment overrides:
 `ENGINE_REPO_URL` = the checkout itself (absolute path), `ENGINE_PROJECT` = the checkout's folder name,
 `ENGINE_LOCAL_AGENT=fake`, `ENGINE_GIT_NAME`/`ENGINE_GIT_EMAIL` = a dummy identity. The script's pid is in
-`.local/<port>.pid` (`kill $(cat .local/3101.pid)` stops the app and its bridges). Several checkouts or ports can run side by side.
+`.local/<port>.pid` (`kill $(cat .local/3101.pid)` stops the app and its bridges). Several checkouts or ports can run side by side. With a backlog: `PORT=3101 BACKLOG_CONFIG=.local/backlog.yaml BACKLOG_DATA_DIR=.local/backlog-3101 npm run start:local` (the board is at `#/backlog`).
 
 The fake agent and `agentic-bridge` come from a checkout of this repository and the machine's PATH: the
 `Dockerfile` image contains neither `tools/` nor the bridge, so use `local` from a checkout (the Docker image is for the `docker`
@@ -325,6 +390,11 @@ socket; compose refuses to start without it), and a network with the fixed name 
 defaults to `agentic-pathfinder-dev-ui:local`. Task containers started by the UI join `agentic-ui`, so
 the UI reaches each bridge by container name. Host paths in `ENGINE_TASK_EXTRA_BINDS` refer to the
 Docker host, not to the UI container.
+
+Backlog in Docker: set `BACKLOG_CONFIG_FILE` (in `.env` or the shell) to the host path of the lanes YAML;
+compose mounts it read-only at `/etc/pathfinder/backlog.yaml`, sets `BACKLOG_CONFIG` to it and
+`BACKLOG_DATA_DIR=/data/backlog` (inside the `engine-data` volume, which the `node` user can write). The token variable named in the YAML (`GITLAB_TOKEN`)
+comes from `.env`. Without `BACKLOG_CONFIG_FILE` the backlog is off.
 
 Warning: access to the Docker socket is root on the host. Whoever controls this container, or can
 call its API, can control the host. Run it only where that is acceptable.
@@ -388,7 +458,7 @@ backend/
   src/
     main.ts, app.setup.ts   bootstrap; global prefix /api, pipe, interceptor, filters
     app.module.ts           imports the api modules and serves dist/frontend
-    api/<area>/             controllers (HTTP only, no business logic): system/, repositories/, tasks/ (+ dto/)
+    api/<area>/             controllers (HTTP only, no business logic): system/, repositories/, tasks/, backlog/ (+ dto/)
     service/<area>/         UI business logic: system/, repositories/
     repository/<area>/      UI storage: system/ (package.json)
     engine/                 the task engine package; others import only engine/index.ts
@@ -396,6 +466,10 @@ backend/
                             the TaskLauncher and BridgeClient interfaces
       integration/          bridge/ (HttpBridgeClient), launcher/ (Docker and local launchers, factory)
       repository/           task-record.repository.ts (JSON files)
+    backlog/                the optional backlog package; others import only backlog/index.ts
+      service/              BacklogService, config, poller, updates, triggers, the connector interface
+      integration/          gitlab/ (client, connector, file-links comment), connector factory
+      repository/           backlog-cache.repository.ts (JSON file)
     commons/                engine config, validation pipe, logging interceptor, exception filters, shared utilities
   test/
     unit/                   unit tests, mirroring src/
@@ -414,7 +488,8 @@ frontend/
 e2e/                        Playwright tests (whole app)
 package.json                one, at the root
 Dockerfile, compose.yaml    the UI image and its compose setup (see Run in Docker)
-.env.example                engine configuration template
+backlog.example.yaml        lanes config of the backlog (BACKLOG_CONFIG)
+.env.example                engine and backlog configuration template
 ```
 
 Build output: `dist/backend` (Nest) and `dist/frontend` (Vite).
@@ -428,6 +503,8 @@ Build output: `dist/backend` (Nest) and `dist/frontend` (Vite).
 - The task engine (`engine/`) keeps the same layers inside itself, imports nothing from the backend
   but `commons/`, and is used from outside only through `engine/index.ts`
   (`backend/test/unit/engine/engine-boundary.spec.ts` checks both).
+- The backlog (`backlog/`) follows the same rules as the engine: same layers inside, imports only `commons/`, used
+  only through `backlog/index.ts` (`backend/test/unit/backlog/backlog-boundary.spec.ts`).
 - Each area has one Nest module per layer (`<Area>ApiModule`, `<Area>ServiceModule`,
   `<Area>IntegrationModule`, `<Area>RepositoryModule`); a layer's module imports only the module of the layer below.
 - Routes are prefixed with the area: `/api/<area>/...`.

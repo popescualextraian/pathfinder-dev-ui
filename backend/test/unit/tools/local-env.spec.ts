@@ -30,6 +30,12 @@ describe('buildAppEnv', () => {
     expect(env.ENGINE_GIT_EMAIL).toBe('local-dev@example.invalid');
   });
 
+  it('passes the backlog variables and its token through, with either agent', () => {
+    const backlog = { BACKLOG_CONFIG: '/c.yaml', BACKLOG_DATA_DIR: '/d', GITLAB_TOKEN: 't' };
+    expect(build(backlog)).toMatchObject(backlog);
+    expect(build({ ...backlog, ENGINE_LOCAL_AGENT: 'claude' })).toMatchObject(backlog);
+  });
+
   it('claude agent keeps both tokens', () => {
     const env = build({ ENGINE_LOCAL_AGENT: 'claude', CLAUDE_CODE_OAUTH_TOKEN: 'o', GH_TOKEN: 'g' });
     expect(env).toMatchObject({ CLAUDE_CODE_OAUTH_TOKEN: 'o', GH_TOKEN: 'g' });

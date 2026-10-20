@@ -2,14 +2,16 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
+import { BacklogConfigError, loadBacklogConfig } from './backlog';
 import { EngineConfigError, loadEngineConfig } from './commons/engine-config';
 
 async function bootstrap() {
-  // Refuse to start on a missing or invalid value; the message names variables, never values.
+  // Refuse to start on a missing or invalid value; the message names variables or keys, never values.
   try {
     loadEngineConfig();
+    loadBacklogConfig(); // does nothing when BACKLOG_CONFIG is unset
   } catch (error) {
-    if (error instanceof EngineConfigError) {
+    if (error instanceof EngineConfigError || error instanceof BacklogConfigError) {
       console.error(error.message);
       process.exit(1);
     }

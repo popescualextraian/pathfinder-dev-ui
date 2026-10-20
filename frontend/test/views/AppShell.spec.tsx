@@ -15,6 +15,23 @@ describe('AppShell', () => {
     expect(screen.getByText('app')).toBeTruthy();
     expect(screen.getByText('1.2.3')).toBeTruthy();
   });
+
+  it('renders only sidebar and board when board is given', () => {
+    render(<AppShell sidebar={<p>S</p>} list={<p>L</p>} main={<p>M</p>} facts={<p>F</p>} board={<p>B</p>} />);
+    expect(screen.getByText('S')).toBeTruthy();
+    expect(screen.getByText('B')).toBeTruthy();
+    for (const t of ['L', 'M', 'F']) expect(screen.queryByText(t)).toBeNull();
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+    expect(screen.queryByRole('complementary')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Tasks' })).toBeNull();
+  });
+
+  it('keeps the four-column layout without board', () => {
+    render(<AppShell sidebar={<p>S</p>} list={<p>L</p>} main={<p>M</p>} facts={<p>F</p>} />);
+    expect(screen.getByRole('region', { name: 'Tasks' })).toBeTruthy();
+    expect(screen.getByRole('complementary', { name: 'Facts' })).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Repositories' })).toBeTruthy();
+  });
 });
 
 describe('StatePill and Button', () => {

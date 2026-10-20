@@ -27,9 +27,15 @@ services:
       ENGINE_DOCKER_NETWORK: agentic-ui
       ENGINE_DATA_DIR: /data
       ENGINE_MAX_RUNNING: ${ENGINE_MAX_RUNNING:-2}
+      # Backlog board (optional): set BACKLOG_CONFIG_FILE to the host path of the lanes YAML to turn it on.
+      # The token variable named by gitlab.tokenEnv (GITLAB_TOKEN) comes from .env.
+      BACKLOG_CONFIG: ${BACKLOG_CONFIG_FILE:+/etc/pathfinder/backlog.yaml}
+      BACKLOG_DATA_DIR: /data/backlog
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - engine-data:/data
+      # Read-only lanes config; without BACKLOG_CONFIG_FILE the example is mounted and the backlog stays off.
+      - ${BACKLOG_CONFIG_FILE:-./backlog.example.yaml}:/etc/pathfinder/backlog.yaml:ro
     group_add:
       - "${DOCKER_GID:?set DOCKER_GID to the numeric group id of /var/run/docker.sock}"
     networks:

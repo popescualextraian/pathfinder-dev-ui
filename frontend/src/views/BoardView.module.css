@@ -1,0 +1,7 @@
+.board { display: flex; flex-direction: column; height: 100%; min-width: 0; }
+.error { margin: 0; padding: 8px 12px; background: var(--paper-soft); border-bottom: 1px solid var(--msg-red); color: var(--msg-red); font-size: 13px; }
+.filters { display: flex; gap: 16px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.add { margin-left: auto; }
+.check { display: inline-flex; align-items: center; gap: 6px; }
+.body { flex: 1; display: flex; min-height: 0; }
+.lanes { flex: 1; display: flex; gap: 12px; padding: 12px; overflow: auto; align-items: flex-start; }

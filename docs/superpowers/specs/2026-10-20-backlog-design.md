@@ -101,7 +101,7 @@ Small and source-agnostic. Methods (names indicative):
 - `create(draft)` and `update(id, patch)` (second milestone).
 - `getFileLinks(id)` and `setFileLinks(id, links)`.
 
-The connector resolves lanes. For GitLab: an issue's lane is the lane whose label it carries, else `done` if closed, else the default lane. Moving to a lane replaces the issue's `status::` label (leaving other labels alone) and closes or reopens the issue when moving to or from a lane mapped to `state: closed`. Missing lane labels are created on first sync. Errors map to a `BacklogError` family (not found, conflict, unreachable) that the API filter turns into 404, 409 and 503, like `bridge-error.filter.ts`.
+The connector resolves lanes. For GitLab: an issue's lane is the lane whose label it carries, else `done` if closed, else the default lane. Moving to a lane replaces the issue's `status::` label (leaving other labels alone) and closes or reopens the issue when moving to or from a lane mapped to `state: closed`. Missing lane labels are created on first sync. Errors map to a `BacklogError` family (not found, conflict, unreachable, invalid; an unknown lane is invalid, 400) that the API filter turns into 404, 409, 503 and 400, like `bridge-error.filter.ts`.
 
 ### Sync and trigger events
 
