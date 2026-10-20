@@ -35,3 +35,20 @@ describe('openTaskEventsStream', () => {
     expect(FakeEventSource.instances).toHaveLength(1);
   });
 });
+
+describe('openTaskEventsStream with a session', () => {
+  beforeEach(() => {
+    FakeEventSource.install();
+    jest.useFakeTimers();
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it('filters by session and keeps the filter on reconnect', () => {
+    openTaskEventsStream('T-1', jest.fn(), 0, { session: 'second one' });
+    expect(FakeEventSource.last.url).toBe('/api/tasks/T-1/events/stream?since=0&session=second%20one');
+    FakeEventSource.last.emit('message', { seq: 3, type: 'state' });
+    FakeEventSource.last.emit('error');
+    jest.advanceTimersByTime(5000);
+    expect(FakeEventSource.last.url).toBe('/api/tasks/T-1/events/stream?since=3&session=second%20one');
+  });
+});

@@ -105,3 +105,34 @@ describe('useTaskRun', () => {
     expect(result.current.error).toBe(false);
   });
 });
+
+describe('useTaskRun sessions', () => {
+  beforeEach(() => {
+    FakeEventSource.install();
+    jest.useFakeTimers();
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it('streams one session and reopens with fresh events when it changes', () => {
+    const { result, rerender } = renderHook(({ s }) => useTaskRun('T-1', s), {
+      initialProps: { s: 'main' },
+    });
+    const first = FakeEventSource.last;
+    expect(first.url).toBe('/api/tasks/T-1/events/stream?since=0&session=main');
+    act(() => first.emit('message', msg(1, 'agent', 'one', true)));
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+    expect(result.current.events).toHaveLength(1);
+
+    rerender({ s: 'second' });
+    expect(first.closed).toBe(true);
+    expect(FakeEventSource.last.url).toBe('/api/tasks/T-1/events/stream?since=0&session=second');
+    expect(result.current.events).toHaveLength(0);
+    act(() => FakeEventSource.last.emit('message', msg(1, 'agent', 'two', true)));
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+    expect(texts(result.current.items)).toEqual(['agent:two']);
+  });
+});

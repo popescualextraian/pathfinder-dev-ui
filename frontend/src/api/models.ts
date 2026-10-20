@@ -1,12 +1,5 @@
 export type TaskState =
-  | 'starting'
-  | 'running'
-  | 'waiting'
-  | 'idle'
-  | 'suspended'
-  | 'stopped'
-  | 'failed'
-  | 'interrupted';
+  'starting' | 'running' | 'waiting' | 'idle' | 'suspended' | 'stopped' | 'failed' | 'interrupted';
 export type TaskSection = 'needs-you' | 'working' | 'in-review' | 'done';
 
 export interface Repository {
@@ -22,6 +15,28 @@ export interface TaskQuestion {
   options: string[];
   recommendation: string | null;
   asked: string;
+  /** Session the question belongs to. */
+  session: string;
+}
+
+export interface SessionView {
+  name: string;
+  model?: string;
+  state: TaskState;
+  reason?: string;
+  forkOf?: string;
+  createdAt: string;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  /** Number of open questions. */
+  questions: number;
+}
+
+export interface AddSessionRequest {
+  name: string;
+  model?: string;
+  forkFrom?: string;
+  prompt?: string;
 }
 
 export interface TaskCost {
@@ -48,6 +63,7 @@ export interface Task {
   reason?: string;
   section: TaskSection;
   questions: TaskQuestion[];
+  sessions: SessionView[];
   lastMessage?: string;
   lastMessageAt?: string;
   summary?: string;
@@ -70,6 +86,7 @@ export interface StartTaskRequest {
 export interface AnswerRequest {
   text: string;
   question?: string;
+  session?: string;
 }
 
 export type BridgeEventType = 'state' | 'message' | 'tool' | 'plan' | 'question' | 'answer' | 'gate' | 'error';

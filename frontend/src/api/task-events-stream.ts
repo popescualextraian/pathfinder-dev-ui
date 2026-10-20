@@ -4,21 +4,26 @@ const RECONNECT_DELAY_MS = 2000;
 
 /**
  * Streams the full run of a task. On error the source is closed and reopened
- * after a delay, continuing after the last seen seq. Returns a function that closes it.
+ * after a delay, continuing after the last seen seq. With handlers.session only that session's events arrive. Returns a function that closes it.
  */
 export function openTaskEventsStream(
   taskId: string,
   onEvent: (event: BridgeEvent) => void,
   since = 0,
-  handlers: { onOpen?: () => void; onError?: () => void } = {},
+  handlers: {
+    onOpen?: () => void;
+    onError?: () => void;
+    session?: string;
+  } = {},
 ): () => void {
   let last = since;
   let source: EventSource | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
+  const sessionQuery = handlers.session ? `&session=${encodeURIComponent(handlers.session)}` : '';
 
   const connect = () => {
-    const es = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/events/stream?since=${last}`);
+    const es = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/events/stream?since=${last}${sessionQuery}`);
     source = es;
     es.onopen = () => handlers.onOpen?.();
     es.onmessage = (e: MessageEvent) => {

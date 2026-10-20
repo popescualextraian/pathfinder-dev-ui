@@ -23,7 +23,7 @@ describe('FullRun', () => {
 
   it('opens the stream from seq 0 and renders events in order without duplicates', () => {
     render(<FullRun taskId="T-1" />);
-    expect(FakeEventSource.last.url).toBe('/api/tasks/T-1/events/stream?since=0');
+    expect(FakeEventSource.last.url).toBe('/api/tasks/T-1/events/stream?since=0&session=main');
     act(() => {
       FakeEventSource.last.emit('message', ev(2, 'message', { role: 'agent', text: 'second', final: true }));
       FakeEventSource.last.emit('message', ev(1, 'message', { role: 'user', text: 'first', final: true }));

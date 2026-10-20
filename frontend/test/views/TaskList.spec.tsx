@@ -24,6 +24,7 @@ const tasks = [
       {
         id: 'q',
         source: 'ask',
+        session: 'main',
         text: 'Which DB?',
         options: [],
         recommendation: null,
@@ -172,7 +173,7 @@ describe('App: sidebar, filter and stream', () => {
   it('selecting a card sets the URL', async () => {
     render(<App />);
     fireEvent.click(await screen.findByText('Running one'));
-    expect(window.location.hash).toBe('#/task/T-r');
+    expect(window.location.hash).toBe('#/tasks/T-r');
     await waitFor(() =>
       expect(
         within(screen.getByRole('region', { name: 'Working' }))

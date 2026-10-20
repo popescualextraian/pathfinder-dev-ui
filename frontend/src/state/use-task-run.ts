@@ -64,12 +64,12 @@ export function buildRunItems(events: BridgeEvent[]): RunItem[] {
   return items;
 }
 
-/** Streams the full run of a task while mounted (the stream replays from seq 0). */
+/** Streams the full run of one session of a task while mounted (the stream replays from seq 0). */
 const MAX_FAILURES = 5;
 
 const FLUSH_MS = 50;
 
-export function useTaskRun(id: string, enabled = true) {
+export function useTaskRun(id: string, session = 'main', enabled = true) {
   const [events, setEvents] = useState<BridgeEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState(!enabled);
@@ -111,6 +111,7 @@ export function useTaskRun(id: string, enabled = true) {
       },
       0,
       {
+        session,
         onError: () => {
           setConnected(false);
           setError(true);
@@ -122,7 +123,7 @@ export function useTaskRun(id: string, enabled = true) {
       close();
       if (timer) clearTimeout(timer);
     };
-  }, [id, enabled]);
+  }, [id, session, enabled]);
 
   const items = useMemo(() => buildRunItems(events), [events]);
   return { events, items, connected, error };
