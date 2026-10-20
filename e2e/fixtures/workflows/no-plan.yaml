@@ -1,0 +1,20 @@
+# Like plan-review.yaml without the exit prompt: nobody writes plans/<id>.md, so step 2 is blocked until forced.
+title: Plan without a file
+steps:
+  - id: plan
+    title: Plan
+    stage: plan
+    sessions:
+      - name: main
+        prompt: "Plan #{{item.id}}: {{item.title}}"
+    gate: human
+  - id: review
+    title: Review
+    stage: review
+    requires: ["plans/{{item.id}}.md"]
+    sessions:
+      - name: review
+        fork: main
+        prompt: HISTORY
+    gate: human
+doneStage: done

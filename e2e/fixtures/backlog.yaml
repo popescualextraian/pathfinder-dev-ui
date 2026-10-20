@@ -1,0 +1,13 @@
+# Backlog of the UI tests (playwright.config.ts): in-memory items, no GitLab. `connector: memory` works only under
+# `npm run start:local` (it sets BACKLOG_ALLOW_MEMORY_CONNECTOR=1). The tests create their own items; these are examples.
+connector: memory
+pollSeconds: 3600
+lanes:
+  - { id: backlog, title: Backlog, default: true }
+  - { id: plan, title: Plan }
+  - { id: review, title: Review }
+  - { id: done, title: Done }
+memory:
+  items:
+    - { title: Example item, description: Seeded from e2e/fixtures/backlog.yaml }
+    - { title: Example in review, lane: review }

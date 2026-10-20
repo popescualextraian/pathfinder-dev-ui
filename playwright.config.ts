@@ -24,9 +24,13 @@ export default defineConfig({
     launchOptions: { executablePath: installedChromium() },
   },
   webServer: {
-    // local launcher, real agentic-bridge, fake agent; short poll so state changes show quickly
+    // local launcher, real agentic-bridge, fake agent; short poll so state changes show quickly. Backlog in memory
+    // (no GitLab) and the test workflows; start:local makes the paths absolute and keeps the data in .local/<port>/.
     command: 'npm run start:local',
-    env: { PORT: String(PORT), ENGINE_POLL_SECONDS: '2', ENGINE_MAX_RUNNING: '10' },
+    env: {
+      PORT: String(PORT), ENGINE_POLL_SECONDS: '2', ENGINE_MAX_RUNNING: '10',
+      BACKLOG_CONFIG: 'e2e/fixtures/backlog.yaml', WORKFLOWS_DIR: 'e2e/fixtures/workflows',
+    },
     url: `http://localhost:${PORT}/api/system/info`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
