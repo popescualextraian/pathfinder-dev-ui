@@ -17,6 +17,7 @@ export interface FakeNote {
   id: number;
   body: string;
   system: boolean;
+  author: { username: string };
 }
 
 export interface RecordedRequest {
@@ -38,6 +39,10 @@ export class FakeGitlab {
   requests: RecordedRequest[] = [];
   // Set to make every authenticated request fail with this status (for example 500).
   forceStatus?: number;
+  // Set to make POST /labels answer 403.
+  forbidLabelCreate = false;
+  // Set to make GET notes answer 500.
+  failNotesReads = false;
   baseUrl = '';
   private nextIid = 1;
   private nextNote = 1;
@@ -76,8 +81,8 @@ export class FakeGitlab {
     return iid;
   }
 
-  addNote(iid: number, body: string, system = false): FakeNote {
-    const note = { id: this.nextNote++, body, system };
+  addNote(iid: number, body: string, system = false, author = this.user): FakeNote {
+    const note = { id: this.nextNote++, body, system, author: { username: author } };
     this.notes.set(iid, [...(this.notes.get(iid) ?? []), note]);
     const issue = this.issues.get(iid);
     if (issue) issue.user_notes_count = this.notes.get(iid)!.filter((n) => !n.system).length;
@@ -116,6 +121,7 @@ export class FakeGitlab {
     if (sub === '/labels') {
       if (method === 'GET') return this.page(send, q, [...this.labels].map((name) => ({ name })));
       if (method === 'POST') {
+        if (this.forbidLabelCreate) return send(403, { message: '403 Forbidden' });
         const name = String(body?.name ?? '');
         if (this.labels.has(name)) return send(409, { message: 'Label already exists' });
         this.labels.add(name);
@@ -144,7 +150,8 @@ export class FakeGitlab {
         return send(200, issue);
       }
     } else if (!m[3]) {
-      if (method === 'GET') return this.page(send, q, notes);
+      if (method === 'GET' && this.failNotesReads) return send(500, { message: 'boom' });
+      if (method === 'GET') return this.page(send, q, [...notes].reverse()); // newest first, like GitLab
       if (method === 'POST') return send(201, this.addNote(issue.iid, String(body?.body ?? '')));
     } else if (method === 'PUT') {
       const note = notes.find((n) => n.id === Number(m[3]));

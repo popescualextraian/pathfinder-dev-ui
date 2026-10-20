@@ -94,6 +94,15 @@ describe('GitlabConnector', () => {
       expect(items.find((i) => i.id === String(iid))!.fileLinks).toEqual([{ repo: 'g/p', path: 'a' }]);
     });
 
+    it('still lists when the token may not create labels', async () => {
+      gitlab.forbidLabelCreate = true;
+      gitlab.addIssue({ labels: ['status::plan'] });
+      await expect(connector.list()).resolves.toHaveLength(1);
+      gitlab.forbidLabelCreate = false;
+      await connector.list();
+      expect(gitlab.labels.has('status::todo')).toBe(true); // retried on a later round
+    });
+
     it('creates the lane labels the project lacks, and only those', async () => {
       gitlab.labels.add('status::plan');
       await connector.list();
@@ -146,6 +155,15 @@ describe('GitlabConnector', () => {
       expect(gitlab.writes[0].body).toMatchObject({ state_event: 'reopen' });
     });
 
+    it('still resolves with the moved item when the follow-up notes read fails', async () => {
+      const iid = gitlab.addIssue({ labels: ['status::todo'] });
+      gitlab.addNote(iid, 'human');
+      gitlab.failNotesReads = true;
+      const item = await connector.moveToLane(String(iid), 'todo', 'plan');
+      expect(item).toMatchObject({ id: String(iid), lane: 'plan', fileLinks: [] });
+      expect(gitlab.issues.get(iid)!.labels).toEqual(['status::plan']);
+    });
+
     it('rejects a stale from with BacklogConflictError and writes nothing', async () => {
       const iid = gitlab.addIssue({ labels: ['status::review'] });
       await expect(connector.moveToLane(String(iid), 'todo', 'plan')).rejects.toBeInstanceOf(BacklogConflictError);
@@ -183,6 +201,29 @@ describe('GitlabConnector', () => {
       const iid = gitlab.addIssue();
       gitlab.addNote(iid, `> ${renderFileLinks([{ repo: 'x', path: 'y' }])}`);
       await expect(connector.getFileLinks(String(iid))).resolves.toEqual([]);
+    });
+
+    it('ignores a newer forged marker note by another user and leaves it untouched', async () => {
+      const iid = gitlab.addIssue();
+      const id = String(iid);
+      await connector.setFileLinks(id, [{ repo: 'g/p', path: 'real' }]);
+      const forged = gitlab.addNote(iid, renderFileLinks([{ repo: 'evil', path: 'x' }]), false, 'mallory');
+      const forgedBody = forged.body;
+      await expect(connector.getFileLinks(id)).resolves.toEqual([{ repo: 'g/p', path: 'real' }]);
+      await connector.setFileLinks(id, [{ repo: 'g/p', path: 'real2' }]);
+      expect(forged.body).toBe(forgedBody);
+      await expect(connector.getFileLinks(id)).resolves.toEqual([{ repo: 'g/p', path: 'real2' }]);
+      expect(gitlab.writes.map((w) => w.method)).toEqual(['POST', 'PUT']);
+      expect(gitlab.notes.get(iid)).toHaveLength(2);
+    });
+
+    it('creates its own note when only a forged one exists', async () => {
+      const iid = gitlab.addIssue();
+      gitlab.addNote(iid, renderFileLinks([{ repo: 'evil', path: 'x' }]), false, 'mallory');
+      await expect(connector.getFileLinks(String(iid))).resolves.toEqual([]);
+      await connector.setFileLinks(String(iid), [{ repo: 'g/p', path: 'a' }]);
+      expect(gitlab.notes.get(iid)).toHaveLength(2);
+      await expect(connector.getFileLinks(String(iid))).resolves.toEqual([{ repo: 'g/p', path: 'a' }]);
     });
 
     it('does not create two notes for concurrent writes', async () => {

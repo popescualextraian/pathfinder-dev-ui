@@ -1,6 +1,7 @@
+import { Logger } from '@nestjs/common';
 import { BacklogConfig, LaneConfig } from '../../service/backlog-config';
 import { BacklogConnector, FileLink, Item } from '../../service/backlog-connector';
-import { BacklogConflictError, BacklogNotFoundError, BacklogUnreachableError } from '../../service/backlog-errors';
+import { BacklogConflictError, BacklogNotFoundError, BacklogUnreachableError, safeMessage } from '../../service/backlog-errors';
 import { isFileLinksComment, parseFileLinks, renderFileLinks } from './file-links-comment';
 import { GitlabClient } from './gitlab-client';
 
@@ -20,6 +21,7 @@ interface GitlabNote {
   id: number;
   body: string;
   system?: boolean;
+  author?: { username?: string };
 }
 
 const DAY_MS = 86_400_000;
@@ -29,7 +31,9 @@ const LABEL_COLOR = '#428bca';
 // All GitLab knowledge (labels, iid, issue states, notes) stays in this class. It keeps no per-request state:
 // the only shared state is the memoised "labels exist" check and the per-issue write queue.
 export class GitlabConnector implements BacklogConnector {
+  private readonly logger = new Logger(GitlabConnector.name);
   private labelsReady?: Promise<void>;
+  private username?: Promise<string>;
   private readonly linkWrites = new Map<string, Promise<unknown>>();
 
   constructor(
@@ -37,12 +41,18 @@ export class GitlabConnector implements BacklogConnector {
     private readonly client: GitlabClient,
   ) {}
 
-  async me(): Promise<string> {
-    return (await this.client.get<{ username: string }>('/user')).username;
+  // The token's user, read once (lazily) and remembered: it owns the file-links comments.
+  me(): Promise<string> {
+    this.username ??= this.client.get<{ username: string }>('/user').then((u) => u.username).catch((error: unknown) => {
+      this.username = undefined;
+      throw error;
+    });
+    return this.username;
   }
 
   async list(): Promise<Item[]> {
-    await this.ensureLabels();
+    // Best effort: a token that may read but not create labels still lists; a later round retries.
+    await this.ensureLabels().catch((error: unknown) => this.logger.warn(`Could not create the lane labels: ${safeMessage(error)}`));
     const since = new Date(Date.now() - this.config.doneDays * DAY_MS).toISOString();
     const [open, closed] = await Promise.all([
       this.client.get<GitlabIssue[]>('/issues', { state: 'opened', per_page: '100' }),
@@ -62,7 +72,7 @@ export class GitlabConnector implements BacklogConnector {
     const issue = await this.issue(id);
     if (this.resolveLane(issue) !== from) throw new BacklogConflictError();
     if (from === to) return this.toItem(issue);
-    await this.ensureLabels();
+    if (target.gitlab?.label && target.gitlab.state !== 'closed') await this.ensureLabels(target.gitlab.label);
     const configured = this.config.lanes.flatMap((l) => (l.gitlab?.label ? [l.gitlab.label] : []));
     const toClosed = target.gitlab?.state === 'closed';
     const add = !toClosed && target.gitlab?.label ? [target.gitlab.label] : [];
@@ -72,7 +82,8 @@ export class GitlabConnector implements BacklogConnector {
     if (remove.length > 0) body.remove_labels = remove.join(',');
     if (toClosed && issue.state !== 'closed') body.state_event = 'close';
     if (!toClosed && issue.state === 'closed') body.state_event = 'reopen';
-    return this.toItem(await this.client.send<GitlabIssue>('PUT', `/issues/${this.iid(id)}`, body));
+    // GitLab has applied the move once the PUT answered: a failing follow-up read must not fail the move.
+    return this.toItem(await this.client.send<GitlabIssue>('PUT', `/issues/${this.iid(id)}`, body), true);
   }
 
   async getFileLinks(id: string): Promise<FileLink[]> {
@@ -125,9 +136,17 @@ export class GitlabConnector implements BacklogConnector {
     return this.client.get<GitlabIssue>(`/issues/${this.iid(id)}`);
   }
 
-  private async toItem(issue: GitlabIssue): Promise<Item> {
+  private async toItem(issue: GitlabIssue, bestEffortLinks = false): Promise<Item> {
     const id = String(issue.iid);
-    const note = issue.user_notes_count === 0 ? undefined : await this.ownedNote(id);
+    let note: GitlabNote | undefined;
+    if (issue.user_notes_count !== 0) {
+      try {
+        note = await this.ownedNote(id);
+      } catch (error) {
+        if (!bestEffortLinks) throw error;
+        this.logger.warn(`Could not read the file links after a move: ${safeMessage(error)}`);
+      }
+    }
     return {
       id,
       title: issue.title,
@@ -141,24 +160,32 @@ export class GitlabConnector implements BacklogConnector {
   }
 
   private async ownedNote(id: string): Promise<GitlabNote | undefined> {
+    const me = await this.me();
     const notes = await this.client.get<GitlabNote[]>(`/issues/${this.iid(id)}/notes`, { per_page: '100' });
-    return notes.find((n) => !n.system && isFileLinksComment(n.body));
+    // Anyone may post a note that starts with the marker: only the token's own notes count.
+    return notes.find((n) => !n.system && n.author?.username === me && isFileLinksComment(n.body));
   }
 
   // Creates the configured lane labels the project lacks; remembered once it succeeded.
-  private ensureLabels(): Promise<void> {
-    this.labelsReady ??= this.createMissingLabels().catch((error: unknown) => {
+  private ensureLabels(only?: string): Promise<void> {
+    if (only !== undefined && !this.labelsReady) return this.createMissingLabels(only);
+    if (only === undefined && !this.labelsReady) return this.ensureAllLabels();
+    return this.labelsReady ?? Promise.resolve();
+  }
+
+  private ensureAllLabels(): Promise<void> {
+    this.labelsReady = this.createMissingLabels().catch((error: unknown) => {
       this.labelsReady = undefined;
       throw error;
     });
     return this.labelsReady;
   }
 
-  private async createMissingLabels(): Promise<void> {
+  private async createMissingLabels(only?: string): Promise<void> {
     const existing = new Set((await this.client.get<Array<{ name: string }>>('/labels', { per_page: '100' })).map((l) => l.name));
     for (const lane of this.config.lanes) {
       const name = lane.gitlab?.label;
-      if (!name || existing.has(name)) continue;
+      if (!name || existing.has(name) || (only !== undefined && name !== only)) continue;
       try {
         await this.client.send('POST', '/labels', { name, color: LABEL_COLOR });
       } catch (error) {
