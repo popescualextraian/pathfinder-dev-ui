@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { BacklogItem, FileLink, ItemDraft, ItemPatch, Lane } from '../api/models';
-import { createItem, getItems, getLanes, moveItem, refreshBacklog, setFileLinks, updateItem } from '../api/backlog-api';
+import type { BacklogItem, ItemDraft, ItemPatch, Lane } from '../api/models';
+import { createItem, getItems, getLanes, moveItem, refreshBacklog, updateItem } from '../api/backlog-api';
 import { ApiError } from '../api/http';
 import { openBacklogStream } from '../api/backlog-stream';
 
@@ -151,12 +151,6 @@ export function useBacklog() {
     }
   }, []);
 
-  /** Saves the file links of an item; the server's stored list replaces the local one. Rejects on failure. */
-  const saveFileLinks = useCallback(async (id: string, links: FileLink[]) => {
-    const saved = await setFileLinks(id, links);
-    setItems((list) => list.map((i) => (i.id === id ? { ...i, fileLinks: saved } : i)));
-  }, []);
-
   /** Creates an item; the returned item joins the board. Rejects on failure (the dialog shows it). */
   const create = useCallback(
     async (draft: ItemDraft) => {
@@ -177,5 +171,5 @@ export function useBacklog() {
     [applyItem],
   );
 
-  return { enabled, loading, error, lanes, me, items, move, refresh, saveFileLinks, create, update };
+  return { enabled, loading, error, lanes, me, items, move, refresh, create, update };
 }

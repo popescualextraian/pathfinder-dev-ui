@@ -44,7 +44,6 @@ export function App() {
               me={backlog.me}
               error={backlog.error}
               onMove={(id, to) => void backlog.move(id, to)}
-              onSaveFileLinks={backlog.saveFileLinks}
               onCreate={backlog.create}
               onUpdate={backlog.update}
             />

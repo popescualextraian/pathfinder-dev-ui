@@ -1,4 +1,4 @@
-import { createItem, getItems, getLanes, moveItem, updateItem, refreshBacklog, setFileLinks } from '../../src/api/backlog-api';
+import { createItem, getItems, getLanes, moveItem, updateItem, refreshBacklog } from '../../src/api/backlog-api';
 import { ApiError } from '../../src/api/http';
 
 const json = (status: number, body: unknown) =>
@@ -39,15 +39,6 @@ describe('backlog-api', () => {
     expect(url).toBe('/api/backlog/items/a%2Fb%231/move');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({ from: 'x', to: 'y' });
-  });
-
-  it('setFileLinks puts links', async () => {
-    fetchMock.mockReturnValue(json(200, [{ repo: 'r', path: 'p' }]));
-    await setFileLinks('1', [{ repo: 'r', path: 'p' }]);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/backlog/items/1/file-links');
-    expect(init.method).toBe('PUT');
-    expect(JSON.parse(init.body)).toEqual({ links: [{ repo: 'r', path: 'p' }] });
   });
 
   it('createItem posts the draft', async () => {

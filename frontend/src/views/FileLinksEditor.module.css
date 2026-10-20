@@ -1,6 +1,0 @@
-.editor { display: flex; flex-direction: column; gap: 8px; }
-.heading { margin: 0; font-size: 13px; }
-.row { display: flex; flex-wrap: wrap; gap: 6px; }
-.row input { flex: 1 1 120px; min-width: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 12px; color: var(--ink); background: var(--paper); }
-.actions { display: flex; gap: 8px; }
-.error { margin: 0; color: var(--msg-red); font-size: 12px; }

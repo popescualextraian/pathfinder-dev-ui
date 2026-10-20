@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { BacklogItem, FileLink, ItemDraft, ItemPatch, Lane } from '../api/models';
+import type { BacklogItem, ItemDraft, ItemPatch, Lane } from '../api/models';
 import { BoardLane } from './BoardLane';
 import { Button } from './Button';
 import { ItemDetail } from './ItemDetail';
@@ -12,13 +12,12 @@ interface Props {
   me: string;
   error?: string | null;
   onMove: (id: string, laneId: string) => void;
-  onSaveFileLinks: (id: string, links: FileLink[]) => void | Promise<void>;
   onCreate: (draft: ItemDraft) => Promise<unknown>;
   onUpdate: (id: string, patch: ItemPatch) => Promise<unknown>;
   onSelect?: (id: string | null) => void;
 }
 
-export function BoardView({ lanes, items, me, error, onMove, onSaveFileLinks, onCreate, onUpdate, onSelect }: Props) {
+export function BoardView({ lanes, items, me, error, onMove, onCreate, onUpdate, onSelect }: Props) {
   const [mineOnly, setMineOnly] = useState(false);
   const [assignee, setAssignee] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -79,7 +78,6 @@ export function BoardView({ lanes, items, me, error, onMove, onSaveFileLinks, on
         {selected && (
           <ItemDetail
             item={selected}
-            onSaveFileLinks={onSaveFileLinks}
             onEdit={() => setDialog(selected)}
             onClose={() => select(null)}
           />

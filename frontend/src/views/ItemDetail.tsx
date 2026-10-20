@@ -1,15 +1,13 @@
-import type { BacklogItem, FileLink } from '../api/models';
-import { FileLinksEditor } from './FileLinksEditor';
+import type { BacklogItem } from '../api/models';
 import styles from './ItemDetail.module.css';
 
 interface Props {
   item: BacklogItem;
-  onSaveFileLinks: (id: string, links: FileLink[]) => void | Promise<void>;
   onEdit: () => void;
   onClose: () => void;
 }
 
-export function ItemDetail({ item, onSaveFileLinks, onEdit, onClose }: Props) {
+export function ItemDetail({ item, onEdit, onClose }: Props) {
   return (
     <aside className={styles.detail} aria-label="Item detail">
       <div className={styles.head}>
@@ -27,7 +25,6 @@ export function ItemDetail({ item, onSaveFileLinks, onEdit, onClose }: Props) {
         Open in source
       </a>
       <p className={styles.description}>{item.description}</p>
-      <FileLinksEditor key={item.id} links={item.fileLinks} onSave={(links) => onSaveFileLinks(item.id, links)} />
     </aside>
   );
 }

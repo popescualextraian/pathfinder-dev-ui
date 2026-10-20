@@ -30,13 +30,12 @@ const items = [
 
 const renderBoard = (props: Partial<Parameters<typeof BoardView>[0]> = {}) => {
   const onMove = jest.fn();
-  const onSaveFileLinks = jest.fn();
   const onCreate = jest.fn().mockResolvedValue(undefined);
   const onUpdate = jest.fn().mockResolvedValue(undefined);
   render(
-    <BoardView lanes={lanes} items={items} me="me" onMove={onMove} onSaveFileLinks={onSaveFileLinks} onCreate={onCreate} onUpdate={onUpdate} {...props} />,
+    <BoardView lanes={lanes} items={items} me="me" onMove={onMove} onCreate={onCreate} onUpdate={onUpdate} {...props} />,
   );
-  return { onMove, onSaveFileLinks, onCreate, onUpdate };
+  return { onMove, onCreate, onUpdate };
 };
 
 const dataTransfer = () => {
@@ -139,18 +138,13 @@ describe('BoardView', () => {
     expect(screen.getByRole('alert').textContent).toBe('move failed');
   });
 
-  it('opens the detail with description, source link and file links save', async () => {
-    const { onSaveFileLinks } = renderBoard();
+  it('opens the detail with description and source link, and no file links section', () => {
+    renderBoard();
     fireEvent.click(screen.getByText('Mine'));
     expect(screen.getAllByText('desc').some((e) => e.tagName === 'P')).toBe(true); // detail panel
     expect(screen.getByRole('link', { name: 'Open in source' }).getAttribute('href')).toBe('https://x/1');
-    fireEvent.click(screen.getByRole('button', { name: 'Add link' }));
-    fireEvent.change(screen.getByLabelText('Repo 1'), { target: { value: 'r' } });
-    fireEvent.change(screen.getByLabelText('Path 1'), { target: { value: 'a.ts' } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    });
-    expect(onSaveFileLinks).toHaveBeenCalledWith('1', [{ repo: 'r', path: 'a.ts' }]);
+    expect(screen.queryByRole('button', { name: 'Add link' })).toBeNull();
+    expect(screen.queryByText(/file links/i)).toBeNull();
   });
 });
 
@@ -161,7 +155,7 @@ describe('BoardView create and edit', () => {
       const onCreate = async (draft: { title: string; description?: string; lane?: string }) => {
         setList((l) => [...l, item({ id: '9', title: draft.title, lane: draft.lane ?? 'todo' })]);
       };
-      return <BoardView lanes={lanes} items={list} me="me" onMove={jest.fn()} onSaveFileLinks={jest.fn()} onCreate={onCreate} onUpdate={jest.fn()} />;
+      return <BoardView lanes={lanes} items={list} me="me" onMove={jest.fn()} onCreate={onCreate} onUpdate={jest.fn()} />;
     };
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: 'New item' }));
