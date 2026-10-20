@@ -498,11 +498,22 @@ describe('TasksService verbs', () => {
     expect(bridge.events).toHaveBeenCalledWith(3);
   });
 
-  it('events of a session ask the bridge with the session, and refuse an unknown session with 404', async () => {
-    const { service, bridge } = setup({ bridge: { events: jest.fn(async () => []) } });
-    await service.events(ID, 3, 'main');
-    expect(bridge.events).toHaveBeenCalledWith(3, undefined, undefined, 'main');
-    await expect(service.events(ID, 3, 'second')).rejects.toBeInstanceOf(NotFoundException);
+  it('events of a session are filtered here: its own and the unnamed task-level ones; unknown session is 404', async () => {
+    const all = [{ seq: 1, name: 'main' }, { seq: 2, name: 'second' }, { seq: 3 }];
+    const { service, bridge } = setup({ records: [record({ sessions: [{ name: 'second', state: 'idle', createdAt: '2026-01-01T00:00:00.000Z' }] })], bridge: { events: jest.fn(async (since: number) => all.filter((e) => e.seq > since)) } });
+    expect((await service.events(ID, 0, 'second')).map((e) => e.seq)).toEqual([2, 3]);
+    expect((await service.events(ID, 1, 'main')).map((e) => e.seq)).toEqual([3]);
+    expect(bridge.events).toHaveBeenCalledWith(0, 1000);
+    await expect(service.events(ID, 3, 'ghost')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('events of a session read on through full bridge pages', async () => {
+    const page1 = Array.from({ length: 1000 }, (_, i) => ({ seq: i + 1, name: 'main' }));
+    const page2 = [{ seq: 1001, name: 'second' }];
+    const events = jest.fn(async (since: number) => (since === 0 ? page1 : page2));
+    const { service } = setup({ records: [record({ sessions: [{ name: 'second', state: 'idle', createdAt: '2026-01-01T00:00:00.000Z' }] })], bridge: { events } });
+    expect((await service.events(ID, 0, 'second')).map((e) => e.seq)).toEqual([1001]);
+    expect(events).toHaveBeenNthCalledWith(2, 1000, 1000);
   });
 });
 

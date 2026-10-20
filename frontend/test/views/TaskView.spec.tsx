@@ -42,6 +42,10 @@ describe('TaskView header', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('task is closed');
     expect(api.cancel).toHaveBeenCalledWith('T-1');
   });
+  it('no Cancel turn when the task is finished, even if the session still says running', () => {
+    view(makeTask({ state: 'stopped', section: 'done', sessions: [makeSession({ state: 'running' })] }));
+    expect(screen.queryByText('Cancel turn')).toBeNull();
+  });
   it('close: pending, error', async () => {
     m(api.close).mockRejectedValue(new ApiError(500, 'boom'));
     view(idle());

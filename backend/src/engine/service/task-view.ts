@@ -127,6 +127,8 @@ export function toView(record: TaskRecord, live: Live = {}): TaskView {
     sessions: [],
     closed,
   };
+  // The bridge's task state is running while any session runs; a question in another session still needs you.
+  if (view.section !== 'done' && view.questions.length > 0) view.section = 'needs-you';
   if (record.closedAt !== undefined) view.closedAt = record.closedAt;
   if (record.cost !== undefined) view.cost = record.cost;
   if (record.lastMessage !== undefined) view.lastMessage = record.lastMessage;
@@ -144,8 +146,14 @@ export function toView(record: TaskRecord, live: Live = {}): TaskView {
 function sessionViews(record: TaskRecord, view: TaskView, live: Live): SessionView[] {
   const known = live.sessions ? mergeSessions(record.sessions, live.sessions) : record.sessions;
   const count = (name: string): number => view.questions.filter((q) => q.session === name).length;
+  // A task that is not alive (stopped, suspended, ...) has no running session, whatever the record last saw.
+  const alive = ['starting', 'running', 'waiting', 'idle'].includes(view.state);
+  const stateOf = (s: SessionRecord): string => {
+    if (view.closed) return 'stopped';
+    return !alive && ['starting', 'running', 'waiting'].includes(s.state) ? view.state : s.state;
+  };
   const from = (s: SessionRecord): SessionView => {
-    const v: SessionView = { name: s.name, state: view.closed ? 'stopped' : s.state, createdAt: s.createdAt, questions: count(s.name) };
+    const v: SessionView = { name: s.name, state: stateOf(s), createdAt: s.createdAt, questions: count(s.name) };
     if (s.model !== undefined) v.model = s.model;
     if (s.reason !== undefined && !view.closed) v.reason = s.reason;
     if (s.forkOf !== undefined) v.forkOf = s.forkOf;

@@ -43,6 +43,8 @@ export const TASKS_SERVICE_OPTIONS = Symbol('TASKS_SERVICE_OPTIONS');
 
 const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
+const EVENTS_PAGE = 1000;
+
 @Injectable()
 export class TasksService {
   private readonly waitTimeoutMs: number;
@@ -232,7 +234,7 @@ export class TasksService {
     this.updates.removed(id);
   }
 
-  // `session`: only that session's events (the bridge filters; task-level events without a session name are included).
+  // `session`: only that session's events and the task-level ones without a session name.
   // NotFoundException for a session the task does not have.
   async events(id: string, since: number, session?: string): Promise<BridgeEvent[]> {
     const record = await this.require(id);
@@ -243,7 +245,16 @@ export class TasksService {
       throw new ConflictException(`Task ${id} is not running; its events are not available`);
     }
     const client = this.bridgeFor(record);
-    return session === undefined ? client.events(since) : client.events(since, undefined, undefined, session);
+    if (session === undefined) return client.events(since);
+    // The bridge's session filter drops unnamed task-level events, so filter here like the SSE stream does
+    // (the session's own and the unnamed ones), reading the bridge's pages (1000 events) until the last one.
+    const out: BridgeEvent[] = [];
+    for (let from = since; ;) {
+      const page = await client.events(from, EVENTS_PAGE);
+      out.push(...page.filter((e) => e.name == null || e.name === session));
+      if (page.length < EVENTS_PAGE) return out;
+      from = page[page.length - 1].seq;
+    }
   }
 
   // Under the launch lock: cap check, record, container. Does not wait for the bridge.

@@ -167,7 +167,7 @@ function SessionPanel({ task, sessions, name, done, onTask }: PanelProps) {
   const session = sessions.find((s) => s.name === name) ?? sessions[0];
   const only = sessions.length === 1;
   const questions = task.questions.filter((q) => (q.session ?? MAIN_SESSION) === name);
-  const running = session.state === 'running' || session.state === 'starting';
+  const running = (session.state === 'running' || session.state === 'starting') && task.section !== 'done';
   const closed = task.closed;
   const source = {
     lastMessage: session.lastMessage ?? (only ? task.lastMessage : undefined),
