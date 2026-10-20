@@ -58,6 +58,8 @@ Requests in general:
 | `GET /containers/json` | query `filters` and `all` only; the kind label is added to the label filter (both the list and the map form of `filters`), so other containers are never listed; unparseable filters are refused |
 
 Only start accepts a container id; every other action by id (stop, delete, inspect, archive) is refused.
+
+**The one id rule, and why.** dockerode's `createContainer` returns an object bound to the new container's 64-hex id, so the launcher's `container.start()` sends `POST /containers/<id>/start`, not the name. Without this rule no task could start. The rule is as narrow as it can be: only `start`, only a full lowercase 64-hex id, no query, no body, and the same upstream label check as for names (the filter inspects that id and refuses unless it carries the kind label). The launcher stays unchanged (decision of HD, 2026-10-20). Starting an existing labelled container is something the launcher may do anyway, so the rule adds no new power.
 There is no exec, and no way to start a container the filter did not create or create one other than a task container.
 
 ### Label check
