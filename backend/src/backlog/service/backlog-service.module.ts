@@ -1,14 +1,15 @@
 import { Module } from '@nestjs/common';
+import { BacklogIntegrationModule } from '../integration/backlog-integration.module';
+import { BacklogRepositoryModule } from '../repository/backlog-repository.module';
 import { BacklogConfigModule } from './backlog-config.module';
 import { BacklogPoller } from './backlog-poller';
 import { BacklogTriggers } from './backlog-triggers';
 import { BacklogUpdates } from './backlog-updates';
 import { BacklogService } from './backlog.service';
 
-// Expects BACKLOG_STORE (repository module) and BACKLOG_CONNECTOR (integration module) from the
-// modules imported here once they exist (added by the repository and GitLab connector tasks).
+// Only this module imports the integration module to wire the connector implementation.
 @Module({
-  imports: [BacklogConfigModule],
+  imports: [BacklogConfigModule, BacklogRepositoryModule, BacklogIntegrationModule],
   providers: [
     BacklogService,
     BacklogUpdates,
