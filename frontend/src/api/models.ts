@@ -141,3 +141,71 @@ export interface LanesResponse {
   me: string;
   lanes: Lane[];
 }
+
+export type WorkflowGate = 'human' | 'auto';
+
+export interface WorkflowStepSummary {
+  id: string;
+  title: string;
+  stage: string;
+  gate: WorkflowGate;
+  /** Session names. */
+  sessions: string[];
+}
+
+export interface WorkflowSummary {
+  id: string;
+  title: string;
+  steps: WorkflowStepSummary[];
+  doneStage?: string;
+}
+
+export interface RefusedWorkflow {
+  file: string;
+  error: string;
+}
+
+export interface WorkflowList {
+  definitions: WorkflowSummary[];
+  refused: RefusedWorkflow[];
+}
+
+export type WorkflowRunState =
+  | 'running'
+  | 'needs-you'
+  | 'awaiting-approval'
+  | 'blocked'
+  | 'done'
+  | 'stopped'
+  | 'failed';
+export type WorkflowRunPhase = 'sessions' | 'exit' | 'awaiting-approval' | 'blocked';
+export type WorkflowRunSessionStatus = 'pending' | 'running' | 'done';
+
+/** The step as the run view carries it (the definition as the run started, with prompts). */
+export interface WorkflowRunStep {
+  id: string;
+  title: string;
+  stage: string;
+  gate: WorkflowGate;
+  sessions: Array<{ name: string; prompt: string; fork?: string; model?: string }>;
+  requires?: string[];
+  exitPrompt?: string;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflowId: string;
+  definition: { id: string; title: string; steps: WorkflowRunStep[]; doneStage?: string };
+  itemId: string;
+  item: { id: string; title: string; description: string; url: string; stage: string };
+  taskId: string;
+  stepIndex: number;
+  phase: WorkflowRunPhase;
+  sessions: Record<string, { status: WorkflowRunSessionStatus }>;
+  state: WorkflowRunState;
+  warning?: string;
+  failureReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+}
