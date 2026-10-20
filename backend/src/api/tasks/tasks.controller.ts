@@ -2,9 +2,11 @@ import {
   Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Query, Sse, UseFilters, UseGuards, MessageEvent,
 } from '@nestjs/common';
 import { catchError, interval, map, merge, Observable, throwError } from 'rxjs';
-import { BridgeError, BridgeUnreachableError, TaskEvent, TaskEventsService, TasksService, TaskUpdates, TaskView } from '../../engine';
+import { BridgeError, BridgeUnreachableError, SessionView, TaskEvent, TaskEventsService, TasksService, TaskUpdates, TaskView } from '../../engine';
 import { BridgeErrorFilter, describeBridgeError } from './bridge-error.filter';
+import { AddSessionDto } from './dto/add-session.dto';
 import { AnswerDto } from './dto/answer.dto';
+import { CancelDto } from './dto/cancel.dto';
 import { PromptDto } from './dto/prompt.dto';
 import { SinceQueryDto } from './dto/since-query.dto';
 import { StartTaskDto } from './dto/start-task.dto';
@@ -51,22 +53,34 @@ export class TasksController {
     return this.tasks.get(id);
   }
 
+  @Get(':id/sessions')
+  async sessions(@Param('id') id: string): Promise<SessionView[]> {
+    return (await this.tasks.get(id)).sessions;
+  }
+
+  // 201 with the task view; 400 for a bad name, 404 for an unknown forkFrom, 409 for a name that is
+  // taken, a busy source or a stopped task (the bridge decides).
+  @Post(':id/sessions')
+  addSession(@Param('id') id: string, @Body() body: AddSessionDto): Promise<TaskView> {
+    return this.tasks.addSession(id, { name: body.name, model: body.model, forkFrom: body.forkFrom, prompt: body.prompt });
+  }
+
   @Post(':id/prompt')
   @HttpCode(202)
   prompt(@Param('id') id: string, @Body() body: PromptDto): Promise<TaskView> {
-    return this.tasks.prompt(id, body.text);
+    return this.tasks.prompt(id, body.text, body.session ?? undefined);
   }
 
   @Post(':id/answer')
   @HttpCode(202)
   answer(@Param('id') id: string, @Body() body: AnswerDto): Promise<TaskView> {
-    return this.tasks.answer(id, { text: body.text, question: body.question });
+    return this.tasks.answer(id, { text: body.text, question: body.question, session: body.session ?? undefined });
   }
 
   @Post(':id/cancel')
   @HttpCode(202)
-  cancel(@Param('id') id: string): Promise<TaskView> {
-    return this.tasks.cancel(id);
+  cancel(@Param('id') id: string, @Body() body?: CancelDto): Promise<TaskView> {
+    return this.tasks.cancel(id, body?.session ?? undefined);
   }
 
   @Post(':id/close')
@@ -89,7 +103,7 @@ export class TasksController {
 
   @Get(':id/events')
   eventList(@Param('id') id: string, @Query() query: SinceQueryDto): Promise<TaskEvent[]> {
-    return this.tasks.events(id, query.since ?? 0);
+    return this.tasks.events(id, query.since ?? 0, query.session ?? undefined);
   }
 
   // Backlog after Last-Event-ID (which EventSource sends on reconnect) or else `since`, then live.
@@ -108,7 +122,7 @@ export class TasksController {
     // On reconnect EventSource repeats the original URL (with its `since`) and adds Last-Event-ID:
     // the header is where the client really got to, so it wins.
     const fromHeader = lastEventId !== undefined && /^\d+$/.test(lastEventId) ? Number(lastEventId) : undefined;
-    const events = await this.events.stream(id, fromHeader ?? query.since ?? 0);
+    const events = await this.events.stream(id, fromHeader ?? query.since ?? 0, query.session ?? undefined);
     return events.pipe(
       map((event) => ({ id: String(event.seq), data: event })),
       catchError((error: unknown) =>

@@ -8,6 +8,11 @@ export type TaskSection = 'needs-you' | 'working' | 'in-review' | 'done';
 
 export const MAIN_SESSION = 'main';
 
+// main always exists; other names must be in the record's session list (absent in older records: only main).
+export function hasSession(record: TaskRecord, name: string): boolean {
+  return name === MAIN_SESSION || (record.sessions ?? []).some((s) => s.name === name);
+}
+
 // An open question with the session that asked it (main for older bridges).
 export type ViewQuestion = BridgeQuestion & { session: string };
 

@@ -6,7 +6,7 @@ import { toView } from '../../../../src/engine/service/task-view';
 import { record } from '../../engine/service/helpers';
 import { BridgeError, TaskEvent as BridgeEvent, BridgeUnreachableError } from '../../../../src/engine';
 
-const view = { id: 'T-1', state: 'idle' };
+const view = { id: 'T-1', state: 'idle', sessions: [{ name: 'main', state: 'idle', createdAt: 't', questions: 0 }] };
 const event = (seq: number): BridgeEvent => ({ seq, ts: 't', task: 'T-1', session: null, agent: 'a', type: 'message', data: { n: seq } });
 
 function make() {
@@ -21,6 +21,7 @@ function make() {
     close: jest.fn().mockResolvedValue(view),
     remove: jest.fn().mockResolvedValue(undefined),
     events: jest.fn().mockResolvedValue([event(1)]),
+    addSession: jest.fn().mockResolvedValue(view),
   };
   const events = { stream: jest.fn().mockResolvedValue(of(event(4), event(5))) };
   const updates = new TaskUpdates();
@@ -35,17 +36,45 @@ describe('TasksController', () => {
     expect(await controller.list()).toEqual([view]);
     expect(await controller.get('T-1')).toBe(view);
     expect(await controller.prompt('T-1', { text: 'hi' })).toBe(view);
-    expect(tasks.prompt).toHaveBeenCalledWith('T-1', 'hi');
+    expect(tasks.prompt).toHaveBeenCalledWith('T-1', 'hi', undefined);
     await controller.answer('T-1', { text: 'yes', question: 'q' });
-    expect(tasks.answer).toHaveBeenCalledWith('T-1', { text: 'yes', question: 'q' });
-    await controller.cancel('T-1');
+    expect(tasks.answer).toHaveBeenCalledWith('T-1', { text: 'yes', question: 'q', session: undefined });
+    await controller.cancel('T-1', {});
     await controller.stop('T-1');
     expect(await controller.close('T-1')).toBe(view);
     expect(tasks.close).toHaveBeenCalledWith('T-1');
     await controller.remove('T-1');
-    expect(tasks.cancel).toHaveBeenCalledWith('T-1');
+    expect(tasks.cancel).toHaveBeenCalledWith('T-1', undefined);
     expect(tasks.stop).toHaveBeenCalledWith('T-1');
     expect(tasks.remove).toHaveBeenCalledWith('T-1');
+  });
+
+  it('lists the sessions of the task view', async () => {
+    const { controller } = make();
+    expect(await controller.sessions('T-1')).toBe(view.sessions);
+  });
+
+  it('adds a session through the service and answers 201 (the POST default)', async () => {
+    const { tasks, controller } = make();
+    expect(await controller.addSession('T-1', { name: 'second', model: 'm', forkFrom: 'main', prompt: 'go' })).toBe(view);
+    expect(tasks.addSession).toHaveBeenCalledWith('T-1', { name: 'second', model: 'm', forkFrom: 'main', prompt: 'go' });
+    expect(Reflect.getMetadata('__httpCode__', TasksController.prototype.addSession)).toBeUndefined();
+  });
+
+  it('passes the session on to prompt, answer, cancel, events and the stream', async () => {
+    const { tasks, events, controller } = make();
+    await controller.prompt('T-1', { text: 'hi', session: 's' });
+    expect(tasks.prompt).toHaveBeenCalledWith('T-1', 'hi', 's');
+    await controller.answer('T-1', { text: 'yes', session: 's' });
+    expect(tasks.answer).toHaveBeenCalledWith('T-1', { text: 'yes', question: undefined, session: 's' });
+    await controller.cancel('T-1', { session: 's' });
+    expect(tasks.cancel).toHaveBeenCalledWith('T-1', 's');
+    await controller.cancel('T-1', undefined);
+    expect(tasks.cancel).toHaveBeenLastCalledWith('T-1', undefined);
+    await controller.eventList('T-1', { since: 2, session: 's' });
+    expect(tasks.events).toHaveBeenCalledWith('T-1', 2, 's');
+    await controller.stream('T-1', { session: 's' }, undefined);
+    expect(events.stream).toHaveBeenCalledWith('T-1', 0, 's');
   });
 
   it('uses 201, 202 and 204 as documented', () => {
@@ -59,14 +88,14 @@ describe('TasksController', () => {
     const { tasks, controller } = make();
     await controller.eventList('T-1', {});
     await controller.eventList('T-1', { since: 7 });
-    expect(tasks.events).toHaveBeenNthCalledWith(1, 'T-1', 0);
-    expect(tasks.events).toHaveBeenNthCalledWith(2, 'T-1', 7);
+    expect(tasks.events).toHaveBeenNthCalledWith(1, 'T-1', 0, undefined);
+    expect(tasks.events).toHaveBeenNthCalledWith(2, 'T-1', 7, undefined);
   });
 
   it('streams events as SSE messages with id = seq and the event as data', async () => {
     const { events, controller } = make();
     const messages = await firstValueFrom((await controller.stream('T-1', {}, undefined)).pipe(toArray()));
-    expect(events.stream).toHaveBeenCalledWith('T-1', 0);
+    expect(events.stream).toHaveBeenCalledWith('T-1', 0, undefined);
     expect(messages).toEqual([
       { id: '4', data: event(4) },
       { id: '5', data: event(5) },
@@ -80,11 +109,11 @@ describe('TasksController', () => {
     await controller.stream('T-1', {}, 'garbage');
     await controller.stream('T-1', { since: 3 }, 'garbage');
     await controller.stream('T-1', { since: 3 });
-    expect(events.stream).toHaveBeenNthCalledWith(1, 'T-1', 9);
-    expect(events.stream).toHaveBeenNthCalledWith(2, 'T-1', 9);
-    expect(events.stream).toHaveBeenNthCalledWith(3, 'T-1', 0);
-    expect(events.stream).toHaveBeenNthCalledWith(4, 'T-1', 3);
-    expect(events.stream).toHaveBeenNthCalledWith(5, 'T-1', 3);
+    expect(events.stream).toHaveBeenNthCalledWith(1, 'T-1', 9, undefined);
+    expect(events.stream).toHaveBeenNthCalledWith(2, 'T-1', 9, undefined);
+    expect(events.stream).toHaveBeenNthCalledWith(3, 'T-1', 0, undefined);
+    expect(events.stream).toHaveBeenNthCalledWith(4, 'T-1', 3, undefined);
+    expect(events.stream).toHaveBeenNthCalledWith(5, 'T-1', 3, undefined);
   });
 
   it('turns bridge errors on the stream into generic messages without host or detail', async () => {

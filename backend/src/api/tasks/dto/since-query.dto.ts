@@ -1,4 +1,5 @@
 import { Transform } from 'class-transformer';
+import { OptionalSessionName } from './session-name';
 import { IsInt, IsOptional, Min } from 'class-validator';
 
 export class SinceQueryDto {
@@ -8,4 +9,8 @@ export class SinceQueryDto {
   @IsInt()
   @Min(0)
   since?: number;
+
+  // Only this session's events (task-level events without a session name are included).
+  @OptionalSessionName()
+  session?: string;
 }

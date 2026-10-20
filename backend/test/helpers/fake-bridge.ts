@@ -12,6 +12,8 @@ export class FakeBridge {
   requests: { method: string; url: string; auth?: string; body: unknown }[] = [];
   // When set, the next request (to `route`, e.g. 'POST /prompt', if given) answers with this error (once).
   failNext?: { status: number; code: string; message: string; route?: string };
+  // Sessions besides main, in creation order; main is implicit.
+  sessionNames: string[] = [];
   url = '';
 
   private server!: Server;
@@ -46,10 +48,12 @@ export class FakeBridge {
   }
 
   // Appends an event and pushes it to live WebSocket clients.
-  emit(type: BridgeEvent['type'], data: Record<string, unknown> = {}): BridgeEvent {
+  // `name`: the session the event belongs to; none for a task-level event.
+  emit(type: BridgeEvent['type'], data: Record<string, unknown> = {}, name?: string): BridgeEvent {
     const event: BridgeEvent = {
       seq: this.events.length + 1, ts: new Date().toISOString(), task: this.taskId, session: null, agent: 'fake', type, data,
     };
+    if (name !== undefined) event.name = name;
     this.events.push(event);
     this.live.forEach((ws) => ws.send(JSON.stringify(event)));
     return event;
@@ -62,10 +66,16 @@ export class FakeBridge {
     this.emit('state', { state: 'waiting', reason: `question ${id}` });
   }
 
+  private sessionList() {
+    return ['main', ...this.sessionNames].map((name) => ({
+      name, session: null, model: null, state: this.state, reason: '', summary: '', inbox: 0, fork_of: null, created: '2026-10-17T10:00:00Z', updated: '2026-10-17T10:00:00Z',
+    }));
+  }
+
   private status() {
     return {
       task: this.taskId, state: this.state, reason: '', branch: `agentic/${this.taskId}`, summary: 'fake summary',
-      seq: this.events.length, allowed_actions: ['push'], questions: this.questions,
+      sessions: this.sessionList(), seq: this.events.length, allowed_actions: ['push'], questions: this.questions,
     };
   }
 
@@ -91,10 +101,23 @@ export class FakeBridge {
       switch (route) {
         case 'GET /status':
           return send(200, this.status());
+        case 'GET /sessions':
+          return send(200, this.sessionList());
+        case 'POST /sessions': {
+          const name = String(body.name ?? '');
+          if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(name)) return fail(400, 'bad_request', `Bad session name ${name}`);
+          if (name === 'main' || this.sessionNames.includes(name)) return fail(409, 'conflict', `Session ${name} exists`);
+          if (body.fork !== undefined && body.fork !== 'main' && !this.sessionNames.includes(String(body.fork))) {
+            return fail(404, 'not_found', `Unknown session ${String(body.fork)}`);
+          }
+          this.sessionNames.push(name);
+          if (body.text !== undefined) this.emit('message', { text: body.text }, name);
+          return send(201, this.sessionList().find((s) => s.name === name));
+        }
         case 'POST /prompt':
           if (this.state === 'stopped' || this.state === 'starting') return fail(409, 'conflict', `Cannot prompt in state ${this.state}`);
           this.state = 'running';
-          this.emit('message', { text: body.text });
+          this.emit('message', { text: body.text }, body.session === undefined ? undefined : String(body.session));
           return send(202, this.status());
         case 'POST /answer': {
           if (this.questions.length === 0) return fail(409, 'conflict', 'No open question');
@@ -118,9 +141,10 @@ export class FakeBridge {
           const since = Number(url.searchParams.get('since') ?? 0);
           const limit = Number(url.searchParams.get('limit') ?? 1000);
           const status = url.searchParams.get('view') === 'status';
+          const session = url.searchParams.get('session');
           // The status view keeps state, question, answer, error and final messages, with the full seq numbers.
           const keep = (e: BridgeEvent) => !status || ['state', 'question', 'answer', 'error'].includes(e.type) || (e.type === 'message' && e.data.final === true);
-          const chosen = this.events.filter((e) => e.seq > since && keep(e)).slice(0, limit);
+          const chosen = this.events.filter((e) => e.seq > since && keep(e) && (session === null || e.name === undefined || e.name === session)).slice(0, limit);
           return send(200, chosen.map((e) => JSON.stringify(e)).join('\n') + '\n', 'application/x-ndjson');
         }
         default:

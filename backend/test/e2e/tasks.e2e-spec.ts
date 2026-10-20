@@ -324,6 +324,112 @@ describe('tasks REST API (e2e)', () => {
     });
   });
 
+  describe('sessions', () => {
+    const sseText = (path: string, until: (text: string) => boolean) => new Promise<string>((resolve, reject) => {
+      const { port } = app.getHttpServer().address() as { port: number };
+      const req = httpRequest({ host: '127.0.0.1', port, path, headers: { Accept: 'text/event-stream' } }, (res) => {
+        let text = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => {
+          text += chunk;
+          if (res.statusCode !== 200 || until(text)) { req.destroy(); resolve(`${res.statusCode}\n${text}`); }
+        });
+      });
+      req.on('error', (e) => ((e as NodeJS.ErrnoException).code === 'ECONNRESET' ? undefined : reject(e)));
+      req.setTimeout(5000, () => reject(new Error('SSE timeout')));
+      req.end();
+    });
+    const seqsOf = (text: string) => [...text.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+
+    it('adds a session (201, task view with sessions) and lists them', async () => {
+      const { body: task } = await start();
+      const res = await post(`/api/tasks/${task.id}/sessions`, { name: 'second', model: 'claude-sonnet-4-5', forkFrom: 'main', prompt: 'go' });
+      expect(res.status).toBe(201);
+      expect(res.body.sessions.map((s: { name: string }) => s.name)).toEqual(['main', 'second']);
+      expect(bridge.requests.find((r) => r.method === 'POST' && r.url === '/sessions')?.body).toEqual({
+        name: 'second', model: 'claude-sonnet-4-5', fork: 'main', text: 'go',
+      });
+      const list = await get(`/api/tasks/${task.id}/sessions`);
+      expect(list.status).toBe(200);
+      expect(list.body.map((s: { name: string }) => s.name)).toEqual(['main', 'second']);
+    });
+
+    it.each([
+      ['uppercase', { name: 'Second' }],
+      ['empty', { name: '' }],
+      ['too long', { name: 'a'.repeat(33) }],
+      ['no name', {}],
+      ['bad model', { name: 'ok', model: 'a b' }],
+      ['bad fork name', { name: 'ok', forkFrom: 'No Good' }],
+    ])('rejects a session with %s with 400, before the bridge', async (_label, body) => {
+      const { body: task } = await start();
+      expect((await post(`/api/tasks/${task.id}/sessions`, body)).status).toBe(400);
+      expect(bridge.requests.some((r) => r.url === '/sessions')).toBe(false);
+    });
+
+    it('passes the bridge errors on: name taken 409, unknown fork source 404', async () => {
+      const { body: task } = await start();
+      expect((await post(`/api/tasks/${task.id}/sessions`, { name: 'second' })).status).toBe(201);
+      expect((await post(`/api/tasks/${task.id}/sessions`, { name: 'second' })).status).toBe(409);
+      expect((await post(`/api/tasks/${task.id}/sessions`, { name: 'main' })).status).toBe(409);
+      expect((await post(`/api/tasks/${task.id}/sessions`, { name: 'third', forkFrom: 'ghost' })).status).toBe(404);
+    });
+
+    it('sends the session with prompt, answer and cancel, and 400 for a bad name', async () => {
+      const { body: task } = await start();
+      await post(`/api/tasks/${task.id}/sessions`, { name: 'second' });
+      expect((await post(`/api/tasks/${task.id}/prompt`, { text: 'more', session: 'second' })).status).toBe(202);
+      expect(bridge.requests.filter((r) => r.url === '/prompt').pop()?.body).toEqual({ text: 'more', session: 'second' });
+      expect((await post(`/api/tasks/${task.id}/cancel`, { session: 'second' })).status).toBe(202);
+      expect(bridge.requests.filter((r) => r.url === '/cancel').pop()?.body).toEqual({ session: 'second' });
+      bridge.ask('q-1', 'Which?', '2026-10-17T10:00:00Z');
+      expect((await post(`/api/tasks/${task.id}/answer`, { text: 'a', question: 'q-1', session: 'second' })).status).toBe(202);
+      expect(bridge.requests.filter((r) => r.url === '/answer').pop()?.body).toMatchObject({ text: 'a', question: 'q-1', session: 'second' });
+      expect((await post(`/api/tasks/${task.id}/prompt`, { text: 'x', session: 'Bad Name' })).status).toBe(400);
+      expect((await post(`/api/tasks/${task.id}/cancel`, { session: 'Bad Name' })).status).toBe(400);
+      bridge.state = 'running';
+      expect((await post(`/api/tasks/${task.id}/cancel`)).status).toBe(202); // no body: main, as before
+      expect(bridge.requests.filter((r) => r.url === '/cancel').pop()?.body).toEqual({});
+    });
+
+    it('lists the events of one session (task-level events included), 404 for an unknown one, 400 for a bad name', async () => {
+      const { body: task } = await start();
+      await post(`/api/tasks/${task.id}/sessions`, { name: 'second' });
+      bridge.emit('message', { n: 1 }, 'main');
+      bridge.emit('message', { n: 2 }, 'second');
+      bridge.emit('state', { state: 'idle' });
+      const seqs = async (q: string) => (await get(`/api/tasks/${task.id}/events${q}`)).body.map((e: { seq: number }) => e.seq);
+      expect(await seqs('?session=second')).toEqual([2, 3]);
+      expect(await seqs('?session=main')).toEqual([1, 3]);
+      expect(await seqs('')).toEqual([1, 2, 3]);
+      expect((await get(`/api/tasks/${task.id}/events?session=ghost`)).status).toBe(404);
+      expect((await get(`/api/tasks/${task.id}/events?session=Bad`)).status).toBe(400);
+    });
+
+    it('streams the events of one session, and everything without the parameter', async () => {
+      const { body: task } = await start();
+      await post(`/api/tasks/${task.id}/sessions`, { name: 'second' });
+      bridge.emit('message', { n: 1 }, 'main');
+      bridge.emit('message', { n: 2 }, 'second');
+      bridge.emit('state', { state: 'idle' });
+      let live = false;
+      const second = await sseText(`/api/tasks/${task.id}/events/stream?session=second`, (t) => {
+        if (!live && seqsOf(t).length >= 2) { live = true; bridge.emit('message', { n: 4 }, 'main'); bridge.emit('message', { n: 5 }, 'second'); }
+        return seqsOf(t).length >= 3;
+      });
+      expect(second.startsWith('200')).toBe(true);
+      expect(seqsOf(second)).toEqual([2, 3, 5]);
+      const all = await sseText(`/api/tasks/${task.id}/events/stream`, (t) => seqsOf(t).length >= 5);
+      expect(seqsOf(all)).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('answers the stream of an unknown session with 404 and of a bad name with 400, not a 200', async () => {
+      const { body: task } = await start();
+      expect((await sseText(`/api/tasks/${task.id}/events/stream?session=ghost`, () => false)).startsWith('404')).toBe(true);
+      expect((await sseText(`/api/tasks/${task.id}/events/stream?session=Bad`, () => false)).startsWith('400')).toBe(true);
+    });
+  });
+
   describe('task view data and sections', () => {
     it('list and detail carry the fields of the contract', async () => {
       const { body: task } = await start({ prompt: 'Fix the bug\nin detail', model: 'claude-sonnet-4-5' });

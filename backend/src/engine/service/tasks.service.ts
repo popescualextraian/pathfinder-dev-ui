@@ -10,7 +10,7 @@ import { RecordPatch, TaskRecord, TaskRecordRepository } from '../repository/tas
 import { repoNameOf } from '../../commons/repo-name';
 import { TaskCostService } from './cost/task-cost.service';
 import { TaskUpdates } from './task-updates';
-import { Live, MAIN_SESSION, mergeSessions, titleFrom, toView, TaskView, viewsDiffer } from './task-view';
+import { hasSession, Live, MAIN_SESSION, mergeSessions, titleFrom, toView, TaskView, viewsDiffer } from './task-view';
 
 
 export type { TaskView } from './task-view';
@@ -232,14 +232,18 @@ export class TasksService {
     this.updates.removed(id);
   }
 
-  async events(id: string, since: number): Promise<BridgeEvent[]> {
+  // `session`: only that session's events (the bridge filters; task-level events without a session name are included).
+  // NotFoundException for a session the task does not have.
+  async events(id: string, since: number, session?: string): Promise<BridgeEvent[]> {
     const record = await this.require(id);
     if (record.closed) throw closedConflict(id);
+    if (session !== undefined && !hasSession(record, session)) throw new NotFoundException(`Task ${id} has no session ${session}`);
     const inspection = await this.launcher.inspect(id);
     if (!inspection.exists || !inspection.running) {
       throw new ConflictException(`Task ${id} is not running; its events are not available`);
     }
-    return this.bridgeFor(record).events(since);
+    const client = this.bridgeFor(record);
+    return session === undefined ? client.events(since) : client.events(since, undefined, undefined, session);
   }
 
   // Under the launch lock: cap check, record, container. Does not wait for the bridge.

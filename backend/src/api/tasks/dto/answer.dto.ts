@@ -1,4 +1,5 @@
 import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { OptionalSessionName } from './session-name';
 import { MAX_TEXT_LENGTH } from './prompt.dto';
 
 export class AnswerDto {
@@ -14,4 +15,8 @@ export class AnswerDto {
   @IsNotEmpty()
   @MaxLength(200)
   question?: string;
+
+  // Session to look in for the oldest open question when `question` is absent; the question's own session otherwise.
+  @OptionalSessionName()
+  session?: string;
 }

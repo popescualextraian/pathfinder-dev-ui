@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { AddSessionDto } from '../../../../src/api/tasks/dto/add-session.dto';
+import { CancelDto } from '../../../../src/api/tasks/dto/cancel.dto';
 import { AnswerDto } from '../../../../src/api/tasks/dto/answer.dto';
 import { PromptDto } from '../../../../src/api/tasks/dto/prompt.dto';
 import { SinceQueryDto } from '../../../../src/api/tasks/dto/since-query.dto';
@@ -88,5 +90,34 @@ describe('SinceQueryDto', () => {
   });
   it.each(['-1', '1.5', 'abc', ''])('rejects %p', async (since) => {
     expect(await errorsOf(SinceQueryDto, { since })).toContain('since');
+  });
+});
+
+describe('session fields', () => {
+  it.each(['main', 'a', 'second-1', 'a_b', '0x', 'a'.repeat(32)])('accepts the name %p', async (name) => {
+    expect(await errorsOf(AddSessionDto, { name })).toEqual([]);
+    expect(await errorsOf(PromptDto, { text: 't', session: name })).toEqual([]);
+    expect(await errorsOf(CancelDto, { session: name })).toEqual([]);
+  });
+
+  it.each(['', 'Upper', '-a', '_a', 'a b', 'a.b', 'a'.repeat(33), 5])('rejects the name %p', async (name) => {
+    expect(await errorsOf(AddSessionDto, { name })).toContain('name');
+    expect(await errorsOf(AddSessionDto, { name: 'ok', forkFrom: name })).toContain('forkFrom');
+    expect(await errorsOf(PromptDto, { text: 't', session: name })).toContain('session');
+    expect(await errorsOf(AnswerDto, { text: 't', session: name })).toContain('session');
+    expect(await errorsOf(SinceQueryDto, { session: name })).toContain('session');
+  });
+
+  it('requires a name and validates model and prompt like the new-task form', async () => {
+    expect(await errorsOf(AddSessionDto, {})).toContain('name');
+    expect(await errorsOf(AddSessionDto, { name: 'a', model: 'claude-sonnet-4-5', forkFrom: 'main', prompt: 'go' })).toEqual([]);
+    expect(await errorsOf(AddSessionDto, { name: 'a', model: 'a b' })).toContain('model');
+    expect(await errorsOf(AddSessionDto, { name: 'a', prompt: '  ' })).toContain('prompt');
+    expect(await errorsOf(AddSessionDto, { name: 'a', prompt: 'x'.repeat(20001) })).toContain('prompt');
+  });
+
+  it('keeps the session optional', async () => {
+    expect(await errorsOf(CancelDto, {})).toEqual([]);
+    expect(await errorsOf(SinceQueryDto, {})).toEqual([]);
   });
 });

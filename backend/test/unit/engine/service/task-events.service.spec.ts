@@ -15,6 +15,26 @@ describe('TaskEventsService', () => {
     expect(bridge.eventStream).toHaveBeenCalledWith(0, expect.any(AbortSignal));
   });
 
+  it('with a session passes its events and the events without a name, not those of other sessions', async () => {
+    const named = (seq: number, name?: string) => ({ seq, type: 'message', ...(name ? { name } : {}) }) as unknown as BridgeEvent;
+    const bridge = fakeBridge({
+      eventStream: jest.fn(async function* () { yield named(1, 'main'); yield named(2, 'second'); yield named(3); yield named(4, 'second'); }),
+    });
+    const records = fakeRecords([record({ sessions: [{ name: 'main', state: 'idle', createdAt: 't' }, { name: 'second', state: 'idle', createdAt: 't' }] })]);
+    const service = new TaskEventsService(records as never, (() => bridge) as never);
+    const seqs = async (session?: string) => (await firstValueFrom((await service.stream('T-20260101-abcd', 0, session)).pipe(toArray()))).map((e) => e.seq);
+    expect(await seqs('second')).toEqual([2, 3, 4]);
+    expect(await seqs('main')).toEqual([1, 3]);
+    expect(await seqs()).toEqual([1, 2, 3, 4]);
+  });
+
+  it('refuses a session the task does not have (404); main always exists', async () => {
+    const service = new TaskEventsService(fakeRecords([record()]) as never, (() => fakeBridge()) as never);
+    await expect(service.stream('T-20260101-abcd', 0, 'nope')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.assertExists('T-20260101-abcd', 'nope')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.assertExists('T-20260101-abcd', 'main')).resolves.toBeUndefined();
+  });
+
   it('aborts the bridge stream on unsubscribe', async () => {
     let signal!: AbortSignal;
     const bridge = fakeBridge({

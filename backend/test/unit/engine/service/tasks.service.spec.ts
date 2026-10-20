@@ -497,6 +497,13 @@ describe('TasksService verbs', () => {
     expect(await service.events(ID, 3)).toBe(ev);
     expect(bridge.events).toHaveBeenCalledWith(3);
   });
+
+  it('events of a session ask the bridge with the session, and refuse an unknown session with 404', async () => {
+    const { service, bridge } = setup({ bridge: { events: jest.fn(async () => []) } });
+    await service.events(ID, 3, 'main');
+    expect(bridge.events).toHaveBeenCalledWith(3, undefined, undefined, 'main');
+    await expect(service.events(ID, 3, 'second')).rejects.toBeInstanceOf(NotFoundException);
+  });
 });
 
 describe('TasksService.remove', () => {

@@ -39,6 +39,9 @@ function ExcludesProperty(other: string, options?: ValidationOptions): PropertyD
     });
 }
 
+export const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9_.:/[\]-]*$/;
+export const MODEL_NAME_MESSAGE = 'model contains characters that are not allowed';
+
 export class StartTaskDto {
   @IsString()
   @MaxLength(MAX_TEXT_LENGTH)
@@ -76,6 +79,6 @@ export class StartTaskDto {
   @IsOptional()
   @IsString()
   @MaxLength(100)
-  @Matches(/^[A-Za-z0-9][A-Za-z0-9_.:/[\]-]*$/, { message: 'model contains characters that are not allowed' })
+  @Matches(MODEL_NAME, { message: MODEL_NAME_MESSAGE })
   model?: string;
 }
