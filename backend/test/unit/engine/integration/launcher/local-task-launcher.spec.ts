@@ -332,17 +332,21 @@ describe('LocalTaskLauncher.hasFiles', () => {
   let dataDir: string;
   beforeEach(() => {
     dataDir = mkdtempSync(join(tmpdir(), 'hasfiles-'));
-    mkdirSync(join(dataDir, 'local-tasks', 'T-1', 'work', 'plans', 'sub'), { recursive: true });
-    writeFileSync(join(dataDir, 'local-tasks', 'T-1', 'work', 'plans', '7.md'), 'x');
-    writeFileSync(join(dataDir, 'local-tasks', 'T-1', 'work', 'plans', 'sub', 'a.txt'), 'x');
+    // The bridge (AGENTIC_WORKTREE=1) runs the agent in the task's own worktree <work>/.worktrees/<id>.
+    const tree = join(dataDir, 'local-tasks', 'T-1', 'work', '.worktrees', 'T-1');
+    mkdirSync(join(tree, 'plans', 'sub'), { recursive: true });
+    writeFileSync(join(tree, 'plans', '7.md'), 'x');
+    writeFileSync(join(tree, 'plans', 'sub', 'a.txt'), 'x');
+    // In the clone, not in the worktree: not what the agent sees.
+    writeFileSync(join(dataDir, 'local-tasks', 'T-1', 'work', 'only-in-clone.md'), 'x');
     writeFileSync(join(dataDir, 'local-tasks', 'T-1', 'secret.txt'), 'x');
   });
   afterEach(() => rmSync(dataDir, { recursive: true, force: true }));
   const launcher = () => new LocalTaskLauncher({ ...base, dataDir, localAgent: 'fake' });
 
-  it('reports present, missing, nested files and directories in the worktree', async () => {
-    await expect(launcher().hasFiles('T-1', ['plans/7.md', 'plans/8.md', 'plans/sub/a.txt', 'plans'])).resolves.toEqual({
-      'plans/7.md': true, 'plans/8.md': false, 'plans/sub/a.txt': true, plans: true,
+  it('reports present, missing, nested files and directories in the task worktree', async () => {
+    await expect(launcher().hasFiles('T-1', ['plans/7.md', 'plans/8.md', 'plans/sub/a.txt', 'plans', 'only-in-clone.md'])).resolves.toEqual({
+      'plans/7.md': true, 'plans/8.md': false, 'plans/sub/a.txt': true, plans: true, 'only-in-clone.md': false,
     });
   });
 

@@ -137,14 +137,15 @@ export class DockerTaskLauncher implements TaskLauncher {
     return file.toString('utf8');
   }
 
-  // The agent's worktree is /work in the container; a 404 from the archive API means the path is absent.
+  // The agent works in the task's own worktree, which the bridge (AGENTIC_WORKTREE=1) makes at /work/.worktrees/<task id>
+  // (the image's task/worktree.sh); /work is only the clone. A 404 from the archive API means the path is absent.
   async hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>> {
     assertWorktreePaths(paths);
     const container = this.docker.getContainer(this.name(taskId));
     const result: Record<string, boolean> = {};
     for (const path of paths) {
       try {
-        const stream = (await container.getArchive({ path: `/work/${path}` })) as unknown as Readable;
+        const stream = (await container.getArchive({ path: `/work/.worktrees/${taskId}/${path}` })) as unknown as Readable;
         stream.destroy();
         result[path] = true;
       } catch (error) {

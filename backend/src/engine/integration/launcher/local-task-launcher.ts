@@ -255,10 +255,11 @@ export class LocalTaskLauncher implements TaskLauncher {
     }
   }
 
-  // The agent's /work is <task dir>/work here.
+  // The agent's /work is <task dir>/work here; the bridge (AGENTIC_WORKTREE=1) runs it in the task's own worktree
+  // <work>/.worktrees/<task id> (the image's task/worktree.sh), so that is where the files are.
   async hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>> {
     assertWorktreePaths(paths);
-    const work = join(this.root, taskId, 'work');
+    const work = join(this.root, taskId, 'work', '.worktrees', taskId);
     const result: Record<string, boolean> = {};
     for (const path of paths) {
       try {

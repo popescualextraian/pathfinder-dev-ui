@@ -323,16 +323,16 @@ describe('DockerTaskLauncher.readLedger', () => {
 });
 
 describe('DockerTaskLauncher.hasFiles', () => {
-  it('asks the container archive for each path under /work (true when it answers, false on 404)', async () => {
+  it('asks the container archive for each path in the task worktree /work/.worktrees/<id> (true when it answers, false on 404)', async () => {
     const { launcher, docker, container } = setup();
     const stream = Readable.from([Buffer.alloc(512)]);
     container.getArchive.mockImplementation(async ({ path }: { path: string }) => {
-      if (path === '/work/plans/7.md') return stream;
+      if (path === '/work/.worktrees/T-1/plans/7.md') return stream;
       throw dockerError(404);
     });
     await expect(launcher.hasFiles('T-1', ['plans/7.md', 'plans/8.md'])).resolves.toEqual({ 'plans/7.md': true, 'plans/8.md': false });
     expect(docker.getContainer).toHaveBeenCalledWith('agentic-ui-task-T-1');
-    expect(container.getArchive).toHaveBeenCalledWith({ path: '/work/plans/7.md' });
+    expect(container.getArchive).toHaveBeenCalledWith({ path: '/work/.worktrees/T-1/plans/7.md' });
     expect(stream.destroyed).toBe(true);
   });
 
