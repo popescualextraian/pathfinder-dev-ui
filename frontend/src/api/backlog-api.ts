@@ -1,0 +1,25 @@
+import type { BacklogItem, FileLink, LanesResponse } from './models';
+import { ApiError, postJson, request } from './http';
+
+const itemUrl = (id: string) => `/api/backlog/items/${encodeURIComponent(id)}`;
+
+/** Null when the backlog is off (404). */
+export async function getLanes(): Promise<LanesResponse | null> {
+  try {
+    return await request<LanesResponse>('/api/backlog/lanes');
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+export const getItems = () => request<BacklogItem[]>('/api/backlog/items');
+export const moveItem = (id: string, from: string, to: string) =>
+  postJson<BacklogItem>(`${itemUrl(id)}/move`, { from, to });
+export const setFileLinks = (id: string, links: FileLink[]) =>
+  request<FileLink[]>(`${itemUrl(id)}/file-links`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ links }),
+  });
+export const refreshBacklog = () => postJson<BacklogItem[]>('/api/backlog/refresh');

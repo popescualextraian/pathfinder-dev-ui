@@ -20,7 +20,8 @@ export class FakeEventSource {
     this.readyState = 2;
   }
   emit(type: string, data?: unknown) {
-    const e = { data: data === undefined ? undefined : JSON.stringify(data) };
+    // Events with a payload are real MessageEvents (the backlog stream tells them from connection errors).
+    const e = data === undefined ? { data: undefined } : new MessageEvent(type, { data: JSON.stringify(data) });
     if (type === 'message') this.onmessage?.(e);
     if (type === 'error') this.onerror?.();
     if (type === 'open') this.onopen?.();

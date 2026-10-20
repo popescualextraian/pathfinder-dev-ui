@@ -71,3 +71,31 @@ export interface BridgeEvent {
   type: BridgeEventType;
   data: Record<string, unknown>;
 }
+
+export interface FileLink {
+  repo: string;
+  path: string;
+  ref?: string;
+  note?: string;
+}
+
+export interface Lane {
+  id: string;
+  title: string;
+}
+
+export interface BacklogItem {
+  id: string;
+  title: string;
+  description: string;
+  lane: string;
+  assignees: string[];
+  url: string;
+  fileLinks: FileLink[];
+  updatedAt: string;
+}
+
+export interface LanesResponse {
+  me: string;
+  lanes: Lane[];
+}
