@@ -1,14 +1,20 @@
-export type WorkflowTaskState = 'running' | 'idle' | 'stopped' | 'failed' | string;
+/** States of a task and of its sessions, as the engine reports them. */
+export type WorkflowTaskState =
+  | 'starting' | 'running' | 'waiting' | 'idle' | 'suspended' | 'stopped' | 'failed' | 'interrupted';
 
 export interface WorkflowSessionSnapshot {
   name: string;
-  state: string;
+  state: WorkflowTaskState;
   openQuestions: number;
+  /** Time of the session's last final agent message, if any. */
+  lastMessageAt?: string;
 }
 
 export interface WorkflowTaskSnapshot {
   id: string;
   state: WorkflowTaskState;
+  /** The task's git branch, when known. */
+  branch?: string;
   sessions: WorkflowSessionSnapshot[];
   /** Set when the task failed. */
   failureReason?: string;
@@ -27,7 +33,7 @@ export interface WorkflowSessionStart {
   model?: string;
 }
 
-/** Minimal observable of task ids that changed (no rxjs dependency in the package). */
+/** Minimal observable of task ids that changed (an rxjs Observable<string> fits). */
 export interface TaskChanges {
   subscribe(listener: (taskId: string) => void): { unsubscribe(): void };
 }
@@ -39,6 +45,9 @@ export interface WorkflowTasks {
   prompt(taskId: string, session: string, text: string): Promise<void>;
   /** Resolves undefined or null for a task that vanished. */
   get(taskId: string): Promise<WorkflowTaskSnapshot | undefined | null>;
-  hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean> | string[]>;
+  /** Path (relative to the task's worktree) -> whether it exists. */
+  hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>>;
   readonly changes: TaskChanges;
 }
+
+export const WORKFLOW_TASKS = Symbol('WORKFLOW_TASKS');
