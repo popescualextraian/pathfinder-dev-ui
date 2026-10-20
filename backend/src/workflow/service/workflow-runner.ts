@@ -311,7 +311,8 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
       }
     }
     delete r.warning;
-    await this.attempt(`could not move the item to "${next.stage}"`, () => this.items.moveTo(r.itemId, next.stage));
+    const stage = next.stage;
+    if (stage !== undefined) await this.attempt(`could not move the item to "${stage}"`, () => this.items.moveTo(r.itemId, stage));
     r.stepIndex = index;
     r.phase = 'sessions';
     await this.startSession(r, next, next.sessions[0], snap);

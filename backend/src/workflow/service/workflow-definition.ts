@@ -11,8 +11,8 @@ export interface SessionDef {
 export interface StepDef {
   id: string;
   title: string;
-  /** Work item stage the item moves to when the step starts (backlog: lane id). */
-  stage: string;
+  /** Work item stage the item moves to when the step starts (backlog: lane id); without it the item stays. */
+  stage?: string;
   sessions: SessionDef[];
   gate: Gate;
   /** Paths relative to the worktree, may contain placeholders. */

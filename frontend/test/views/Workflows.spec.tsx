@@ -330,6 +330,27 @@ describe('dragging a card with an active run', () => {
     expect(within(screen.getByRole('region', { name: 'Plan' })).getByTestId('backlog-card-7')).toBeTruthy();
   });
 
+  it('refuses a drop on any lane when the next step has no stage, also while awaiting approval', () => {
+    const wf = board({ definitions: [makeWorkflow()] }, [
+      run3({
+        state: 'awaiting-approval', phase: 'awaiting-approval',
+        definition: {
+          ...makeRun().definition,
+          steps: [
+            { id: 'plan', title: 'Plan', stage: 'plan', gate: 'human', sessions: [{ name: 'main', prompt: 'p' }] },
+            { id: 'implement', title: 'Implement', gate: 'auto', sessions: [{ name: 'impl', prompt: 'd' }] },
+          ],
+        },
+      }),
+    ]);
+    const { onMove } = renderBoard(wf, [item({ lane: 'plan' })]);
+    drag('In progress');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onMove).not.toHaveBeenCalled();
+    expect(wf.advance).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toContain('This card is driven by its workflow');
+  });
+
   it('cards without an active run move as before', () => {
     const { onMove } = renderBoard(board({}, [run3({ state: 'done' })]), [item({ lane: 'plan' })]);
     drag('Review');

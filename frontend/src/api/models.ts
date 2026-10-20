@@ -147,7 +147,7 @@ export type WorkflowGate = 'human' | 'auto';
 export interface WorkflowStepSummary {
   id: string;
   title: string;
-  stage: string;
+  stage?: string;
   gate: WorkflowGate;
   /** Session names. */
   sessions: string[];
@@ -185,7 +185,7 @@ export type WorkflowRunSessionStatus = 'pending' | 'running' | 'done';
 export interface WorkflowRunStep {
   id: string;
   title: string;
-  stage: string;
+  stage?: string;
   gate: WorkflowGate;
   sessions: Array<{ name: string; prompt: string; fork?: string; model?: string }>;
   requires?: string[];

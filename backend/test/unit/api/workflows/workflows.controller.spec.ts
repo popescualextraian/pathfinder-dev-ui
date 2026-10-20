@@ -21,6 +21,8 @@ const definitions: WorkflowDefinitions = {
     doneStage: 'done',
   }, {
     id: 'one', title: 'One', steps: [{ id: 's', title: 'S', stage: 'plan', gate: 'auto', sessions: [{ name: 'main', prompt: 'x' }] }],
+  }, {
+    id: 'free', title: 'Free', steps: [{ id: 's', title: 'S', gate: 'auto', sessions: [{ name: 'main', prompt: 'x' }] }],
   }],
   refused: [{ file: 'bad.yaml', error: 'bad.yaml: title is required' }],
 };
@@ -57,6 +59,7 @@ describe('WorkflowsController', () => {
           ],
         },
         { id: 'one', title: 'One', steps: [{ id: 's', title: 'S', stage: 'plan', gate: 'auto', sessions: ['main'] }] },
+        { id: 'free', title: 'Free', steps: [{ id: 's', title: 'S', gate: 'auto', sessions: ['main'] }] },
       ],
       refused: [{ file: 'bad.yaml', error: 'bad.yaml: title is required' }],
     });

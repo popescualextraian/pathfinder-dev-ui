@@ -67,10 +67,21 @@ describe('parseWorkflowDefinition', () => {
   it('requires a title', () => fails(mutate((d) => delete d.title), /title/));
   it('requires non-empty steps', () => fails(mutate((d) => (d.steps = [])), /steps/));
   it('requires step fields', () => {
-    for (const k of ['id', 'title', 'stage', 'gate', 'sessions']) {
+    for (const k of ['id', 'title', 'gate', 'sessions']) {
       fails(mutate((d) => delete d.steps[1][k]), new RegExp(`steps\\[1\\].*${k}`));
     }
   });
+  it('loads a step without stage and a workflow with no stage at all', () => {
+    const d = parseWorkflowDefinition('wf', mutate((x) => {
+      for (const s of x.steps) delete s.stage;
+      delete x.doneStage;
+    }), { stages: ['todo'] });
+    expect(d.steps.every((s) => !('stage' in s))).toBe(true);
+    expect(d.doneStage).toBeUndefined();
+  });
+  it('still checks a given stage against the work items when other steps have none', () =>
+    fails(mutate((x) => delete x.steps[0].stage), /stage "in-progress"/, { stages: ['plan', 'review', 'done'] }));
+  it('rejects a stage that is not a string', () => fails(mutate((d) => (d.steps[1].stage = 3)), /steps\[1\]\.stage/));
   it('rejects empty sessions', () => fails(mutate((d) => (d.steps[1].sessions = [])), /sessions/));
   it('rejects a bad gate', () => fails(mutate((d) => (d.steps[0].gate = 'maybe')), /gate/));
   it('rejects duplicate step ids', () => fails(mutate((d) => (d.steps[1].id = 'plan')), /duplicate step id "plan"/));

@@ -65,8 +65,8 @@ export function parseWorkflowDefinition(id: string, text: string, opts: ParseOpt
     const stepId = str(raw.id, `${at}.id`);
     if (stepIds.has(stepId)) fail(`duplicate step id "${stepId}"`);
     stepIds.add(stepId);
-    const stage = str(raw.stage, `${at}.stage`);
-    checkStage(stage, `${at}.stage`, opts.stages);
+    const stage = optStr(raw.stage, `${at}.stage`);
+    if (stage !== undefined) checkStage(stage, `${at}.stage`, opts.stages);
     if (raw.gate !== 'human' && raw.gate !== 'auto') fail(`${at}.gate must be "human" or "auto"`);
     if (!Array.isArray(raw.sessions) || raw.sessions.length === 0) fail(`${at}.sessions must be a non-empty list`);
 
@@ -100,7 +100,7 @@ export function parseWorkflowDefinition(id: string, text: string, opts: ParseOpt
     const exitPrompt = optStr(raw.exitPrompt, `${at}.exitPrompt`);
     if (exitPrompt !== undefined) checkPlaceholders(exitPrompt, `${at}.exitPrompt`);
     return {
-      id: stepId, title: str(raw.title, `${at}.title`), stage, sessions, gate: raw.gate as Gate,
+      id: stepId, title: str(raw.title, `${at}.title`), ...(stage !== undefined && { stage }), sessions, gate: raw.gate as Gate,
       ...(requires !== undefined && { requires }), ...(exitPrompt !== undefined && { exitPrompt }),
     };
   });

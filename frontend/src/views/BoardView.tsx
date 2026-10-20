@@ -71,7 +71,7 @@ export function BoardView({ lanes, items, me, error, onMove, onCreate, onUpdate,
       return;
     }
     const next = nextStep(run);
-    if (awaitingApproval(run) && next && next.stage === laneId) {
+    if (awaitingApproval(run) && next && next.stage !== undefined && next.stage === laneId) {
       setNotice(null);
       setContinuing({ itemId: id, runId: run.id });
     } else {

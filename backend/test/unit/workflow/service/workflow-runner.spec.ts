@@ -47,6 +47,14 @@ const AUTO_EXIT: WorkflowDefinition = {
   ],
 };
 
+const NOSTAGE: WorkflowDefinition = {
+  id: 'nostage', title: 'No stages',
+  steps: [
+    { id: 'a', title: 'A', gate: 'auto', sessions: [{ name: 'main', prompt: 'Go' }] },
+    { id: 'b', title: 'B', gate: 'human', sessions: [{ name: 'b', prompt: 'Next' }] },
+  ],
+};
+
 const AUTO2: WorkflowDefinition = {
   id: 'auto2', title: 'Auto then human',
   steps: [
@@ -64,7 +72,7 @@ describe('WorkflowRunner', () => {
   let seen: WorkflowRunView[];
 
   const make = async (retry?: RetryDelays): Promise<WorkflowRunner> => {
-    const r = new WorkflowRunner(tasks, items, new FakeDefinitions([PIR, DUO, AUTO_EXIT, AUTO2]), new WorkflowRunFileRepository(dir), updates, retry);
+    const r = new WorkflowRunner(tasks, items, new FakeDefinitions([PIR, DUO, AUTO_EXIT, AUTO2, NOSTAGE]), new WorkflowRunFileRepository(dir), updates, retry);
     await r.onModuleInit();
     return r;
   };
@@ -117,7 +125,19 @@ describe('WorkflowRunner', () => {
       expect(tasks.starts).toHaveLength(2);
     });
 
-    it('refuses two concurrent starts for the same item', async () => {
+    it('a workflow without stages starts, advances and finishes without any card move', async () => {
+    const run = await runner.start('7', 'nostage');
+    const t = run.taskId;
+    expect(run).toMatchObject({ state: 'running', stepIndex: 0 });
+    tasks.finishTurn(t, 'main');
+    expect(await changed(t)).toMatchObject({ state: 'running', stepIndex: 1 });
+    tasks.finishTurn(t, 'b');
+    expect((await changed(t)).state).toBe('awaiting-approval');
+    expect(await runner.advance(run.id, {})).toMatchObject({ state: 'done' });
+    expect(items.moves).toEqual([]);
+  });
+
+  it('refuses two concurrent starts for the same item', async () => {
       const results = await Promise.allSettled([runner.start('7', 'pir'), runner.start('7', 'pir')]);
       expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
       expect(tasks.starts).toHaveLength(1);
