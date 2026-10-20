@@ -147,6 +147,47 @@ describe('HttpBridgeClient', () => {
     expect(seen.map((s) => `${s.method} ${s.url}`)).toEqual(['POST /cancel', 'POST /stop']);
   });
 
+  it('prompt, answer and cancel carry the session in the body when given', async () => {
+    reply = () => ({ status: 202, body: { state: 'running', questions: [] } });
+    await client().prompt('hi', 'second');
+    await client().answer({ text: 'yes', question: 'q1', session: 'second' });
+    await client().cancel('second');
+    expect(JSON.parse(seen[0].body)).toEqual({ text: 'hi', session: 'second' });
+    expect(JSON.parse(seen[1].body)).toEqual({ text: 'yes', question: 'q1', session: 'second' });
+    expect(seen[2]).toMatchObject({ method: 'POST', url: '/cancel' });
+    expect(JSON.parse(seen[2].body)).toEqual({ session: 'second' });
+  });
+
+  it('sessions gets the session list', async () => {
+    reply = () => ({ status: 200, body: [{ name: 'main', state: 'idle', fork_of: null }] });
+    const sessions = await client().sessions();
+    expect(seen[0]).toMatchObject({ method: 'GET', url: '/sessions' });
+    expect(sessions[0].name).toBe('main');
+  });
+
+  it('addSession posts name and only the given options', async () => {
+    reply = () => ({ status: 201, body: { name: 'second', state: 'idle', fork_of: 'main' } });
+    const created = await client().addSession({ name: 'second', model: 'opus', fork: 'main', text: 'go' });
+    await client().addSession({ name: 'third' });
+    expect(seen[0]).toMatchObject({ method: 'POST', url: '/sessions' });
+    expect(JSON.parse(seen[0].body)).toEqual({ name: 'second', model: 'opus', fork: 'main', text: 'go' });
+    expect(JSON.parse(seen[1].body)).toEqual({ name: 'third' });
+    expect(created.fork_of).toBe('main');
+  });
+
+  it('addSession maps a name conflict to BridgeError 409', async () => {
+    reply = () => ({ status: 409, body: { error: { code: 'conflict', message: 'name taken' } } });
+    await expect(client().addSession({ name: 'main' })).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('events filters by session in the query', async () => {
+    reply = () => ({ status: 200, raw: '' });
+    await client().events(2, 10, 'status', 'second');
+    await client().events(2, undefined, undefined, 'a b');
+    expect(seen[0].url).toBe('/events?since=2&limit=10&view=status&session=second');
+    expect(seen[1].url).toBe('/events?since=2&session=a%20b');
+  });
+
   it('events parses NDJSON and passes since and limit', async () => {
     reply = () => ({ status: 200, raw: `${JSON.stringify(event(4))}\n${JSON.stringify(event(5))}\n` });
     const events = await client().events(3, 50);

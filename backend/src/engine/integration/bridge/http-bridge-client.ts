@@ -2,7 +2,7 @@ import { request } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import WebSocket from 'ws';
 import {
-  AnswerInput, BridgeClient, BridgeError, BridgeEvent, BridgeStatus, BridgeUnreachableError,
+  AddSessionInput, AnswerInput, BridgeClient, BridgeError, BridgeEvent, BridgeSession, BridgeStatus, BridgeUnreachableError,
 } from '../../service/bridge-client';
 
 // Client of the bridge HTTP/WebSocket API v1. Uses node:http (not fetch) so the Host header can be
@@ -32,19 +32,34 @@ export class HttpBridgeClient implements BridgeClient {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
-  prompt(text: string): Promise<BridgeStatus> {
-    return this.json('POST', '/prompt', { text });
+  prompt(text: string, session?: string): Promise<BridgeStatus> {
+    return this.json('POST', '/prompt', session === undefined ? { text } : { text, session });
   }
 
   answer(input: AnswerInput): Promise<BridgeStatus> {
     const body: AnswerInput = { text: input.text };
     if (input.question !== undefined) body.question = input.question;
     if (input.grant !== undefined) body.grant = input.grant;
+    if (input.session !== undefined) body.session = input.session;
     return this.json('POST', '/answer', body);
   }
 
-  cancel(): Promise<BridgeStatus> {
-    return this.json('POST', '/cancel');
+  cancel(session?: string): Promise<BridgeStatus> {
+    return this.json('POST', '/cancel', session === undefined ? undefined : { session });
+  }
+
+  async sessions(): Promise<BridgeSession[]> {
+    const text = await this.send('GET', '/sessions');
+    return parseJson<BridgeSession[]>(() => JSON.parse(text) as BridgeSession[]);
+  }
+
+  async addSession(input: AddSessionInput): Promise<BridgeSession> {
+    const body: AddSessionInput = { name: input.name };
+    if (input.model !== undefined) body.model = input.model;
+    if (input.fork !== undefined) body.fork = input.fork;
+    if (input.text !== undefined) body.text = input.text;
+    const text = await this.send('POST', '/sessions', body);
+    return parseJson<BridgeSession>(() => JSON.parse(text) as BridgeSession);
   }
 
   stop(): Promise<BridgeStatus> {
@@ -55,8 +70,9 @@ export class HttpBridgeClient implements BridgeClient {
     return this.json('GET', '/status');
   }
 
-  async events(since: number, limit?: number, view?: 'full' | 'status'): Promise<BridgeEvent[]> {
-    const query = `since=${since}${limit === undefined ? '' : `&limit=${limit}`}${view === undefined ? '' : `&view=${view}`}`;
+  async events(since: number, limit?: number, view?: 'full' | 'status', session?: string): Promise<BridgeEvent[]> {
+    const query = `since=${since}${limit === undefined ? '' : `&limit=${limit}`}${view === undefined ? '' : `&view=${view}`}`
+      + (session === undefined ? '' : `&session=${encodeURIComponent(session)}`);
     const text = await this.send('GET', `/events?${query}`);
     return parseJson<BridgeEvent[]>(() => text.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line) as BridgeEvent));
   }
