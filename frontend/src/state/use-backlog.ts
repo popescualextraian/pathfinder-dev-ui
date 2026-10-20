@@ -127,6 +127,7 @@ export function useBacklog() {
       touched.current = new Map();
       setItems([...list].sort(newestFirst));
       setError(null);
+      setLoading(false); // the superseded load no longer clears it
     } catch (e) {
       setError(message(e));
     }

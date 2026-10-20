@@ -134,6 +134,17 @@ describe('useBacklog', () => {
     expect(ids(result)).toEqual(['b']);
   });
 
+  it('clears loading when refresh supersedes the initial load', async () => {
+    getItems.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useBacklog());
+    await waitFor(() => expect(result.current.enabled).toBe(true));
+    expect(result.current.loading).toBe(true);
+    refreshBacklog.mockResolvedValue([B]);
+    await act(() => result.current.refresh());
+    expect(result.current.loading).toBe(false);
+    expect(ids(result)).toEqual(['b']);
+  });
+
   it('closes the stream on unmount', async () => {
     const { result, unmount } = renderHook(() => useBacklog());
     await waitFor(() => expect(result.current.enabled).toBe(true));
