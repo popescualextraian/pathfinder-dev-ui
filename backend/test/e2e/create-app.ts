@@ -1,8 +1,9 @@
 import { INestApplication } from '@nestjs/common';
-import { rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
 import { BacklogApiModule } from '../../src/api/backlog/backlog-api.module';
+import { WorkflowsApiModule } from '../../src/api/workflows/workflows-api.module';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
 import { BRIDGE_CLIENT_FACTORY } from '../../src/engine/service/bridge-client';
@@ -21,6 +22,9 @@ export interface CreateAppOptions {
   // Switches the backlog component on against this fake GitLab (BACKLOG_CONFIG, BACKLOG_DATA_DIR and the
   // token variable are set for the app and unset again when it closes). Without it the component is off.
   backlog?: { gitlab: FakeGitlab; pollSeconds?: number };
+  // Switches workflows on (needs `backlog`): these definition files (name -> YAML) in WORKFLOWS_DIR, runs in
+  // WORKFLOWS_DATA_DIR, both under the data dir.
+  workflows?: Record<string, string>;
 }
 
 export interface TestApp {
@@ -29,7 +33,7 @@ export interface TestApp {
   launcher: FakeLauncher;
 }
 
-const BACKLOG_VARIABLES = ['BACKLOG_CONFIG', 'BACKLOG_DATA_DIR', 'BACKLOG_TEST_TOKEN'];
+const BACKLOG_VARIABLES = ['BACKLOG_CONFIG', 'BACKLOG_DATA_DIR', 'BACKLOG_TEST_TOKEN', 'WORKFLOWS_DIR', 'WORKFLOWS_DATA_DIR'];
 
 const LANES_YAML = `lanes:
   - { id: backlog, title: Backlog, default: true, gitlab: { label: 'status::backlog' } }
@@ -59,9 +63,16 @@ ${LANES_YAML}`);
       BACKLOG_TEST_TOKEN: gitlab.token,
     });
   }
+  if (options.workflows) {
+    const dir = join(dataDir, 'workflows');
+    mkdirSync(dir);
+    for (const [file, yaml] of Object.entries(options.workflows)) writeFileSync(join(dir, file), yaml);
+    Object.assign(process.env, { WORKFLOWS_DIR: dir, WORKFLOWS_DATA_DIR: join(dataDir, 'workflow-runs') });
+  }
   const launcher = options.launcher ?? new FakeLauncher();
-  // AppModule decides at load time whether it has the backlog; tests that want it add the module here.
-  let builder = Test.createTestingModule({ imports: options.backlog ? [AppModule, BacklogApiModule] : [AppModule] })
+  // AppModule decides at load time whether it has the backlog and workflows; tests that want them add the modules here.
+  const imports = [AppModule, ...(options.backlog ? [BacklogApiModule] : []), ...(options.workflows ? [WorkflowsApiModule] : [])];
+  let builder = Test.createTestingModule({ imports })
     .overrideProvider(TASK_LAUNCHER)
     .useValue(launcher);
   if (options.bridgeClientFactory) {
