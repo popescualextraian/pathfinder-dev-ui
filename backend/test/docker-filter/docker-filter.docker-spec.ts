@@ -253,7 +253,8 @@ describeWithDocker('socket filter against real Docker', () => {
       const container = await create(id);
       expect(container.id).toMatch(/^[0-9a-f]{64}$/);
       expect(await containerExists(nameOf(id))).toBe(true);
-      await container.remove({ force: true, v: true });
+      // Not container.remove(): that object is bound to the 64-hex id, and the filter refuses remove by id; the launcher removes by name.
+      await viaFilter.getContainer(nameOf(id)).remove({ force: true, v: true });
       expect(await containerExists(nameOf(id))).toBe(false);
     });
 
