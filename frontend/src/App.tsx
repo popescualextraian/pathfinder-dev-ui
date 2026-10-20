@@ -4,6 +4,9 @@ import { useState } from 'react';
 import { useTask } from './state/use-task';
 import { useTasks } from './state/use-tasks';
 import { useBacklog } from './state/use-backlog';
+import { useWorkflows } from './state/use-workflows';
+import { useWorkflowRuns } from './state/use-workflow-runs';
+import type { WorkflowBoard } from './views/workflow-run-view';
 import { BoardView } from './views/BoardView';
 import { AppShell } from './views/AppShell';
 import { FactsPanel } from './views/FactsPanel';
@@ -18,6 +21,20 @@ export function App() {
   const { tasks, allTasks, loading, error, applyTask, removeTask } = useTasks(route.repository);
 
   const backlog = useBacklog();
+  const workflows = useWorkflows();
+  // Workflows drive backlog cards: without the board there is nothing to show them on.
+  const workflowsOn = workflows.enabled && backlog.enabled;
+  const runs = useWorkflowRuns(workflowsOn);
+  const workflowBoard: WorkflowBoard | undefined = workflowsOn
+    ? {
+        definitions: workflows.definitions,
+        runsByItem: runs.runsByItem,
+        actionState: runs.actionState,
+        start: runs.start,
+        advance: runs.advance,
+        stop: runs.stop,
+      }
+    : undefined;
   const [creating, setCreating] = useState(false);
   const { task, loading: taskLoading, error: taskError } = useTask(route.taskId, allTasks);
 
@@ -42,10 +59,13 @@ export function App() {
               lanes={backlog.lanes}
               items={backlog.items}
               me={backlog.me}
-              error={backlog.error}
+              error={backlog.error ?? workflows.error ?? runs.error}
               onMove={(id, to) => void backlog.move(id, to)}
               onCreate={backlog.create}
               onUpdate={backlog.update}
+              selectedId={route.item}
+              onSelect={route.selectItem}
+              workflows={workflowBoard}
             />
           ) : undefined
         }
@@ -70,6 +90,7 @@ export function App() {
             onTask={applyTask}
             session={route.session}
             onSelectSession={route.selectSession}
+            workflowRun={workflowsOn && task ? runs.runByTask(task.id) : undefined}
           />
         }
         facts={<FactsPanel task={task} />}

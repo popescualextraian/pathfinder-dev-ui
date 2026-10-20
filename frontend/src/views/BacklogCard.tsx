@@ -1,4 +1,6 @@
 import type { BacklogItem } from '../api/models';
+import { WorkflowControls } from './WorkflowControls';
+import type { WorkflowBoard } from './workflow-run-view';
 import styles from './BacklogCard.module.css';
 
 /** Private drag type: a lane accepts only drags that started on a card, never dropped text. */
@@ -8,13 +10,16 @@ interface Props {
   item: BacklogItem;
   selected: boolean;
   onSelect: (id: string) => void;
+  /** Absent when workflows are off: no workflow controls. */
+  workflows?: WorkflowBoard;
 }
 
-export function BacklogCard({ item, selected, onSelect }: Props) {
+export function BacklogCard({ item, selected, onSelect, workflows }: Props) {
   const description = item.description.trim();
   return (
     <div
       className={`${styles.card} ${selected ? styles.selected : ''}`}
+      data-testid={`backlog-card-${item.id}`}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData(ITEM_MIME, item.id);
@@ -29,6 +34,7 @@ export function BacklogCard({ item, selected, onSelect }: Props) {
         {description && <span className={styles.description}>{description}</span>}
         {item.assignees.length > 0 && <span className={styles.assignees}>{item.assignees.join(', ')}</span>}
       </button>
+      {workflows && <WorkflowControls itemId={item.id} workflows={workflows} />}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { SessionView, Task } from '../api/models';
+import type { SessionView, Task, WorkflowRun } from '../api/models';
 import { MAIN_SESSION, resolveSession } from '../state/use-route';
 import { useTaskActions } from '../state/use-task-actions';
 import { AddSessionDialog } from './AddSessionDialog';
@@ -11,6 +11,7 @@ import { PromptBlock } from './PromptBlock';
 import { QuestionCard } from './QuestionCard';
 import { ReplyBox } from './ReplyBox';
 import { StatePill } from './StatePill';
+import { boardItemHref, currentStep } from './workflow-run-view';
 import styles from './TaskView.module.css';
 
 interface Props {
@@ -25,9 +26,11 @@ interface Props {
   session?: string | null;
   /** Selects a session; main is reported as null. */
   onSelectSession?: (session: string | null) => void;
+  /** The workflow run this task belongs to, if any. */
+  workflowRun?: WorkflowRun;
 }
 
-export function TaskView({ task, loading, error, onDeleted, onTask, session, onSelectSession }: Props) {
+export function TaskView({ task, loading, error, onDeleted, onTask, session, onSelectSession, workflowRun }: Props) {
   if (!task) {
     return (
       <p className={styles.empty} role={error ? 'alert' : undefined}>
@@ -43,6 +46,7 @@ export function TaskView({ task, loading, error, onDeleted, onTask, session, onS
       onTask={onTask}
       session={session}
       onSelectSession={onSelectSession}
+      workflowRun={workflowRun}
     />
   );
 }
@@ -53,6 +57,7 @@ interface DetailProps {
   onTask?: (task: Task) => void;
   session?: string | null;
   onSelectSession?: (session: string | null) => void;
+  workflowRun?: WorkflowRun;
 }
 
 /** Sessions of a task; an older task without any shows one main session built from the task. */
@@ -70,7 +75,7 @@ function sessionsOf(task: Task): SessionView[] {
   ];
 }
 
-function TaskDetail({ task, onDeleted, onTask, session, onSelectSession }: DetailProps) {
+function TaskDetail({ task, onDeleted, onTask, session, onSelectSession, workflowRun }: DetailProps) {
   const actions = useTaskActions(task.id, onTask);
   const [confirming, setConfirming] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -112,6 +117,12 @@ function TaskDetail({ task, onDeleted, onTask, session, onSelectSession }: Detai
             ))}
         </div>
       </header>
+      {workflowRun && (
+        <p className={styles.workflow} data-testid="task-workflow-line">
+          Workflow {workflowRun.definition.title} · step {currentStep(workflowRun)?.title ?? '?'} ·{' '}
+          <a href={boardItemHref(workflowRun.itemId)}>#{workflowRun.itemId} on the board</a>
+        </p>
+      )}
       {headerError && (
         <p role="alert" className={styles.error}>
           {headerError}

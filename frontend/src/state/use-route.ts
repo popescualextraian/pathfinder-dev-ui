@@ -8,11 +8,14 @@ export interface Route {
   /** Selected session; null means the default (main). */
   session: string | null;
   view: 'tasks' | 'backlog';
+  /** Selected board item (`#/backlog?item=<id>`); absent when none. */
+  item?: string;
 }
 
 /**
  * Hash formats: `#/tasks/<id>` (no repository filter) and `#/repo/<name>/task/<id>`; either part may be
- * absent, and `?session=<name>` may follow either. `#/task/<id>` (older) is still read. `#/backlog` selects the board.
+ * absent, and `?session=<name>` may follow either. `#/task/<id>` (older) is still read. `#/backlog` selects the board,
+ * `#/backlog?item=<id>` with that item open.
  */
 export function parseHash(hash: string): Route {
   const raw = hash.replace(/^#\/?/, '');
@@ -24,7 +27,10 @@ export function parseHash(hash: string): Route {
     session: null,
     view: 'tasks',
   };
-  if (stripped.replace(/\/+$/, '') === 'backlog') return { ...route, view: 'backlog' };
+  if (stripped.replace(/\/+$/, '') === 'backlog') {
+    const item = q >= 0 ? new URLSearchParams(raw.slice(q + 1)).get('item') : null;
+    return item ? { ...route, view: 'backlog', item } : { ...route, view: 'backlog' };
+  }
   const parts = stripped.split('/').filter(Boolean);
   for (let i = 0; i + 1 < parts.length; i += 2) {
     let value: string;
@@ -44,7 +50,7 @@ export function parseHash(hash: string): Route {
 }
 
 export function buildHash(route: Route): string {
-  if (route.view === 'backlog') return '#/backlog';
+  if (route.view === 'backlog') return route.item ? `#/backlog?item=${encodeURIComponent(route.item)}` : '#/backlog';
   let hash = '#';
   if (route.repository) {
     hash += `/repo/${encodeURIComponent(route.repository)}`;
@@ -93,13 +99,20 @@ export function useRoute() {
     [navigate],
   );
 
+  const selectItem = useCallback(
+    (item: string | null) => navigate({ ...parseHash(window.location.hash), view: 'backlog', item: item ?? undefined }),
+    [navigate],
+  );
+
   return {
     ...route,
+    item: route.item ?? null,
     /** Requested session name (main by default); resolve against the task's sessions with resolveSession. */
     session: route.session ?? MAIN_SESSION,
     selectTask,
     selectSession,
     selectRepository,
     selectView,
+    selectItem,
   };
 }

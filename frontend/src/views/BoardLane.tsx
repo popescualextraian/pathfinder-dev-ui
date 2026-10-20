@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { BacklogItem, Lane } from '../api/models';
 import { BacklogCard, ITEM_MIME } from './BacklogCard';
+import type { WorkflowBoard } from './workflow-run-view';
 import styles from './BoardLane.module.css';
 
 interface Props {
@@ -11,9 +12,10 @@ interface Props {
   laneOf: (id: string) => string | null;
   onSelect: (id: string) => void;
   onMove: (id: string, laneId: string) => void;
+  workflows?: WorkflowBoard;
 }
 
-export function BoardLane({ lane, items, selectedId, laneOf, onSelect, onMove }: Props) {
+export function BoardLane({ lane, items, selectedId, laneOf, onSelect, onMove, workflows }: Props) {
   const [over, setOver] = useState(false);
   return (
     <section
@@ -43,7 +45,13 @@ export function BoardLane({ lane, items, selectedId, laneOf, onSelect, onMove }:
       </h2>
       <div className={styles.cards}>
         {items.map((item) => (
-          <BacklogCard key={item.id} item={item} selected={item.id === selectedId} onSelect={onSelect} />
+          <BacklogCard
+            key={item.id}
+            item={item}
+            selected={item.id === selectedId}
+            onSelect={onSelect}
+            workflows={workflows}
+          />
         ))}
       </div>
     </section>

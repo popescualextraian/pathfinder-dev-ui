@@ -152,3 +152,36 @@ describe('useRoute', () => {
     expect(window.location.hash).toBe('#/tasks/T-2');
   });
 });
+
+describe('route board item', () => {
+  beforeEach(() => {
+    window.location.hash = '';
+  });
+
+  it('reads and builds #/backlog?item=<id>', () => {
+    expect(parseHash('#/backlog?item=7')).toEqual({
+      repository: null,
+      taskId: null,
+      session: null,
+      view: 'backlog',
+      item: '7',
+    });
+    expect(parseHash('#/backlog').item).toBeUndefined();
+    expect(buildHash(parseHash('#/backlog?item=a%20b'))).toBe('#/backlog?item=a%20b');
+    expect(parseHash('#/tasks/T-1?item=7').item).toBeUndefined();
+  });
+
+  it('selects and clears the board item', () => {
+    window.location.hash = '#/backlog';
+    const { result } = renderHook(() => useRoute());
+    expect(result.current.item).toBeNull();
+    act(() => result.current.selectItem('7'));
+    act(() => {
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect(window.location.hash).toBe('#/backlog?item=7');
+    expect(result.current.item).toBe('7');
+    act(() => result.current.selectItem(null));
+    expect(window.location.hash).toBe('#/backlog');
+  });
+});

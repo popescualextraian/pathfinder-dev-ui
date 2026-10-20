@@ -309,3 +309,18 @@ describe('TaskView full run', () => {
     expect(FakeEventSource.last.closed).toBe(true);
   });
 });
+
+describe('TaskView workflow line', () => {
+  it('shows the workflow and step with a link to the board item', () => {
+    const { makeRun } = jest.requireActual('../fixtures/workflows') as typeof import('../fixtures/workflows');
+    render(<TaskView task={idle()} onDeleted={jest.fn()} workflowRun={makeRun({ stepIndex: 1 })} />);
+    const line = screen.getByTestId('task-workflow-line');
+    expect(line.textContent).toContain('Workflow Plan, implement, review · step Implement');
+    expect(screen.getByRole('link', { name: '#7 on the board' }).getAttribute('href')).toBe('#/backlog?item=7');
+  });
+
+  it('has no workflow line without a run', () => {
+    view(idle());
+    expect(screen.queryByTestId('task-workflow-line')).toBeNull();
+  });
+});

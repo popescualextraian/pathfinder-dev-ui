@@ -5,3 +5,5 @@
 .check { display: inline-flex; align-items: center; gap: 6px; }
 .body { flex: 1; display: flex; min-height: 0; }
 .lanes { flex: 1; display: flex; gap: 12px; padding: 12px; overflow: auto; align-items: flex-start; }
+.notice { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; background: var(--state-needs-bg); border-bottom: 1px solid var(--state-needs-dot); color: var(--state-needs-text); font-size: 13px; }
+.dismiss { margin-left: auto; border: 0; background: none; font-size: 16px; line-height: 1; color: inherit; cursor: pointer; }

@@ -1,13 +1,16 @@
 import type { BacklogItem } from '../api/models';
+import { WorkflowControls } from './WorkflowControls';
+import type { WorkflowBoard } from './workflow-run-view';
 import styles from './ItemDetail.module.css';
 
 interface Props {
   item: BacklogItem;
   onEdit: () => void;
   onClose: () => void;
+  workflows?: WorkflowBoard;
 }
 
-export function ItemDetail({ item, onEdit, onClose }: Props) {
+export function ItemDetail({ item, onEdit, onClose, workflows }: Props) {
   return (
     <aside className={styles.detail} aria-label="Item detail">
       <div className={styles.head}>
@@ -24,6 +27,7 @@ export function ItemDetail({ item, onEdit, onClose }: Props) {
       <a href={item.url} target="_blank" rel="noreferrer noopener">
         Open in source
       </a>
+      {workflows && <WorkflowControls itemId={item.id} workflows={workflows} showSteps />}
       <p className={styles.description}>{item.description}</p>
     </aside>
   );
