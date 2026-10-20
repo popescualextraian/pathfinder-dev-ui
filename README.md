@@ -372,6 +372,14 @@ container: own folder under `ENGINE_DATA_DIR/local-tasks/<id>`, own port (the ap
 (`agentic-bridge` must be on PATH) with an environment built explicitly, not inherited. The agent is
 the fake agent by default (`ENGINE_LOCAL_AGENT=fake`: `tools/fake-agent/fake-agent.mjs`, no token reaches the bridge)
 or Claude Code (`ENGINE_LOCAL_AGENT=claude`, which needs `CLAUDE_CODE_OAUTH_TOKEN` and costs real tokens).
+The bridge is started through the image's entrypoint (`/opt/agentic/entrypoint.sh agentic-bridge`, or
+`$AGENTIC_DIR/entrypoint.sh`), as in a Docker task: the start steps run first (task homes under `<task folder>/task/home`,
+seeded plugins and settings, onboarding, assets, the project's on-start hook) and the **gate** is on
+(`AGENTIC_GATE=1`, set explicitly): push, open-pr and deploy are checked. So a local task needs the project image
+for Claude; with `ENGINE_LOCAL_AGENT=claude` and no entrypoint, starting a task is refused (a real agent never runs
+without the gate). The fake agent without an entrypoint (a plain host) is spawned directly. A failing start step
+fails the launch (and a respawn) with the step's message; the launch returns once the bridge has booted. The steps' workspace
+and config paths (`AGENTIC_WORKSPACES_DIR`, `AGENTIC_CONFIG_MOUNT`) point into the task folder, never to `/workspaces` or `/agentic-config`.
 There is **no isolation** between tasks or from the app: development only. The app logs a warning
 at start-up. The fake agent's `SHELL:` prompt runs commands as the app's user, so anyone who can send a prompt
 can read what the app's user can read (including the app's environment); keep real tokens out of such an app.
