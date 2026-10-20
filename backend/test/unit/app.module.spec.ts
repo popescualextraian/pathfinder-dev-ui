@@ -8,7 +8,7 @@ import { AppModule, backlogModules, workflowModules } from '../../src/app.module
 import { BACKLOG_CONFIG } from '../../src/backlog/service/backlog-config';
 import { ENGINE_CONFIG } from '../../src/commons/engine-config';
 import { TASK_LAUNCHER } from '../../src/engine/service/task-launcher';
-import { WorkflowRunner } from '../../src/workflow';
+import { WorkflowDefinitionsService, WorkflowRunner } from '../../src/workflow';
 
 describe('AppModule', () => {
   it('compiles', async () => {
@@ -89,7 +89,8 @@ describe('AppModule', () => {
       process.env.WORKFLOWS_DATA_DIR = join(dir, 'runs');
       const moduleRef = await compile();
       const runner = moduleRef.get(WorkflowRunner);
-      expect(await runner.definitions()).toEqual({ definitions: [], refused: [] });
+      // the folder does not exist here, so it is not writable
+      expect(await moduleRef.get(WorkflowDefinitionsService).list()).toEqual({ definitions: [], refused: [], writable: false });
       expect(await runner.list()).toEqual([]);
     });
 

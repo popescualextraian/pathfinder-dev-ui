@@ -24,7 +24,7 @@ const definitions: WorkflowDefinitions = {
   }, {
     id: 'free', title: 'Free', steps: [{ id: 's', title: 'S', gate: 'auto', sessions: [{ name: 'main', prompt: 'x' }] }],
   }],
-  refused: [{ file: 'bad.yaml', error: 'bad.yaml: title is required' }],
+  refused: [{ file: 'bad.yaml', error: 'bad.yaml: title is required', version: 'abc' }],
 };
 
 const run: WorkflowRunView = {
@@ -35,7 +35,6 @@ const run: WorkflowRunView = {
 
 function make() {
   const runner = {
-    definitions: jest.fn().mockResolvedValue(definitions),
     list: jest.fn().mockResolvedValue([run]),
     get: jest.fn().mockResolvedValue(run),
     start: jest.fn().mockResolvedValue(run),
@@ -43,7 +42,16 @@ function make() {
     stop: jest.fn().mockResolvedValue(run),
   };
   const updates = new WorkflowRunUpdates();
-  return { runner, updates, workflows: new WorkflowsController(runner as never), runs: new WorkflowRunsController(runner as never, updates) };
+  const defs = {
+    list: jest.fn().mockResolvedValue({ ...definitions, writable: true }),
+    read: jest.fn().mockResolvedValue({ definition: definitions.definitions[1], version: 'v1' }),
+    validate: jest.fn().mockResolvedValue([]),
+    create: jest.fn().mockResolvedValue({ definition: definitions.definitions[1], version: 'v1' }),
+    update: jest.fn().mockResolvedValue({ definition: definitions.definitions[1], version: 'v2' }),
+    delete: jest.fn().mockResolvedValue(undefined),
+    deleteRefused: jest.fn().mockResolvedValue(undefined),
+  };
+  return { runner, defs, updates, workflows: new WorkflowsController(defs as never), runs: new WorkflowRunsController(runner as never, updates) };
 }
 
 describe('WorkflowsController', () => {
@@ -61,8 +69,36 @@ describe('WorkflowsController', () => {
         { id: 'one', title: 'One', steps: [{ id: 's', title: 'S', stage: 'plan', gate: 'auto', sessions: ['main'] }] },
         { id: 'free', title: 'Free', steps: [{ id: 's', title: 'S', gate: 'auto', sessions: ['main'] }] },
       ],
-      refused: [{ file: 'bad.yaml', error: 'bad.yaml: title is required' }],
+      refused: [{ file: 'bad.yaml', error: 'bad.yaml: title is required', version: 'abc' }],
+      writable: true,
     });
+  });
+
+  it('reads, validates, creates, updates and deletes through the service', async () => {
+    const { defs, workflows } = make();
+    const definition = definitions.definitions[1];
+    expect(await workflows.read('one')).toEqual({ definition, version: 'v1' });
+    expect(defs.read).toHaveBeenCalledWith('one');
+    expect(await workflows.validate({ definition } as never)).toEqual({ errors: [] });
+    expect(defs.validate).toHaveBeenCalledWith(definition);
+    expect(await workflows.create({ id: 'one', definition } as never)).toEqual({ definition, version: 'v1' });
+    expect(defs.create).toHaveBeenCalledWith('one', definition);
+    expect(await workflows.update('one', { definition, version: 'v1' } as never)).toEqual({ definition, version: 'v2' });
+    expect(defs.update).toHaveBeenCalledWith('one', definition, 'v1');
+    await workflows.delete('one', { version: 'v2' });
+    expect(defs.delete).toHaveBeenCalledWith('one', 'v2');
+    await workflows.deleteRefused('bad.yaml', { version: 'abc' });
+    expect(defs.deleteRefused).toHaveBeenCalledWith('bad.yaml', 'abc');
+  });
+
+  it('declares validate and refused/:file before :id, and answers 200 for validate and 204 for deletes', () => {
+    const proto = WorkflowsController.prototype as unknown as Record<string, object>;
+    const paths = Object.getOwnPropertyNames(proto).map((n) => [n, Reflect.getMetadata('path', proto[n])] as const).filter(([, p]) => p !== undefined);
+    const at = (p: string, method: string) => paths.findIndex(([n, x]) => x === p && n === method);
+    expect(at('validate', 'validate')).toBeLessThan(at(':id', 'read'));
+    expect(at('refused/:file', 'deleteRefused')).toBeLessThan(at(':id', 'delete'));
+    const code = (n: string) => Reflect.getMetadata('__httpCode__', proto[n]);
+    expect([code('validate'), code('delete'), code('deleteRefused'), code('create')]).toEqual([200, 204, 204, undefined]);
   });
 });
 

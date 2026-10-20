@@ -1,4 +1,5 @@
 import { DynamicModule, Module, ModuleMetadata } from '@nestjs/common';
+import { WorkflowDefinitionsService } from './workflow-definitions.service';
 import { WorkflowRunUpdates } from './workflow-run-updates';
 import { WorkflowRunner } from './workflow-runner';
 
@@ -17,8 +18,8 @@ export class WorkflowServiceModule {
     return {
       module: WorkflowServiceModule,
       imports: options.imports,
-      providers: [WorkflowRunner, WorkflowRunUpdates],
-      exports: [WorkflowRunner, WorkflowRunUpdates],
+      providers: [WorkflowRunner, WorkflowRunUpdates, WorkflowDefinitionsService],
+      exports: [WorkflowRunner, WorkflowRunUpdates, WorkflowDefinitionsService],
     };
   }
 }

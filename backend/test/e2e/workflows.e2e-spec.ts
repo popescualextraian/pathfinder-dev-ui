@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { chmodSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import request from 'supertest';
 import { FakeBridge } from '../helpers/fake-bridge';
@@ -65,7 +65,91 @@ describe('workflows API (e2e)', () => {
         id: 'do-it', title: 'Do and finish', doneStage: 'done',
         steps: [{ id: 'work', title: 'Work', stage: 'doing', gate: 'human', sessions: ['main'] }],
       }],
-      refused: [{ file: 'bad.yaml', error: expect.stringContaining('bad.yaml') }],
+      refused: [{ file: 'bad.yaml', error: expect.stringContaining('bad.yaml'), version: expect.stringMatching(/^[0-9a-f]{64}$/) }],
+      writable: true,
+    });
+  });
+
+  describe('editing definitions', () => {
+    const definition = {
+      title: 'New one',
+      steps: [{ id: 'a', title: 'A', gate: 'auto', sessions: [{ name: 'main', prompt: 'Do {{item.title}}' }] }],
+    };
+
+    it('reads a definition with its version', async () => {
+      const res = await api().get('/api/workflows/do-it').expect(200);
+      expect(res.body).toEqual({
+        definition: expect.objectContaining({ id: 'do-it', title: 'Do and finish', doneStage: 'done' }), version: expect.stringMatching(/^[0-9a-f]{64}$/),
+      });
+      expect(res.body.definition.steps[0].sessions[0].prompt).toContain('{{item.title}}');
+      await api().get('/api/workflows/nope').expect(404);
+      await api().get('/api/workflows/bad').expect(404);
+    });
+
+    it('validates without writing: [] when fine, else the first error with its location', async () => {
+      expect((await api().post('/api/workflows/validate').send({ definition }).expect(200)).body).toEqual({ errors: [] });
+      const bad = { ...definition, steps: [{ ...definition.steps[0], stage: 'nowhere' }] };
+      const res = await api().post('/api/workflows/validate').send({ definition: bad }).expect(200);
+      expect(res.body.errors).toEqual([{ message: expect.stringContaining('nowhere'), stepId: 'a', field: 'stage' }]);
+      await api().get('/api/workflows/new-one').expect(404);
+      await api().post('/api/workflows/validate').send({ definition: { title: 5 } }).expect(400);
+      await api().post('/api/workflows/validate').send({}).expect(400);
+    });
+
+    it('creates (409 when the id exists), updates with the version (409 when stale) and deletes', async () => {
+      const created = await api().post('/api/workflows').send({ id: 'new-one', definition }).expect(201);
+      expect(created.body).toEqual({ definition: { id: 'new-one', ...definition }, version: expect.any(String) });
+      expect(readFileSync(join(dataDir, 'workflows', 'new-one.yaml'), 'utf8')).toContain('title: New one');
+      await api().post('/api/workflows').send({ id: 'new-one', definition }).expect(409);
+      await api().post('/api/workflows').send({ id: 'do-it', definition }).expect(409);
+
+      const changed = { ...definition, title: 'Changed' };
+      const updated = await api().put('/api/workflows/new-one').send({ definition: changed, version: created.body.version }).expect(200);
+      expect(updated.body.definition.title).toBe('Changed');
+      expect(updated.body.version).not.toBe(created.body.version);
+      await api().put('/api/workflows/new-one').send({ definition, version: created.body.version }).expect(409);
+      await api().put('/api/workflows/gone').send({ definition, version: 'x' }).expect(404);
+      await api().put('/api/workflows/new-one').send({ definition }).expect(400);
+      expect((await api().get('/api/workflows').expect(200)).body.definitions.map((d: { id: string }) => d.id)).toContain('new-one');
+
+      await api().delete('/api/workflows/new-one').expect(400);
+      await api().delete('/api/workflows/new-one?version=stale').expect(409);
+      await api().delete(`/api/workflows/new-one?version=${updated.body.version}`).expect(204);
+      await api().delete(`/api/workflows/new-one?version=${updated.body.version}`).expect(404);
+    });
+
+    it('answers a rule broken on create or update with 400 and the location', async () => {
+      const bad = { ...definition, steps: [{ ...definition.steps[0], stage: 'nowhere' }] };
+      const res = await api().post('/api/workflows').send({ id: 'x', definition: bad }).expect(400);
+      expect(res.body).toMatchObject({ statusCode: 400, message: expect.stringContaining('nowhere'), location: { stepId: 'a', field: 'stage' } });
+      await api().post('/api/workflows').send({ id: 'Bad Id', definition }).expect(400);
+      expect(existsSync(join(dataDir, 'workflows', 'x.yaml'))).toBe(false);
+    });
+
+    it('deletes a refused file by name with its version, and nothing else by name', async () => {
+      const list = (await api().get('/api/workflows').expect(200)).body;
+      const { file, version } = list.refused[0];
+      await api().delete(`/api/workflows/refused/${file}`).expect(400);
+      await api().delete(`/api/workflows/refused/${file}?version=stale`).expect(409);
+      await api().delete('/api/workflows/refused/do-it.yaml?version=x').expect(404);
+      await api().delete(`/api/workflows/refused/${file}?version=${version}`).expect(204);
+      expect(existsSync(join(dataDir, 'workflows', 'bad.yaml'))).toBe(false);
+      expect(existsSync(join(dataDir, 'workflows', 'do-it.yaml'))).toBe(true);
+    });
+
+    it('answers 403 to every write when the folder is not writable', async () => {
+      const dir = join(dataDir, 'workflows');
+      chmodSync(dir, 0o555);
+      try {
+        if (process.getuid?.() === 0) return; // root ignores modes
+        expect((await api().get('/api/workflows').expect(200)).body.writable).toBe(false);
+        await api().post('/api/workflows').send({ id: 'x', definition }).expect(403);
+        await api().put('/api/workflows/do-it').send({ definition, version: 'v' }).expect(403);
+        await api().delete('/api/workflows/do-it?version=v').expect(403);
+        await api().delete('/api/workflows/refused/bad.yaml?version=v').expect(403);
+      } finally {
+        chmodSync(dir, 0o755);
+      }
     });
   });
 

@@ -22,6 +22,8 @@ export { WorkflowRunFileRepository } from './repository/workflow-run-file.reposi
 export { WorkflowConflictError, WorkflowInvalidError, WorkflowNotFoundError, WorkflowReadOnlyError } from './service/workflow-errors';
 export { WORKFLOW_RETRY_DELAYS, WorkflowRunner } from './service/workflow-runner';
 export type { RetryDelays } from './service/workflow-runner';
+export { WorkflowDefinitionsService } from './service/workflow-definitions.service';
+export type { WorkflowDefinitionList, WorkflowValidationError } from './service/workflow-definitions.service';
 export { WorkflowRunUpdates } from './service/workflow-run-updates';
 export { WorkflowServiceModule } from './service/workflow-service.module';
 export type { WorkflowServiceModuleOptions } from './service/workflow-service.module';

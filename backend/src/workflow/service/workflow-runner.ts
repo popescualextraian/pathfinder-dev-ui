@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { fillPlaceholders } from './placeholders';
 import { isSafeRelativePath } from './requires-path';
-import type { SessionDef, StepDef, WorkflowDefinitions } from './workflow-definition';
+import type { SessionDef, StepDef } from './workflow-definition';
 import { WORKFLOW_DEFINITION_REPOSITORY, WorkflowDefinitionRepository } from './workflow-definition.repository';
 import { WorkflowConflictError, WorkflowNotFoundError } from './workflow-errors';
 import { isActive, newRunId, RunPhase, RunState, toRunView, WorkflowRun, WorkflowRunView } from './workflow-run';
@@ -87,10 +87,6 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
   /** Resolves when all work queued so far (and work it queued) is done. */
   async settled(): Promise<void> {
     while (this.pending.size > 0) await Promise.allSettled([...this.pending]);
-  }
-
-  definitions(): Promise<WorkflowDefinitions> {
-    return this.defs.list();
   }
 
   /** Active runs and the most recently finished ones (RECENT_FINISHED_RUNS), oldest first; of all items or of one. */
