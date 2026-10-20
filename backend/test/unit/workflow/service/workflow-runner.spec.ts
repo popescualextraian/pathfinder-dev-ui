@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  WorkflowConflictError, WorkflowDefinition, WorkflowNotFoundError, WorkflowRun, WorkflowRunFileRepository,
+  WorkflowConflictError, WorkflowDefinition, WorkflowNotFoundError, WorkflowRunFileRepository, WorkflowRunView,
   WorkflowRunner, WorkflowRunUpdates,
 } from '../../../../src/workflow';
 import { FakeDefinitions, FakeWorkflowTasks, FakeWorkItems } from '../../../helpers/fake-workflow';
@@ -53,7 +53,7 @@ describe('WorkflowRunner', () => {
   let items: FakeWorkItems;
   let updates: WorkflowRunUpdates;
   let runner: WorkflowRunner;
-  let seen: WorkflowRun[];
+  let seen: WorkflowRunView[];
 
   const make = async (): Promise<WorkflowRunner> => {
     const r = new WorkflowRunner(tasks, items, new FakeDefinitions([PIR, DUO, AUTO_EXIT]), new WorkflowRunFileRepository(dir), updates);
@@ -61,7 +61,7 @@ describe('WorkflowRunner', () => {
     return r;
   };
   // Tell the runner the task changed and wait until it has processed it.
-  const changed = async (taskId: string, r = runner): Promise<WorkflowRun> => {
+  const changed = async (taskId: string, r = runner): Promise<WorkflowRunView> => {
     tasks.emit(taskId);
     await r.settled();
     return (await r.list()).find((x) => x.taskId === taskId)!;
@@ -310,6 +310,11 @@ describe('WorkflowRunner', () => {
     const failed = await changed(c.taskId);
     expect(failed).toMatchObject({ state: 'failed', failureReason: 'task was stopped' });
     expect(failed.finishedAt).toBeDefined();
+
+    const d = await runner.start('8', 'duo');
+    tasks.task(d.taskId).state = 'stopped';
+    tasks.task(d.taskId).failureReason = 'closed by the user';
+    expect(await changed(d.taskId)).toMatchObject({ state: 'failed', failureReason: 'task was stopped: closed by the user' });
   });
 
   it('after a restart a new runner resumes active runs and fails those whose task is gone', async () => {
@@ -344,10 +349,105 @@ describe('WorkflowRunner', () => {
     expect(seen.map((r) => [r.id, r.state])).toEqual([[run.id, 'running'], [run.id, 'awaiting-approval'], [run.id, 'stopped']]);
   });
 
-  it('an adapter error while moving on fails the run with the reason', async () => {
+  it('an adapter error in a change-driven step keeps the run with a warning and retries on the next change', async () => {
     const run = await runner.start('8', 'duo');
+    const addSession = tasks.addSession.bind(tasks);
     tasks.addSession = async () => { throw new Error('bridge says no'); };
     tasks.finishTurn(run.taskId, 'main');
-    expect(await changed(run.taskId)).toMatchObject({ state: 'failed', failureReason: 'could not start session "second": bridge says no' });
+    const warned = await changed(run.taskId);
+    expect(warned).toMatchObject({ state: 'running', phase: 'sessions', warning: 'could not start session "second": bridge says no' });
+    expect(warned.sessions.second.status).toBe('pending');
+    tasks.addSession = addSession;
+    const retried = await changed(run.taskId);
+    expect(retried.warning).toBeUndefined();
+    expect(retried.sessions.second.status).toBe('running');
+    expect(tasks.added.map((a) => a.name)).toEqual(['second']);
+  });
+
+  it('an adapter error during advance is rethrown and leaves the run unchanged', async () => {
+    const run = await runner.start('7', 'pir');
+    tasks.finishTurn(run.taskId, 'main');
+    const waiting = await changed(run.taskId);
+    const refused = new Error('bridge 409');
+    tasks.prompt = async () => { throw refused; };
+    await expect(runner.advance(run.id, {})).rejects.toBe(refused);
+    expect(await runner.get(run.id)).toEqual(waiting);
+
+    const duo = await runner.start('8', 'auto-exit');
+    tasks.finishTurn(duo.taskId, 'main');
+    await changed(duo.taskId); // auto gate: exit prompt fails -> warning, phase kept
+    expect(await runner.get(duo.id)).toMatchObject({ state: 'running', phase: 'sessions', warning: expect.stringMatching(/exit prompt.*bridge 409/) });
+  });
+
+  it('an item move failing during advance is rethrown; the run stays blocked', async () => {
+    const run = await runner.start('7', 'pir');
+    tasks.finishTurn(run.taskId, 'main');
+    await changed(run.taskId);
+    await runner.advance(run.id, {});
+    tasks.finishTurn(run.taskId, 'main');
+    const blocked = await changed(run.taskId);
+    items.moveFailure = new Error('gitlab down');
+    await expect(runner.advance(run.id, { force: true })).rejects.toThrow('gitlab down');
+    expect(await runner.get(run.id)).toEqual(blocked);
+    expect(tasks.added).toEqual([]);
+  });
+
+  it('a session the task already has is treated as started (no second addSession after a crash)', async () => {
+    const run = await runner.start('8', 'duo');
+    tasks.task(run.taskId).sessions.push({ name: 'second', state: 'running', openQuestions: 0 });
+    tasks.finishTurn(run.taskId, 'main');
+    const r = await changed(run.taskId);
+    expect(tasks.added).toEqual([]);
+    expect(r.sessions.second.status).toBe('running');
+  });
+
+  it('changes that happen while the task is being started are not lost', async () => {
+    const start = tasks.start.bind(tasks);
+    tasks.start = async (input) => {
+      const id = await start(input);
+      tasks.finishTurn(id, 'main');
+      tasks.emit(id);
+      return id;
+    };
+    const run = await runner.start('7', 'pir');
+    await runner.settled();
+    expect((await runner.get(run.id)).state).toBe('awaiting-approval');
+  });
+
+  it('a suspended session is not done (its container may be gone); it waits', async () => {
+    const run = await runner.start('7', 'pir');
+    tasks.setSession(run.taskId, 'main', { state: 'running' });
+    await changed(run.taskId);
+    tasks.setSession(run.taskId, 'main', { state: 'suspended', lastMessageAt: '2026-10-20T13:00:00.000Z' });
+    expect((await changed(run.taskId)).state).toBe('running');
+    tasks.setSession(run.taskId, 'main', { state: 'idle' });
+    expect((await changed(run.taskId)).state).toBe('awaiting-approval');
+  });
+
+  it('the exit prompt baseline is read after sending it, so a lagging last message does not count as done', async () => {
+    const run = await runner.start('7', 'pir');
+    const t = run.taskId;
+    tasks.setSession(t, 'main', { state: 'idle', lastMessageAt: '2026-10-20T10:00:00.000Z' });
+    expect((await changed(t)).state).toBe('awaiting-approval');
+    // The engine has not seen the turn's real last message yet; it shows up right after the exit prompt went out.
+    const prompt = tasks.prompt.bind(tasks);
+    tasks.prompt = async (taskId, session, text) => {
+      await prompt(taskId, session, text);
+      tasks.setSession(t, 'main', { lastMessageAt: '2026-10-20T10:00:05.000Z' });
+    };
+    await runner.advance(run.id, {});
+    expect((await changed(t)).phase).toBe('exit');
+    tasks.finishTurn(t, 'main');
+    tasks.files.add('plans/7.md');
+    expect((await changed(t)).stepIndex).toBe(1);
+  });
+
+  it('views carry no internal session fields; the stream emits only visible changes', async () => {
+    const run = await runner.start('7', 'pir');
+    tasks.setSession(run.taskId, 'main', { state: 'running' }); // only an internal field changes
+    await changed(run.taskId);
+    expect(seen).toHaveLength(1);
+    expect(JSON.stringify(await runner.get(run.id))).not.toMatch(/sawBusy|baseline/);
+    expect(JSON.stringify(seen)).not.toMatch(/sawBusy|baseline/);
   });
 });

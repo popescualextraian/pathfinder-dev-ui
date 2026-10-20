@@ -3,22 +3,29 @@ import { fillPlaceholders } from './placeholders';
 import type { SessionDef, StepDef, WorkflowDefinitions } from './workflow-definition';
 import { WORKFLOW_DEFINITION_REPOSITORY, WorkflowDefinitionRepository } from './workflow-definition.repository';
 import { WorkflowConflictError, WorkflowNotFoundError } from './workflow-errors';
-import { isActive, newRunId, RunPhase, RunState, WorkflowRun } from './workflow-run';
+import { isActive, newRunId, RunPhase, RunState, toRunView, WorkflowRun, WorkflowRunView } from './workflow-run';
 import { WORKFLOW_RUN_REPOSITORY, WorkflowRunRepository } from './workflow-run.repository';
 import { WorkflowRunUpdates } from './workflow-run-updates';
 import { WORKFLOW_TASKS, WorkflowTasks, WorkflowTaskSnapshot, WorkflowTaskState } from './workflow-tasks';
 import { WORK_ITEMS, WorkItems } from './work-items';
 
-const BUSY: ReadonlySet<WorkflowTaskState> = new Set(['starting', 'running', 'waiting']);
-const IDLE: ReadonlySet<WorkflowTaskState> = new Set(['idle', 'suspended']);
+// Evidence that a turn ran. Not 'starting': a session may read starting, then idle, before its prompt is taken up.
+const BUSY: ReadonlySet<WorkflowTaskState> = new Set(['running', 'waiting']);
+// Only idle: a suspended session may be one whose container was killed mid-turn.
+const IDLE: ReadonlySet<WorkflowTaskState> = new Set(['idle']);
 // A session in one of these states (or with an open question) needs the human.
 const NEEDS_YOU: ReadonlySet<WorkflowTaskState> = new Set(['waiting', 'failed', 'interrupted']);
 const PHASE_STATE: Record<RunPhase, RunState> = {
   sessions: 'running', exit: 'running', 'awaiting-approval': 'awaiting-approval', blocked: 'blocked',
 };
 
-// An action on the task or the item failed: the run fails with this message as its reason.
-class RunFailure extends Error {}
+// An action on the task or the item failed. Change-driven: the run keeps its phase and shows the message as a warning
+// until a later change retries it. From advance(): the adapter's own error (`cause`) goes back to the caller.
+class RunFailure extends Error {
+  constructor(message: string, readonly cause: unknown) {
+    super(message);
+  }
+}
 
 type Snapshot = WorkflowTaskSnapshot;
 
@@ -68,18 +75,22 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
   }
 
   /** All runs (oldest first), or those of one item. */
-  async list(itemId?: string): Promise<WorkflowRun[]> {
+  async list(itemId?: string): Promise<WorkflowRunView[]> {
     const all = await this.runs.list();
-    return itemId === undefined ? all : all.filter((r) => r.itemId === itemId);
+    return (itemId === undefined ? all : all.filter((r) => r.itemId === itemId)).map(toRunView);
   }
 
-  async get(runId: string): Promise<WorkflowRun> {
+  async get(runId: string): Promise<WorkflowRunView> {
+    return toRunView(await this.load(runId));
+  }
+
+  private async load(runId: string): Promise<WorkflowRun> {
     const run = await this.runs.get(runId);
     if (!run) throw new WorkflowNotFoundError();
     return run;
   }
 
-  async start(itemId: string, workflowId: string): Promise<WorkflowRun> {
+  async start(itemId: string, workflowId: string): Promise<WorkflowRunView> {
     const def = await this.defs.get(workflowId);
     if (!def) throw new WorkflowNotFoundError(`Workflow ${workflowId} not found`);
     return this.exclusive(`item:${itemId}`, async () => {
@@ -104,49 +115,55 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
       return this.exclusive(run.id, async () => {
         await this.runs.save(run);
         this.index(run);
-        this.updates.changed(run);
+        this.updates.changed(toRunView(run));
         const r = structuredClone(run);
         try {
           await this.attempt(`could not move the item to "${step.stage}"`, () => this.items.moveTo(itemId, step.stage));
         } catch (error) {
-          this.failOn(error, r);
+          // The task exists already: keep the run, failed, rather than lose it.
+          if (!(error instanceof RunFailure)) throw error;
+          this.fail(r, error.message);
         }
-        return this.persist(r, run);
+        await this.persist(r, run);
+        // Changes of the task while it was being started found no run yet: look at it once now.
+        await this.sync(run.id);
+        return toRunView(await this.load(run.id));
       });
     });
   }
 
   /** "Continue" (or "Start anyway" with force): only from awaiting-approval or blocked. */
-  advance(runId: string, options: { force?: boolean } = {}): Promise<WorkflowRun> {
+  advance(runId: string, options: { force?: boolean } = {}): Promise<WorkflowRunView> {
     return this.exclusive(runId, async () => {
-      const run = await this.get(runId);
+      const run = await this.load(runId);
       if (!isActive(run) || (run.phase !== 'awaiting-approval' && run.phase !== 'blocked')) {
         throw new WorkflowConflictError(`The run is ${run.state === 'needs-you' ? run.phase : run.state}; it continues only when awaiting approval or blocked`);
       }
       const r = structuredClone(run);
       const snap = await this.tasks.get(r.taskId);
-      if (this.taskGone(r, snap)) return this.persist(r, run);
+      if (this.taskGone(r, snap)) return toRunView(await this.persist(r, run));
       try {
         const step = r.definition.steps[r.stepIndex];
         // From blocked the exit prompt was already sent.
         if (r.phase === 'awaiting-approval' && step.exitPrompt !== undefined) await this.sendExit(r, step, snap);
         else await this.moveOn(r, snap, options.force === true);
       } catch (error) {
-        this.failOn(error, r);
+        // The run stays as it was; the caller gets the adapter's error (e.g. the engine's 409).
+        throw error instanceof RunFailure ? error.cause : error;
       }
       this.deriveState(r, snap);
-      return this.persist(r, run);
+      return toRunView(await this.persist(r, run));
     });
   }
 
   /** Marks the run stopped; the task is left as it is. */
-  stop(runId: string): Promise<WorkflowRun> {
+  stop(runId: string): Promise<WorkflowRunView> {
     return this.exclusive(runId, async () => {
-      const run = await this.get(runId);
+      const run = await this.load(runId);
       if (!isActive(run)) throw new WorkflowConflictError(`The run is already ${run.state}`);
       const r = structuredClone(run);
       this.finish(r, 'stopped');
-      return this.persist(r, run);
+      return toRunView(await this.persist(r, run));
     });
   }
 
@@ -173,13 +190,20 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
       return;
     }
     this.observe(r, snap);
+    const observed = structuredClone(r);
+    let current = r;
     try {
       await this.progress(r, snap);
+      // Whatever failed before was retried by this pass and went through.
+      if (isActive(r) && r.phase !== 'blocked') delete r.warning;
     } catch (error) {
-      this.failOn(error, r);
+      if (!(error instanceof RunFailure)) throw error;
+      // Keep the phase (drop what this pass changed); the next change of the task retries.
+      current = observed;
+      current.warning = error.message;
     }
-    this.deriveState(r, snap);
-    await this.persist(r, run);
+    this.deriveState(current, snap);
+    await this.persist(current, run);
   }
 
   // A session is done when it is idle with no open question after its turn: we saw it busy since we sent its prompt,
@@ -215,10 +239,10 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
   // Exit prompt to the step's last session; the run continues when that session is done again.
   private async sendExit(r: WorkflowRun, step: StepDef, snap: Snapshot): Promise<void> {
     const last = step.sessions[step.sessions.length - 1].name;
-    const baseline = snap.sessions.find((s) => s.name === last)?.lastMessageAt;
     const text = fillPlaceholders(step.exitPrompt ?? '', this.context(r, step, snap));
     await this.attempt(`could not send the exit prompt to session "${last}"`, () => this.tasks.prompt(r.taskId, last, text));
-    r.sessions[last] = { status: 'running', ...(baseline !== undefined && { baseline }) };
+    // Baseline read after sending: the engine's last message may lag behind and only show the previous turn now.
+    r.sessions[last] = { status: 'running', ...await this.baselineOf(r.taskId, last) };
     r.phase = 'exit';
   }
 
@@ -258,20 +282,31 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
   }
 
   private async startSession(r: WorkflowRun, step: StepDef, session: SessionDef, snap: Snapshot): Promise<void> {
+    // Already there (we crashed after adding it, before saving): it is started, do not add it again.
+    if (snap.sessions.some((s) => s.name === session.name)) {
+      r.sessions[session.name] = { status: 'running' };
+      return;
+    }
     const prompt = fillPlaceholders(session.prompt, this.context(r, step, snap));
     await this.attempt(`could not start session "${session.name}"`, () => this.tasks.addSession(r.taskId, {
       name: session.name, prompt,
       ...(session.fork !== undefined && { fork: session.fork }),
       ...(session.model !== undefined && { model: session.model }),
     }));
-    r.sessions[session.name] = { status: 'running' };
+    r.sessions[session.name] = { status: 'running', ...await this.baselineOf(r.taskId, session.name) };
+  }
+
+  private async baselineOf(taskId: string, session: string): Promise<{ baseline?: string }> {
+    const after = await this.tasks.get(taskId).catch(() => undefined);
+    const baseline = after?.sessions.find((s) => s.name === session)?.lastMessageAt;
+    return baseline === undefined ? {} : { baseline };
   }
 
   // Fails the run when its task is gone, failed or was stopped; true then.
   private taskGone(r: WorkflowRun, snap: Snapshot | null | undefined): snap is null | undefined {
     if (!snap) this.fail(r, `task ${r.taskId} no longer exists`);
     else if (snap.state === 'failed') this.fail(r, snap.failureReason ? `task failed: ${snap.failureReason}` : 'task failed');
-    else if (snap.state === 'stopped') this.fail(r, 'task was stopped');
+    else if (snap.state === 'stopped') this.fail(r, snap.failureReason ? `task was stopped: ${snap.failureReason}` : 'task was stopped');
     else return false;
     return true;
   }
@@ -294,13 +329,8 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     try {
       return await action();
     } catch (error) {
-      throw new RunFailure(`${what}: ${messageOf(error)}`);
+      throw new RunFailure(`${what}: ${messageOf(error)}`, error);
     }
-  }
-
-  private failOn(error: unknown, r: WorkflowRun): void {
-    if (!(error instanceof RunFailure)) throw error;
-    this.fail(r, error.message);
   }
 
   private fail(r: WorkflowRun, reason: string): void {
@@ -314,13 +344,14 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     r.finishedAt = new Date().toISOString();
   }
 
-  // Saves and announces the run if it changed.
+  // Saves the run if it changed; announces it only when what clients see changed.
   private async persist(r: WorkflowRun, before: WorkflowRun): Promise<WorkflowRun> {
     if (JSON.stringify(r) === JSON.stringify(before)) return before;
-    r.updatedAt = new Date().toISOString();
+    const visible = JSON.stringify(toRunView(r)) !== JSON.stringify(toRunView(before));
+    if (visible) r.updatedAt = new Date().toISOString();
     await this.runs.save(r);
     if (!isActive(r)) this.unindex(r);
-    this.updates.changed(r);
+    if (visible) this.updates.changed(toRunView(r));
     return r;
   }
 

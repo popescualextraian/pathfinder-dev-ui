@@ -53,3 +53,18 @@ describe('WorkflowRunFileRepository', () => {
     await expect(repo.save(run('../evil', '2026-10-20T09:00:00.000Z'))).rejects.toThrow(/Invalid run id/);
   });
 });
+
+describe('WorkflowRunFileRepository with a corrupt file', () => {
+  it('list skips an unreadable run file and still returns the others', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wfr-'));
+    try {
+      const repo = new WorkflowRunFileRepository(dir);
+      const good = run('R-20261020-aaaaaaaa', '2026-10-20T09:00:00.000Z');
+      await repo.save(good);
+      writeFileSync(join(dir, 'R-20261020-bbbbbbbb.json'), '{ not json');
+      expect((await repo.list()).map((r) => r.id)).toEqual([good.id]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

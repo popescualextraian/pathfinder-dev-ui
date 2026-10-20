@@ -11,7 +11,8 @@ export { WORKFLOW_DEFINITION_REPOSITORY } from './service/workflow-definition.re
 export type { WorkflowDefinitionRepository } from './service/workflow-definition.repository';
 export { WorkflowDefinitionFileRepository } from './repository/workflow-definition-file.repository';
 export { ACTIVE_STATES, isActive } from './service/workflow-run';
-export type { RunPhase, RunSession, RunSessionStatus, RunState, WorkflowRun } from './service/workflow-run';
+export { toRunView } from './service/workflow-run';
+export type { RunPhase, RunSession, RunSessionStatus, RunState, WorkflowRun, WorkflowRunView } from './service/workflow-run';
 export { WORKFLOW_RUN_REPOSITORY } from './service/workflow-run.repository';
 export type { WorkflowRunRepository } from './service/workflow-run.repository';
 export { WorkflowRunFileRepository } from './repository/workflow-run-file.repository';

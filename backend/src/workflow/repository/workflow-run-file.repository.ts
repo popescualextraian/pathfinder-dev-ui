@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -6,6 +7,8 @@ import type { WorkflowRunRepository } from '../service/workflow-run.repository';
 
 /** One mode-600 JSON file `<id>.json` per run in a directory (WORKFLOWS_DATA_DIR). */
 export class WorkflowRunFileRepository implements WorkflowRunRepository {
+  private readonly logger = new Logger(WorkflowRunFileRepository.name);
+
   constructor(private readonly dir: string) {}
 
   async list(): Promise<WorkflowRun[]> {
@@ -20,8 +23,13 @@ export class WorkflowRunFileRepository implements WorkflowRunRepository {
     for (const name of names) {
       const match = /^(.+)\.json$/.exec(name);
       if (!match || !RUN_ID.test(match[1])) continue;
-      const run = await this.get(match[1]);
-      if (run) runs.push(run);
+      try {
+        const run = await this.get(match[1]);
+        if (run) runs.push(run);
+      } catch (error) {
+        // One bad file must not hide the other runs.
+        this.logger.warn(`Skipping unreadable workflow run file ${name}: ${error instanceof Error ? error.name : 'error'}`);
+      }
     }
     return runs.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   }

@@ -18,7 +18,7 @@ export interface RunSession {
   status: RunSessionStatus;
   /** The session's lastMessageAt when we sent it its prompt; a different value means its turn ended. */
   baseline?: string;
-  /** We saw it busy (starting/running/waiting) since we sent the prompt. */
+  /** We saw it busy (running/waiting) since we sent the prompt. */
   sawBusy?: boolean;
 }
 
@@ -53,4 +53,12 @@ export function newRunId(now = new Date()): string {
   const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
   const suffix = [...randomBytes(8)].map((b) => alphabet[b % alphabet.length]).join('');
   return `R-${day}-${suffix}`;
+}
+
+/** What the API and the runs stream show: the run without the runner's internal session fields. */
+export type WorkflowRunView = Omit<WorkflowRun, 'sessions'> & { sessions: Record<string, { status: RunSessionStatus }> };
+
+export function toRunView(run: WorkflowRun): WorkflowRunView {
+  const sessions = Object.fromEntries(Object.entries(run.sessions).map(([name, s]) => [name, { status: s.status }]));
+  return { ...structuredClone(run), sessions };
 }
