@@ -238,3 +238,8 @@ export function errorAt(
     (where.field === undefined || error.field === where.field)
   );
 }
+
+/** The placeholders a prompt may contain (kept in step with `PLACEHOLDERS` of the backend parser). */
+export const PLACEHOLDERS = [
+  'item.id', 'item.title', 'item.description', 'item.url', 'task.id', 'task.branch', 'step.id',
+] as const;

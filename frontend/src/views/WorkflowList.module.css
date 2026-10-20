@@ -1,0 +1,15 @@
+.list { padding: 24px; display: flex; flex-direction: column; gap: 12px; max-width: 900px; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.header h1 { margin: 0; font-size: 22px; }
+.notice { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--state-needs-bg); color: var(--state-needs-text); font-size: 13px; }
+.error { margin: 0; color: var(--msg-red); font-size: 13px; overflow-wrap: anywhere; }
+.empty { margin: 0; color: var(--ink-soft); }
+.rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--paper); }
+.text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.title { font-weight: 600; overflow-wrap: anywhere; }
+.id { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
+.steps { font-size: 13px; color: var(--ink-soft); overflow-wrap: anywhere; }
+.actions { display: flex; gap: 6px; flex: none; }
+.refused { background: var(--paper-soft); border-color: var(--msg-red); }
+.problem { color: var(--msg-red); font-size: 13px; overflow-wrap: anywhere; }

@@ -109,3 +109,30 @@ describe('App workflows not loaded', () => {
     expect(screen.getByRole('status').textContent).toContain('Workflow state is not loaded yet');
   });
 });
+
+describe('App workflows screen', () => {
+  const def = { id: 'wf', title: 'My flow', doneStage: 'plan', steps: [{ id: 's', title: 'S', gate: 'human' as const, sessions: ['main'] }] };
+
+  it('workflows off: no Workflows entry', async () => {
+    window.location.hash = '#/backlog';
+    m(workflowsApi.listWorkflows).mockResolvedValue(null);
+    render(<App />);
+    await screen.findByTestId('backlog-card-7');
+    expect(screen.queryByRole('button', { name: 'Workflows' })).toBeNull();
+  });
+
+  it('workflows on: the entry shows the list, New workflow opens the editor, Cancel returns', async () => {
+    window.location.hash = '#/backlog';
+    m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [def], refused: [], writable: true });
+    m(workflowsApi.validateWorkflow).mockResolvedValue([]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Workflows' }));
+    expect((await screen.findByTestId('workflow-row-wf')).textContent).toContain('My flow');
+    fireEvent.click(screen.getByRole('button', { name: 'New workflow' }));
+    await screen.findByLabelText('Workflow title');
+    expect(window.location.hash).toBe('#/workflows/new');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await screen.findByTestId('workflow-row-wf');
+    expect(window.location.hash).toBe('#/workflows');
+  });
+});

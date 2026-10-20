@@ -1,0 +1,14 @@
+.inspector { width: 380px; flex: none; padding: 16px; border-left: 1px solid var(--line); background: var(--paper-soft); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.inspector h2, .inspector h3 { margin: 0; font-size: 15px; }
+.field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink-soft); }
+.field input, .field select, .field textarea { font: inherit; font-size: 13px; color: var(--ink); padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
+.field textarea { resize: vertical; font-family: var(--font-mono); }
+.field [aria-invalid='true'] { border-color: var(--msg-red); background: var(--paper); box-shadow: 0 0 0 1px var(--msg-red); }
+.group { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.group legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
+.inline { display: flex; gap: 6px; align-items: center; }
+.inline input { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { font-family: var(--font-mono); font-size: 11px; padding: 1px 6px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper); color: var(--ink-soft); cursor: pointer; }
+.chip:hover { border-color: var(--msg-red-light); color: var(--ink); }
+.hint { margin: 0; font-size: 12px; color: var(--ink-soft); }

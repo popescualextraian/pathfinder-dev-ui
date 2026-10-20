@@ -11,8 +11,10 @@ interface Props {
   onNewTask?: () => void;
   /** The Tasks / Backlog switch is shown only when the backlog is enabled. */
   backlogEnabled?: boolean;
-  view?: 'tasks' | 'backlog';
-  onSelectView?: (view: 'tasks' | 'backlog') => void;
+  /** The Workflows entry is shown only when workflows are on. */
+  workflowsEnabled?: boolean;
+  view?: 'tasks' | 'backlog' | 'workflows';
+  onSelectView?: (view: 'tasks' | 'backlog' | 'workflows') => void;
 }
 
 export function Sidebar({
@@ -22,6 +24,7 @@ export function Sidebar({
   onSelectRepository,
   onNewTask,
   backlogEnabled = false,
+  workflowsEnabled = false,
   view = 'tasks',
   onSelectView,
 }: Props) {
@@ -47,7 +50,7 @@ export function Sidebar({
       <h2 className={styles.kicker}>Show</h2>
       {backlogEnabled ? (
         <ul className={styles.show}>
-          {(['tasks', 'backlog'] as const).map((v) => (
+          {(workflowsEnabled ? (['tasks', 'backlog', 'workflows'] as const) : (['tasks', 'backlog'] as const)).map((v) => (
             <li key={v}>
               <button
                 type="button"
@@ -55,7 +58,7 @@ export function Sidebar({
                 aria-current={view === v ? 'true' : undefined}
                 onClick={() => onSelectView?.(v)}
               >
-                {v === 'tasks' ? 'Tasks' : 'Backlog'}
+                {v === 'tasks' ? 'Tasks' : v === 'backlog' ? 'Backlog' : 'Workflows'}
               </button>
             </li>
           ))}

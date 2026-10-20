@@ -14,6 +14,8 @@ import { NewTaskDialog } from './views/NewTaskDialog';
 import { TaskView } from './views/TaskView';
 import { Sidebar } from './views/Sidebar';
 import { TaskList } from './views/TaskList';
+import { WorkflowList } from './views/WorkflowList';
+import { WorkflowEditorPage } from './WorkflowEditorPage';
 
 export function App() {
   const route = useRoute();
@@ -52,10 +54,40 @@ export function App() {
             backlogEnabled={backlog.enabled}
             view={route.view}
             onSelectView={route.selectView}
+            workflowsEnabled={workflowsOn}
           />
         }
         board={
-          route.view === 'backlog' && backlog.enabled ? (
+          route.view === 'workflows' && workflowsOn ? (
+            route.workflow ? (
+              <WorkflowEditorPage
+                key={`${route.workflow}:${route.from ?? ''}`}
+                workflow={route.workflow}
+                from={route.from}
+                lanes={backlog.lanes}
+                writable={workflows.writable}
+                onClose={() => {
+                  void workflows.reload();
+                  route.selectWorkflow(null);
+                }}
+                onSaved={(id) => {
+                  void workflows.reload();
+                  route.selectWorkflow(id);
+                }}
+              />
+            ) : (
+              <WorkflowList
+                definitions={workflows.definitions}
+                refused={workflows.refused}
+                writable={workflows.writable}
+                onNew={() => route.selectWorkflow('new')}
+                onEdit={(id) => route.selectWorkflow(id)}
+                onDuplicate={(id) => route.selectWorkflow('new', id)}
+                onDelete={workflows.remove}
+                onDeleteRefused={workflows.removeRefused}
+              />
+            )
+          ) : route.view === 'backlog' && backlog.enabled ? (
             <BoardView
               lanes={backlog.lanes}
               items={backlog.items}

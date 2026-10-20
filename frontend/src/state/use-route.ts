@@ -7,7 +7,11 @@ export interface Route {
   taskId: string | null;
   /** Selected session; null means the default (main). */
   session: string | null;
-  view: 'tasks' | 'backlog';
+  view: 'tasks' | 'backlog' | 'workflows';
+  /** Workflows view: a definition id, or `new`; absent shows the list. */
+  workflow?: string;
+  /** Workflows view, `new`: the definition to copy (`#/workflows/new?from=<id>`). */
+  from?: string;
   /** Selected board item (`#/backlog?item=<id>`); absent when none. */
   item?: string;
 }
@@ -31,6 +35,20 @@ export function parseHash(hash: string): Route {
     const item = q >= 0 ? new URLSearchParams(raw.slice(q + 1)).get('item') : null;
     return item ? { ...route, view: 'backlog', item } : { ...route, view: 'backlog' };
   }
+  const wf = stripped.split('/').filter(Boolean);
+  if (wf[0] === 'workflows' && wf.length <= 2) {
+    const out: Route = { ...route, view: 'workflows' };
+    if (wf[1]) {
+      try {
+        out.workflow = decodeURIComponent(wf[1]);
+      } catch {
+        return out;
+      }
+      const from = q >= 0 ? new URLSearchParams(raw.slice(q + 1)).get('from') : null;
+      if (out.workflow === 'new' && from) out.from = from;
+    }
+    return out;
+  }
   const parts = stripped.split('/').filter(Boolean);
   for (let i = 0; i + 1 < parts.length; i += 2) {
     let value: string;
@@ -51,6 +69,11 @@ export function parseHash(hash: string): Route {
 
 export function buildHash(route: Route): string {
   if (route.view === 'backlog') return route.item ? `#/backlog?item=${encodeURIComponent(route.item)}` : '#/backlog';
+  if (route.view === 'workflows') {
+    if (!route.workflow) return '#/workflows';
+    const base = `#/workflows/${encodeURIComponent(route.workflow)}`;
+    return route.workflow === 'new' && route.from ? `${base}?from=${encodeURIComponent(route.from)}` : base;
+  }
   let hash = '#';
   if (route.repository) {
     hash += `/repo/${encodeURIComponent(route.repository)}`;
@@ -95,7 +118,13 @@ export function useRoute() {
     [navigate],
   );
   const selectView = useCallback(
-    (view: 'tasks' | 'backlog') => navigate({ ...parseHash(window.location.hash), view }),
+    (view: 'tasks' | 'backlog' | 'workflows') =>
+      navigate({ ...parseHash(window.location.hash), view, workflow: undefined, from: undefined }),
+    [navigate],
+  );
+  const selectWorkflow = useCallback(
+    (workflow: string | null, from?: string) =>
+      navigate({ ...parseHash(window.location.hash), view: 'workflows', workflow: workflow ?? undefined, from }),
     [navigate],
   );
 
@@ -114,5 +143,8 @@ export function useRoute() {
     selectRepository,
     selectView,
     selectItem,
+    selectWorkflow,
+    workflow: route.workflow ?? null,
+    from: route.from ?? null,
   };
 }

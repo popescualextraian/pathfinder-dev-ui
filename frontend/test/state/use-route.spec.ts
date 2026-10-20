@@ -185,3 +185,15 @@ describe('route board item', () => {
     expect(window.location.hash).toBe('#/backlog');
   });
 });
+
+describe('workflows route', () => {
+  it('parses and builds the list, an id, new and duplicate', () => {
+    expect(parseHash('#/workflows')).toMatchObject({ view: 'workflows' });
+    expect(parseHash('#/workflows').workflow).toBeUndefined();
+    expect(parseHash('#/workflows/two')).toMatchObject({ view: 'workflows', workflow: 'two' });
+    expect(parseHash('#/workflows/new?from=two')).toMatchObject({ view: 'workflows', workflow: 'new', from: 'two' });
+    expect(buildHash({ ...parseHash('#/workflows'), workflow: undefined })).toBe('#/workflows');
+    expect(buildHash(parseHash('#/workflows/two'))).toBe('#/workflows/two');
+    expect(buildHash(parseHash('#/workflows/new?from=a%20b'))).toBe('#/workflows/new?from=a%20b');
+  });
+});
