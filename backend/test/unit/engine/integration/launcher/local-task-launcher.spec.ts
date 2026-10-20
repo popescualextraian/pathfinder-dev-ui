@@ -200,7 +200,7 @@ describe('LocalTaskLauncher', () => {
 
   describe('through the image entrypoint', () => {
     // A stand-in image: entrypoint.sh records what it was run with, then plays the bridge by
-    // listening on the bridge port (or fails like a failed start step).
+    // answering on the bridge port (or fails like a failed start step).
     const image = (body: string) => {
       const dir = join(tmp, 'image');
       mkdirSync(dir, { recursive: true });
@@ -209,7 +209,7 @@ describe('LocalTaskLauncher', () => {
       chmodSync(file, 0o755);
       return dir;
     };
-    const listen = `echo "$@" > "$AGENTIC_STATE/args"; env > "$AGENTIC_STATE/env.txt"; exec node -e 'require("net").createServer().listen(Number(process.env.AGENTIC_BRIDGE_PORT),"127.0.0.1")'`;
+    const listen = `echo "$@" > "$AGENTIC_STATE/args"; env > "$AGENTIC_STATE/env.txt"; exec node -e 'require("http").createServer((q,r)=>r.end("{}")).listen(Number(process.env.AGENTIC_BRIDGE_PORT),"127.0.0.1")'`;
     const launcher = (agenticDir: string, localAgent: 'fake' | 'claude' = 'fake') =>
       new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent, claudeCodeOauthToken: OAUTH }, { agenticDir, bridgeCommand: 'agentic-bridge', startTimeoutMs: 5000 });
 

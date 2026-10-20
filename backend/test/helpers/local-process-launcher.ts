@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { LocalTaskLauncher } from '../../src/engine/integration/launcher/local-task-launcher';
+import { LocalLauncherOptions, LocalTaskLauncher } from '../../src/engine/integration/launcher/local-task-launcher';
 import { LaunchResult, LaunchSpec } from '../../src/engine/service/task-launcher';
 
 export const FAKE_AGENT = resolve(__dirname, '../../../tools/fake-agent/fake-agent.mjs');
@@ -30,8 +30,8 @@ export function freePort(): Promise<number> {
 export class LocalProcessLauncher extends LocalTaskLauncher {
   private origin?: string;
 
-  constructor() {
-    super({ dataDir: mkdtempSync(join(tmpdir(), 'engine-bridge-')), project: 'bridge-test', localAgent: 'fake', claudeCodeOauthToken: '', ghToken: '', gitName: '', gitEmail: '' });
+  constructor(options: LocalLauncherOptions = {}) {
+    super({ dataDir: mkdtempSync(join(tmpdir(), 'engine-bridge-')), project: 'bridge-test', localAgent: 'fake', claudeCodeOauthToken: '', ghToken: '', gitName: '', gitEmail: '' }, options);
   }
 
   override async launch(spec: LaunchSpec): Promise<LaunchResult> {

@@ -2,7 +2,7 @@ import { Logger } from '@nestjs/common';
 import { ChildProcess, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, stat } from 'node:fs/promises';
-import { createConnection, createServer } from 'node:net';
+import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { EngineConfig } from '../../../commons/engine-config';
 import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
@@ -119,6 +119,8 @@ interface LocalTask {
   stopping: boolean;
   // Settles when the bridge process and its output streams are closed.
   closed?: Promise<void>;
+  // While a launch or respawn waits for the bridge: an early exit is reported by that wait.
+  awaitingUp?: boolean;
 }
 
 function freePort(): Promise<number> {
@@ -283,10 +285,19 @@ export class LocalTaskLauncher implements TaskLauncher {
     return { AGENTIC_DIR: this.agenticDir, AGENTIC_WORKSPACES_DIR: join(dir, 'workspaces'), AGENTIC_CONFIG_MOUNT: join(dir, 'no-config') };
   }
 
-  // Resolves when the bridge accepts connections; rejects when the process ends first (the
+  // Resolves when the bridge answers (booted); rejects when the process ends first (the
   // entrypoint stops at a failed start step, so the bridge never starts) or the launch is cancelled.
   // A bridge that is slow beyond the timeout is left to the service's own wait.
   private async awaitUp(task: LocalTask, child: ChildProcess): Promise<void> {
+    task.awaitingUp = true;
+    try {
+      await this.pollUp(task, child);
+    } finally {
+      task.awaitingUp = false;
+    }
+  }
+
+  private async pollUp(task: LocalTask, child: ChildProcess): Promise<void> {
     const deadline = Date.now() + this.startTimeoutMs;
     while (Date.now() < deadline) {
       this.throwIfCancelled(task);
@@ -294,18 +305,22 @@ export class LocalTaskLauncher implements TaskLauncher {
         await task.closed;
         throw new Error(`The task's start steps failed (${child.signalCode ? `signal ${child.signalCode}` : `exit code ${child.exitCode}`}): ${this.failureLines(task)}`);
       }
-      if (await this.listening(task.port)) return;
+      if (await this.answering(task)) return;
       await new Promise((r) => setTimeout(r, START_POLL_MS));
     }
-    this.logger.warn(`The bridge of a local task did not listen within ${Math.round(this.startTimeoutMs / 1000)}s`);
+    this.logger.warn(`The bridge of a local task did not answer within ${Math.round(this.startTimeoutMs / 1000)}s`);
   }
 
-  private listening(port: number): Promise<boolean> {
-    return new Promise((done) => {
-      const socket = createConnection({ host: '127.0.0.1', port });
-      socket.once('connect', () => { socket.destroy(); done(true); });
-      socket.once('error', () => { socket.destroy(); done(false); });
-    });
+  // The bridge listens before it has booted (worktree, state), and answers 503 until it is ready.
+  private async answering(task: LocalTask): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.bridgeUrl(task)}/status`, {
+        headers: { authorization: `Bearer ${task.env.AGENTIC_TASK_TOKEN}` }, signal: AbortSignal.timeout(START_POLL_MS * 10),
+      });
+      return response.status !== 503;
+    } catch {
+      return false;
+    }
   }
 
   private failureLines(task: LocalTask): string {
@@ -353,6 +368,7 @@ export class LocalTaskLauncher implements TaskLauncher {
   private spawnBridge(taskId: string, task: LocalTask): ChildProcess {
     const { file, args } = this.command();
     task.log = '';
+    task.awaitingUp = this.entrypoint() !== undefined;
     const child = spawn(file, args, { env: task.env, cwd: task.dir, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     const append = (d: Buffer) => { task.log = (task.log + d.toString()).slice(-LOG_LIMIT); };
     child.stdout.on('data', append);
@@ -360,7 +376,7 @@ export class LocalTaskLauncher implements TaskLauncher {
     // A missing agentic-bridge: keep the reason in the log; the service sees a task that never comes up.
     child.on('error', (error) => { task.log = (task.log + `spawn failed: ${error.message}\n`).slice(-LOG_LIMIT); });
     child.on('exit', (code, signal) => {
-      if (task.stopping || task.child !== child) return;
+      if (task.stopping || task.awaitingUp || task.child !== child) return;
       this.logger.warn(`The bridge of task ${taskId} exited unexpectedly (${signal ? `signal ${signal}` : `code ${code}`})`);
     });
     task.closed = new Promise<void>((done) => { child.once('close', () => done()); });
