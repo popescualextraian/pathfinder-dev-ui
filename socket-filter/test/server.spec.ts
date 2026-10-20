@@ -1,11 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
+import { connect, Socket } from 'node:net';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FilterConfig } from '../src/config';
-import { FilterServer, startFilterServer } from '../src/server';
+import { DEFAULT_LIMITS, FilterServer, startFilterServer } from '../src/server';
 import { call, raw } from './helpers/client';
 import { FakeUpstream } from './helpers/fake-upstream';
 
@@ -206,7 +207,7 @@ describe('filter server', () => {
         return true;
       };
       const first = await new Promise<Buffer>((resolve, reject) => {
-        const req = request({ socketPath: sock, method: 'GET', path: `/containers/${NAME}/archive?path=%2Fx` }, (res) => {
+        const req = request({ socketPath: sock, method: 'GET', path: `/containers/${NAME}/archive?path=%2Ftask%2Fx` }, (res) => {
           res.once('data', (c: Buffer) => {
             resolve(c);
             finish();
@@ -220,8 +221,8 @@ describe('filter server', () => {
     });
 
     it('passes HEAD archive stat headers through', async () => {
-      upstream.addContainer(NAME, { labels: LABELS, files: { '/work/a': Buffer.from('x') } });
-      const reply = await call(sock, 'HEAD', `/containers/${NAME}/archive?path=%2Fwork%2Fa`);
+      upstream.addContainer(NAME, { labels: LABELS, files: { '/work/.worktrees/a': Buffer.from('x') } });
+      const reply = await call(sock, 'HEAD', `/containers/${NAME}/archive?path=%2Fwork%2F.worktrees%2Fa`);
       expect(reply.status).toBe(200);
       expect(reply.headers['x-docker-container-path-stat']).toBeDefined();
     });
@@ -269,7 +270,7 @@ describe('filter server', () => {
       ['stop', 'POST', `/containers/${NAME}/stop?t=10`],
       ['remove', 'DELETE', `/containers/${NAME}?force=true&v=true`],
       ['inspect', 'GET', `/containers/${NAME}/json`],
-      ['archive', 'GET', `/containers/${NAME}/archive?path=%2Fetc%2Fshadow`],
+      ['archive', 'GET', `/containers/${NAME}/archive?path=%2Ftask%2Fledger.jsonl`],
     ])('refuses %s of a container whose inspect lacks the kind label', async (_label, method, path) => {
       upstream.addContainer(NAME, { labels: { 'agentic-ui.task': ID }, running: true });
       const reply = await call(sock, method, path);
@@ -397,6 +398,77 @@ describe('filter server', () => {
       expect(reply.status).toBe(502);
       expect(JSON.parse(reply.body.toString()).message).toMatch(/^docker-filter: /);
       upstream = await new FakeUpstream().start();
+    });
+  });
+
+  describe('limits', () => {
+    let limited: FilterServer;
+    let limitedSock: string;
+
+    afterEach(async () => {
+      await limited?.close();
+    });
+
+    const startLimited = async (limits: { maxConnections?: number; requestTimeoutMs?: number }) => {
+      limitedSock = join(dir, 'limited.sock');
+      limited = await startFilterServer({ ...config, listen: limitedSock }, (line) => logs.push(line), limits);
+    };
+
+    it('has defaults of 64 connections and a 30 s request timeout', () => {
+      expect(DEFAULT_LIMITS).toEqual({ maxConnections: 64, requestTimeoutMs: 30000 });
+    });
+
+    it('drops connections beyond the maximum and serves again once one is closed', async () => {
+      await startLimited({ maxConnections: 2 });
+      const open = () =>
+        new Promise<Socket>((resolve) => {
+          const s = connect(limitedSock);
+          s.on('error', () => undefined);
+          s.on('connect', () => resolve(s));
+        });
+      const a = await open();
+      const b = await open();
+      const closedC = await new Promise<boolean>((resolve) => {
+        const c = connect(limitedSock);
+        const timer = setTimeout(() => {
+          c.destroy();
+          resolve(false);
+        }, 1000);
+        c.on('error', () => undefined);
+        c.on('close', () => {
+          clearTimeout(timer);
+          resolve(true);
+        });
+      });
+      expect(closedC).toBe(true);
+      a.destroy();
+      await new Promise((r) => setTimeout(r, 100));
+      expect((await call(limitedSock, 'GET', '/_ping')).status).toBe(200);
+      b.destroy();
+    });
+
+    it('closes a connection that does not finish its request in time, but not a streamed response', async () => {
+      await startLimited({ requestTimeoutMs: 300 });
+      const answer = await raw(limitedSock, 'POST /containers/x HTTP/1.1\r\nHost: d\r\nContent-Length: 10\r\n\r\nab', 1500);
+      expect(answer).toMatch(/^HTTP\/1.1 (400|408)/);
+
+      upstream.addContainer(NAME, { labels: LABELS });
+      upstream.override = (req, res) => {
+        if (!req.url.includes('/archive')) return false;
+        res.writeHead(200, { 'content-type': 'application/x-tar' });
+        let n = 0;
+        const timer = setInterval(() => {
+          res.write(Buffer.alloc(10, 1));
+          if (++n === 15) {
+            clearInterval(timer);
+            res.end();
+          }
+        }, 60);
+        return true;
+      };
+      const reply = await call(limitedSock, 'GET', `/containers/${NAME}/archive?path=%2Ftask%2Fa`);
+      expect(reply.status).toBe(200);
+      expect(reply.body.length).toBe(150);
     });
   });
 });

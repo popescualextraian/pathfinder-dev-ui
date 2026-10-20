@@ -36,9 +36,10 @@ Everything not listed is refused (exec, attach, logs, build, images, networks, p
 update, rename, kill, PUT archive, other containers, ...).
 
 Requests in general:
-- HTTP/1.1; an optional `/v1.NN` prefix is accepted. The path must match a route literally: percent-encoding, `..`, `.`, double or
+- The daemon always gets HTTP/1.1 requests built by the filter (a client speaking HTTP/1.0 is still answered, the filter does not reject it); an optional `/v1.NN` prefix is accepted. The path must match a route literally: percent-encoding, `..`, `.`, double or
   trailing slashes, upper case, backslash, `;`, fragments, absolute-URI and `*` targets are refused.
 - Every connection upgrade/hijack (`Upgrade`, `Connection: upgrade`), `CONNECT` and `OPTIONS` are refused.
+- At most 64 concurrent connections (more are dropped); a client has 30 s to send a whole request (headers and body), otherwise the connection is closed. Responses, such as streamed archives, have no time limit.
 - Body at most 1 MB; the body must be valid UTF-8 JSON without duplicate keys (at any depth, also via escapes) and without `__proto__`. Endpoints without a body refuse one.
 - Query and JSON bodies are checked and then rebuilt from the validated values; the daemon only gets what the filter built (its own headers too, so client framing tricks and `X-Registry-Auth` do not pass).
 - Names are `<prefix>[A-Za-z0-9-]+`; the task id is the part after the prefix.
@@ -52,7 +53,7 @@ Requests in general:
 | `POST /containers/<name>/stop` | task name; query `t` (seconds) only; a body only if it is exactly `{"t":<same>}`; label check |
 | `DELETE /containers/<name>` | task name; query `force`, `v` (booleans); label check |
 | `GET /containers/<name>/json` | task name; no query; label check |
-| `GET` or `HEAD /containers/<name>/archive` | task name; query `path` only; label check |
+| `GET` or `HEAD /containers/<name>/archive` | task name; query `path` only, which must start with `/task/` or `/work/.worktrees/` and contain no NUL byte and no `..` segment; label check |
 | `DELETE /volumes/<name>` | task name; no query; label check |
 | `GET /containers/json` | query `filters` and `all` only; the kind label is added to the label filter (both the list and the map form of `filters`), so other containers are never listed; unparseable filters are refused |
 

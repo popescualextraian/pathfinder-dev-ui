@@ -35,6 +35,10 @@ describe('compose.yaml', () => {
     expect(ui.environment?.DOCKER_HOST).toBe('unix:///run/docker-filter/docker.sock');
   });
 
+  it('fixes the app port to 3000 so the mapping and the healthcheck hold whatever the env file says', () => {
+    expect(String(ui.environment?.PORT)).toBe('3000');
+  });
+
   it('runs the filter without network, read-only, without capabilities and privileges', () => {
     expect(filter.network_mode).toBe('none');
     expect(filter.read_only).toBe(true);

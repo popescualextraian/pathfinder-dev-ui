@@ -65,6 +65,7 @@ services:
         required: false
     environment:
       # These win over the same names in the env file: inside the container the paths and network are fixed.
+      PORT: 3000
       ENGINE_LAUNCHER: docker
       DOCKER_HOST: unix:///run/docker-filter/docker.sock
       ENGINE_IMAGE: *task-image

@@ -191,8 +191,9 @@ describeWithDocker('socket filter against real Docker', () => {
       expect(await volumeExists(nameOf(id))).toBe(true);
 
       await expect(launcher.inspect(id)).resolves.toMatchObject({ exists: true });
-      // The task may already have ended (it cannot clone): only that the call works is checked.
-      expect(await launcher.countRunning()).toBeGreaterThanOrEqual(0);
+      // The task may already have ended (it cannot clone), so the number itself is not fixed here: it must be
+      // a count of running containers; the exact count and the unlabelled-container case are in the next test.
+      expect(Number.isInteger(await launcher.countRunning())).toBe(true);
       await expect(launcher.readLedger(id)).resolves.toBeUndefined();
       await expect(launcher.hasFiles(id, ['no-such-file.txt'])).resolves.toEqual({ 'no-such-file.txt': false });
 
@@ -205,6 +206,25 @@ describeWithDocker('socket filter against real Docker', () => {
       expect(logs).toEqual([]);
     });
 
+    it('counts only running containers with the kind label, not a running unlabelled one', async () => {
+      const name = nameOf(idOf('unlabelled-running'));
+      rawContainers.add(name);
+      const made = await raw(upstream, 'POST', `/containers/create?name=${name}`, {
+        Image: image,
+        Entrypoint: ['sh', '-c', 'sleep 60'],
+        Labels: { 'agentic-ui-filtertest': unique },
+      });
+      expect(made.status).toBe(201);
+      expect((await raw(upstream, 'POST', `/containers/${name}/start`)).status).toBe(204);
+      const running = async (filters: object) =>
+        (JSON.parse((await raw(upstream, 'GET', `/containers/json?filters=${encodeURIComponent(JSON.stringify(filters))}`)).body) as unknown[]).length;
+      const labelled = await running({ label: ['agentic-ui.kind=task'], status: ['running'] });
+      const all = await running({ status: ['running'] });
+      expect(all).toBeGreaterThan(labelled);
+      expect(await launcher.countRunning()).toBe(labelled);
+      await raw(upstream, 'DELETE', `/containers/${name}?force=true&v=true`);
+    });
+
     it('refuses ENGINE_TASK_EXTRA_BINDS and leaves nothing behind', async () => {
       const bindId = idOf('binds');
       launchedIds.add(bindId);
@@ -215,15 +235,27 @@ describeWithDocker('socket filter against real Docker', () => {
   });
 
   describe('forbidden requests with dockerode through the filter', () => {
+    // The launcher's own valid create body (Binds [<name>:/task], network, CapDrop, SecurityOpt, labels). Each
+    // forbidden test changes exactly one field of it, so a 403 can only come from the rule under test.
     const create = (id: string, over: Record<string, unknown> = {}, host: Record<string, unknown> = {}) =>
       viaFilter.createContainer({
         Image: image,
         name: nameOf(id),
         Cmd: ['agentic-bridge'],
         Labels: labelsOf(id),
-        HostConfig: { NetworkMode: networkName, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges'], ...host },
+        HostConfig: { Binds: [`${nameOf(id)}:/task`], NetworkMode: networkName, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges'], ...host },
         ...over,
       } as Docker.ContainerCreateOptions);
+
+    it('control: the unmodified body is accepted (201) and removed again', async () => {
+      const id = idOf('control');
+      launchedIds.add(id);
+      const container = await create(id);
+      expect(container.id).toMatch(/^[0-9a-f]{64}$/);
+      expect(await containerExists(nameOf(id))).toBe(true);
+      await container.remove({ force: true, v: true });
+      expect(await containerExists(nameOf(id))).toBe(false);
+    });
 
     it('refuses a privileged container', async () => {
       const id = idOf('priv');
@@ -235,7 +267,7 @@ describeWithDocker('socket filter against real Docker', () => {
     it('refuses a bind of the host root', async () => {
       const id = idOf('bind');
       launchedIds.add(id);
-      expect(await rejection(create(id, {}, { Binds: ['/:/host'] }))).toBe(403);
+      expect(await rejection(create(id, {}, { Binds: [`${nameOf(id)}:/task`, '/:/host'] }))).toBe(403);
       await nothingCreated(id);
     });
 
@@ -243,6 +275,13 @@ describeWithDocker('socket filter against real Docker', () => {
       const id = idOf('image');
       launchedIds.add(id);
       expect(await rejection(create(id, { Image: 'agentic-ui-filtertest-not-the-image:none' }))).toBe(403);
+      await nothingCreated(id);
+    });
+
+    it('refuses another network', async () => {
+      const id = idOf('network');
+      launchedIds.add(id);
+      expect(await rejection(create(id, {}, { NetworkMode: 'host' }))).toBe(403);
       await nothingCreated(id);
     });
 

@@ -20,6 +20,14 @@ export interface FilterServer {
   close(): Promise<void>;
 }
 
+export interface Limits {
+  maxConnections: number;
+  /** Time a client has to send its whole request (headers and body). Responses are not limited. */
+  requestTimeoutMs: number;
+}
+
+export const DEFAULT_LIMITS: Limits = { maxConnections: 64, requestTimeoutMs: 30000 };
+
 const MAX_INSPECT_BYTES = 4 * 1024 * 1024;
 
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
@@ -55,7 +63,12 @@ function prepareSocketPath(path: string): void {
   unlinkSync(path);
 }
 
-export async function startFilterServer(config: FilterConfig, log: Log = (line) => console.log(line)): Promise<FilterServer> {
+export async function startFilterServer(
+  config: FilterConfig,
+  log: Log = (line) => console.log(line),
+  limitOverrides: Partial<Limits> = {},
+): Promise<FilterServer> {
+  const limits = { ...DEFAULT_LIMITS, ...limitOverrides };
   const agent = new Agent({ keepAlive: true });
 
   function refuse(req: IncomingMessage, res: ServerResponse, reason: string, close = false): void {
@@ -201,12 +214,18 @@ export async function startFilterServer(config: FilterConfig, log: Log = (line) 
     else await checkLabel(decision, req, res);
   }
 
-  const server = createServer((req, res) => {
+  // Node checks the request timeouts only every connectionsCheckingInterval (default 30 s).
+  const checkEvery = Math.max(50, Math.min(5000, Math.floor(limits.requestTimeoutMs / 2)));
+  const server = createServer({ connectionsCheckingInterval: checkEvery }, (req, res) => {
     handle(req, res).catch(() => {
       if (!res.headersSent) refuse(req, res, 'internal error', true);
       else res.destroy();
     });
   });
+
+  server.maxConnections = limits.maxConnections;
+  server.requestTimeout = limits.requestTimeoutMs;
+  server.headersTimeout = limits.requestTimeoutMs;
 
   // Upgrades (attach, exec start, session, ...) and CONNECT are hijacks of the connection: always refused.
   const refuseHijack = (req: IncomingMessage, socket: Duplex): void => {

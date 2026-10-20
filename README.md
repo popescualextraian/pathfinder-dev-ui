@@ -256,6 +256,7 @@ All under `/api`, JSON, times are ISO 8601 UTC strings. A task view contains the
 | `GET /api/tasks/:id/events?since=N&session=NAME` | Events after sequence number N as a JSON array; 409 when the container is not running (always for a closed task) | 200 |
 | `GET /api/tasks/:id/events/stream?since=N&session=NAME` | The full run: the same events, then live ones, as SSE (`id` is the event `seq`; `Last-Event-ID`, which EventSource sends on reconnect, takes precedence over `since` when present) | 200 |
 | `GET /api/tasks/stream` | The status stream, SSE: `event: task` with the task view when a task is created or changed (state, questions, last message, title, closed), `event: removed` with `{"id"}` when one is deleted, and a `: ping` comment every 25 seconds. Nothing is replayed on connect: load `GET /api/tasks` first (and again after a reconnect), then apply the events. | 200 |
+| `GET /api/health` | `{"ok":true}`; no Docker or other call, used by the compose health check | 200 |
 | `GET /api/system/info` | `{ name, version, uptimeSeconds }` | 200 |
 
 Errors: bridge 400, 404, 409 and 503 pass through with the bridge's message; any other bridge answer
@@ -524,8 +525,9 @@ Two different images are involved:
   records, backlog cache and workflow runs in the named volume `engine-data` at `/data`, and waits for the
   filter to be healthy. Both services have health checks (`GET /api/health` for the UI: `{"ok":true}`, no Docker call).
 
-Both services and the task containers use the network `agentic-ui` (fixed name; the filter allows task
-containers only on it), so the UI reaches each bridge by container name. `compose.yaml` sets
+`ui` and the task containers use the network `agentic-ui` (fixed name; the filter allows task
+containers only on it), so the UI reaches each bridge by container name. `docker-filter` has `network_mode: none`:
+it is reached only through its socket and must not be attached to `agentic-ui`. `compose.yaml` sets
 `ENGINE_LAUNCHER=docker`, `ENGINE_DOCKER_NETWORK=agentic-ui`, `ENGINE_DATA_DIR=/data` and the container paths of
 the backlog and workflows; these win over the same names in the env file. `ENGINE_IMAGE` (default
 `agentic-pathfinder-dev-ui:local`) is passed to the filter as well, which allows exactly that image.

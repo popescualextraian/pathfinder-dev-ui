@@ -99,7 +99,7 @@ describe('decide: allowed requests', () => {
     ['DELETE', `/containers/${NAME}?force=true&v=true`, `/containers/${NAME}?force=true&v=true`],
     ['GET', `/containers/${NAME}/json`, `/containers/${NAME}/json`],
     ['GET', `/containers/${NAME}/archive?path=%2Ftask%2Fledger.jsonl`, `/containers/${NAME}/archive?path=%2Ftask%2Fledger.jsonl`],
-    ['HEAD', `/containers/${NAME}/archive?path=%2Fwork`, `/containers/${NAME}/archive?path=%2Fwork`],
+    ['HEAD', `/containers/${NAME}/archive?path=%2Fwork%2F.worktrees%2Fx`, `/containers/${NAME}/archive?path=%2Fwork%2F.worktrees%2Fx`],
     ['GET', `/v1.47/containers/${NAME}/json`, `/v1.47/containers/${NAME}/json`],
   ])('checks the kind label of the container before %s %s', (method, url, path) => {
     const prefix = url.startsWith('/v1.47') ? '/v1.47' : '';
@@ -377,7 +377,7 @@ describe('decide: forbidden endpoints and request tricks', () => {
     ['json with size', `/containers/${NAME}/json?size=1`],
     ['_ping with a query', '/_ping?x=1'],
     ['archive without path', `/containers/${NAME}/archive`],
-    ['archive with two paths', `/containers/${NAME}/archive?path=%2Fa&path=%2Fb`],
+    ['archive with two paths', `/containers/${NAME}/archive?path=%2Ftask%2Fa&path=%2Ftask%2Fb`],
   ])('refuses a query on an allowed path: %s', (_label, url) => {
     refused(decide(request(url.includes('archive') || url.includes('json') || url.includes('_ping') ? 'GET' : 'POST', url), config));
   });
@@ -432,6 +432,30 @@ describe('decide: a container by full id', () => {
       inspectPath: `/containers/${CID}/json`,
       forward: { action: 'forward', method: 'POST', path: `/containers/${CID}/start` },
     });
+  });
+
+  it.each([
+    ['outside the allowed prefixes', '%2Fetc%2Fshadow'],
+    ['root', '%2F'],
+    ['/task itself', '%2Ftask'],
+    ['/work itself', '%2Fwork'],
+    ['/work outside the worktrees', '%2Fwork%2Fsecret'],
+    ['a prefix lookalike', '%2Ftask-x%2Fa'],
+    ['relative', 'task%2Fa'],
+    ['dot-dot segment', '%2Ftask%2F..%2Fetc%2Fshadow'],
+    ['trailing dot-dot', '%2Fwork%2F.worktrees%2F..'],
+    ['dot-dot into the worktrees', '%2Fwork%2F.worktrees%2F..%2F..%2Fetc'],
+    ['NUL byte', '%2Ftask%2Fa%00.txt'],
+  ])('refuses an archive path %s', (_label, path) => {
+    for (const method of ['GET', 'HEAD']) {
+      expect(refused(decide(request(method, `/containers/${NAME}/archive?path=${path}`), config))).toMatch(/path/);
+    }
+  });
+
+  it('allows archive paths under /task/ and the worktrees, also with dots inside names', () => {
+    for (const path of ['%2Ftask%2Fledger.jsonl', '%2Fwork%2F.worktrees%2FT-1%2Fa..b%2Fc.txt', '%2Fwork%2F.worktrees%2FT-1%2F.gitignore']) {
+      expect(decide(request('GET', `/containers/${NAME}/archive?path=${path}`), config).action).toBe('check-label');
+    }
   });
 
   it.each([

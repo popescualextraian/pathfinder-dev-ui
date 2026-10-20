@@ -284,6 +284,10 @@ function containerAction(req: FilterRequest, target: Target, name: string, actio
       noBody(req);
       const path = queryOf(target.params, ['path']).get('path');
       if (!path) refuse('path required');
+      // Only what the launcher reads: the ledger and files of a task worktree.
+      if (!(path.startsWith('/task/') || path.startsWith('/work/.worktrees/')) || path.includes('\0') || path.split('/').includes('..')) {
+        refuse('path must be under /task/ or /work/.worktrees/ without .. segments');
+      }
       return forward([['path', path]]);
     }
     default:
