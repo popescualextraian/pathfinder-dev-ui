@@ -49,8 +49,12 @@ describe('toView', () => {
     expect(view).toEqual({
       id: 'T-20260101-abcd', title: 'T', prompt: 'do it', repository: 'r', repoUrl: 'https://github.com/acme/default.git',
       repoRef: 'main', model: 'm', branch: 'agentic/T-20260101-abcd', state: 'waiting', reason: 'question Q1',
-      section: 'needs-you', questions: [{ id: 'Q1' }], lastMessage: 'full text', lastMessageAt: '2026-01-01T01:00:00.000Z',
+      section: 'needs-you', questions: [{ id: 'Q1', session: 'main' }], lastMessage: 'full text', lastMessageAt: '2026-01-01T01:00:00.000Z',
       summary: 'S', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', closed: false,
+      sessions: [{
+        name: 'main', model: 'm', state: 'waiting', reason: 'question Q1', createdAt: '2026-01-01T00:00:00.000Z',
+        lastMessage: 'full text', lastMessageAt: '2026-01-01T01:00:00.000Z', questions: 1,
+      }],
     });
     expect(JSON.stringify(view)).not.toContain(TASK_TOKEN);
     expect(JSON.stringify(view)).not.toContain(AGENT_TOKEN);
@@ -70,5 +74,30 @@ describe('toView', () => {
 
   it('section follows the live state', () => {
     expect(toView(record({ lastState: 'idle' }), { state: 'running' }).section).toBe('working');
+  });
+});
+
+describe('toView sessions', () => {
+  it('shows an older record as one main session built from the record', () => {
+    const view = toView(record({ model: 'm', lastState: 'idle', lastMessage: 'hi', lastMessageAt: '2026-01-01T01:00:00.000Z' }));
+    expect(view.sessions).toEqual([{
+      name: 'main', model: 'm', state: 'idle', createdAt: '2026-01-01T00:00:00.000Z', lastMessage: 'hi',
+      lastMessageAt: '2026-01-01T01:00:00.000Z', questions: 0,
+    }]);
+  });
+
+  it('lists recorded sessions with their questions counted, and keeps the task-level message', () => {
+    const view = toView(record({
+      lastState: 'waiting', lastMessage: 'newest', lastMessageAt: '2026-01-01T02:00:00.000Z',
+      sessions: [
+        { name: 'main', state: 'idle', createdAt: '2026-01-01T00:00:00.000Z', lastMessage: 'a', lastMessageAt: '2026-01-01T01:00:00.000Z' },
+        { name: 'impl', state: 'waiting', createdAt: '2026-01-01T00:05:00.000Z', forkOf: 'main', model: 'x', lastMessage: 'newest', lastMessageAt: '2026-01-01T02:00:00.000Z' },
+      ],
+      lastStatus: { questions: [{ id: 'Q1', session: 'impl' }, { id: 'Q2' }] },
+    }));
+    expect(view.sessions.map((s) => [s.name, s.questions, s.forkOf])).toEqual([['main', 1, undefined], ['impl', 1, 'main']]);
+    expect(view.questions.map((q) => q.session)).toEqual(['impl', 'main']);
+    expect(view.lastMessage).toBe('newest');
+    expect(view.section).toBe('needs-you');
   });
 });

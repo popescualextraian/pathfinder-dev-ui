@@ -1,10 +1,28 @@
 import { repoNameOf } from '../../commons/repo-name';
-import { TaskRecord } from '../repository/task-record.repository';
+import { SessionRecord, TaskRecord } from '../repository/task-record.repository';
 import type { TaskCost } from '../repository/task-record.repository';
-import { BridgeQuestion, BridgeStatus } from './bridge-client';
+import { BridgeQuestion, BridgeSession, BridgeStatus } from './bridge-client';
 
 // What clients see of a task: the record without the tokens, plus state from the bridge.
 export type TaskSection = 'needs-you' | 'working' | 'in-review' | 'done';
+
+export const MAIN_SESSION = 'main';
+
+// An open question with the session that asked it (main for older bridges).
+export type ViewQuestion = BridgeQuestion & { session: string };
+
+export interface SessionView {
+  name: string;
+  model?: string;
+  state: string;
+  reason?: string;
+  forkOf?: string;
+  createdAt: string;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  // Open questions of this session.
+  questions: number;
+}
 
 export interface TaskView {
   id: string;
@@ -22,7 +40,9 @@ export interface TaskView {
   // Where the task belongs in the UI, computed from state and `closed`.
   section: TaskSection;
   // Open questions only.
-  questions: BridgeQuestion[];
+  questions: ViewQuestion[];
+  // Sessions in creation order; always at least main.
+  sessions: SessionView[];
   // The whole last agent message (final), as the poller saw it.
   lastMessage?: string;
   lastMessageAt?: string;
@@ -59,8 +79,27 @@ export interface Live {
   state?: string;
   reason?: string;
   questions?: BridgeQuestion[];
+  sessions?: BridgeSession[];
   summary?: string;
   branch?: string;
+}
+
+// The recorded sessions updated from the bridge's list: bridge fields win, last messages stay.
+export function mergeSessions(known: SessionRecord[] | undefined, fromBridge: BridgeSession[]): SessionRecord[] {
+  const byName = new Map((known ?? []).map((s) => [s.name, s]));
+  const merged = fromBridge.map((b): SessionRecord => {
+    const old = byName.get(b.name);
+    byName.delete(b.name);
+    const s: SessionRecord = { name: b.name, state: b.state, createdAt: b.created };
+    if (b.model) s.model = b.model;
+    if (b.reason) s.reason = b.reason;
+    if (b.fork_of) s.forkOf = b.fork_of;
+    if (old?.lastMessage !== undefined) s.lastMessage = old.lastMessage;
+    if (old?.lastMessageAt !== undefined) s.lastMessageAt = old.lastMessageAt;
+    return s;
+  });
+  // Known sessions the bridge did not list (cannot happen with a real bridge) are kept.
+  return [...merged, ...byName.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 // Built field by field so a token can never slip into a view.
@@ -79,7 +118,8 @@ export function toView(record: TaskRecord, live: Live = {}): TaskView {
     updatedAt: record.updatedAt,
     state,
     section: sectionOf(state, closed),
-    questions: closed ? [] : (live.questions ?? last.questions ?? []),
+    questions: closed ? [] : (live.questions ?? last.questions ?? []).map((q) => ({ ...q, session: q.session ?? MAIN_SESSION })),
+    sessions: [],
     closed,
   };
   if (record.closedAt !== undefined) view.closedAt = record.closedAt;
@@ -92,5 +132,26 @@ export function toView(record: TaskRecord, live: Live = {}): TaskView {
   if (reason !== undefined) view.reason = reason;
   const summary = live.summary ?? last.summary;
   if (summary !== undefined) view.summary = summary;
+  view.sessions = sessionViews(record, view, live);
   return view;
+}
+
+function sessionViews(record: TaskRecord, view: TaskView, live: Live): SessionView[] {
+  const known = live.sessions ? mergeSessions(record.sessions, live.sessions) : record.sessions;
+  const count = (name: string): number => view.questions.filter((q) => q.session === name).length;
+  const from = (s: SessionRecord): SessionView => {
+    const v: SessionView = { name: s.name, state: view.closed ? 'stopped' : s.state, createdAt: s.createdAt, questions: count(s.name) };
+    if (s.model !== undefined) v.model = s.model;
+    if (s.reason !== undefined && !view.closed) v.reason = s.reason;
+    if (s.forkOf !== undefined) v.forkOf = s.forkOf;
+    if (s.lastMessage !== undefined) v.lastMessage = s.lastMessage;
+    if (s.lastMessageAt !== undefined) v.lastMessageAt = s.lastMessageAt;
+    return v;
+  };
+  if (known && known.length > 0) return known.map(from);
+  // An older record: the one main session, built from what the record has.
+  return [from({
+    name: MAIN_SESSION, model: record.model, state: view.state, reason: view.reason, createdAt: record.createdAt,
+    lastMessage: record.lastMessage, lastMessageAt: record.lastMessageAt,
+  })];
 }

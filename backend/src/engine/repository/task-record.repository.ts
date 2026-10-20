@@ -18,6 +18,19 @@ export interface TaskCost {
   readAt: string;
 }
 
+// One session of a task as last seen (bridge status and poller). Absent `sessions` in a record: only main.
+export interface SessionRecord {
+  name: string;
+  model?: string;
+  state: string;
+  reason?: string;
+  forkOf?: string;
+  createdAt: string;
+  // The last final agent message of this session, from the poller.
+  lastMessage?: string;
+  lastMessageAt?: string;
+}
+
 export interface TaskRecord {
   id: string;
   // Absent in records of older versions: derived from the prompt.
@@ -41,6 +54,8 @@ export interface TaskRecord {
   // The whole last final agent message and its time, from the task poller.
   lastMessage?: string;
   lastMessageAt?: string;
+  // Latest sessions, in creation order; absent in records of older versions.
+  sessions?: SessionRecord[];
   // Last event seq the task poller has processed.
   lastSeq?: number;
   // Closed by the user: container gone, record kept. Absent means not closed.

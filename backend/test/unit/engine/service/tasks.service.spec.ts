@@ -344,6 +344,91 @@ describe('TasksService verbs', () => {
     expect(bridge.answer).toHaveBeenCalled();
   });
 
+  describe('sessions', () => {
+    const bs = (name: string, created: string, state = 'idle') =>
+      ({ name, session: null, model: null, state, reason: '', summary: '', inbox: 0, fork_of: null, created, updated: created }) as never;
+
+    it('prompt and cancel pass the session only when given', async () => {
+      const { service, bridge } = setup();
+      await service.prompt(ID, 'a');
+      expect(bridge.prompt).toHaveBeenLastCalledWith('a');
+      await service.prompt(ID, 'b', 'impl');
+      expect(bridge.prompt).toHaveBeenLastCalledWith('b', 'impl');
+      await service.cancel(ID, 'impl');
+      expect(bridge.cancel).toHaveBeenLastCalledWith('impl');
+    });
+
+    it('addSession wakes the task, maps the input and returns the view with the sessions', async () => {
+      const sessions = [bs('main', '2026-01-01T00:00:00Z'), { ...(bs('impl', '2026-01-01T00:01:00Z') as object), fork_of: 'main', model: 'm' } as never];
+      const { service, bridge, launcher, records } = setup({
+        launcher: notRunning, bridge: { status: jest.fn(async () => status({ state: 'running', sessions })) },
+      });
+      const view = await service.addSession(ID, { name: 'impl', model: 'm', forkFrom: 'main', prompt: 'go' });
+      expect(launcher.start).toHaveBeenCalled();
+      expect(bridge.addSession).toHaveBeenCalledWith({ name: 'impl', model: 'm', fork: 'main', text: 'go' });
+      expect(view.sessions.map((s) => s.name)).toEqual(['main', 'impl']);
+      expect(view.sessions[1]).toMatchObject({ forkOf: 'main', model: 'm' });
+      expect(records.map.get(ID)!.sessions).toHaveLength(2);
+      expect(JSON.stringify(view)).not.toContain(TASK_TOKEN);
+    });
+
+    it('addSession sends only the given fields, and is 409 for a stopped task', async () => {
+      const { service, bridge } = setup();
+      await service.addSession(ID, { name: 'x' });
+      expect(bridge.addSession).toHaveBeenCalledWith({ name: 'x' });
+      const stopped = setup({ records: [record({ lastState: 'stopped' })] });
+      await expect(stopped.service.addSession(ID, { name: 'x' })).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('addSession lets bridge errors through', async () => {
+      const { service } = setup({ bridge: { addSession: jest.fn(async () => { throw new BridgeError(409, 'conflict', 'name taken'); }) } });
+      await expect(service.addSession(ID, { name: 'main' })).rejects.toBeInstanceOf(BridgeError);
+    });
+
+    it('a status read keeps the last messages the poller recorded per session', async () => {
+      const { service, records } = setup({
+        records: [record({ sessions: [{ name: 'main', state: 'idle', createdAt: '2026-01-01T00:00:00Z', lastMessage: 'kept' }] })],
+        bridge: { status: jest.fn(async () => status({ sessions: [bs('main', '2026-01-01T00:00:00Z')] })) },
+      });
+      const view = await service.get(ID);
+      expect(view.sessions[0].lastMessage).toBe('kept');
+      expect(records.map.get(ID)!.sessions![0].lastMessage).toBe('kept');
+    });
+
+    it('question in session impl puts task in needs-you and answering without id answers it', async () => {
+      const waiting = status({
+        state: 'waiting', reason: 'question Q9',
+        questions: [{ ...q('q9', '2026-01-02'), session: 'impl' }],
+        sessions: [bs('main', '2026-01-01T00:00:00Z'), bs('impl', '2026-01-01T00:01:00Z', 'waiting')],
+      });
+      const { service, bridge } = setup({ bridge: { status: jest.fn(async () => waiting) } });
+      const view = await service.get(ID);
+      expect(view.section).toBe('needs-you');
+      expect(view.questions[0].session).toBe('impl');
+      expect(view.sessions.map((s) => s.questions)).toEqual([0, 1]);
+      await service.answer(ID, { text: 'yes' });
+      expect(bridge.answer).toHaveBeenCalledWith({ text: 'yes', question: 'q9', session: 'impl' });
+    });
+
+    it('answer with a session picks that session\'s oldest question', async () => {
+      const { service, bridge } = setup({
+        bridge: {
+          status: jest.fn(async () => status({
+            questions: [{ ...q('a', '2026-01-01'), session: 'main' }, { ...q('c', '2026-01-03'), session: 'impl' }, { ...q('b', '2026-01-02'), session: 'impl' }],
+          })),
+        },
+      });
+      await service.answer(ID, { text: 'yes', session: 'impl' });
+      expect(bridge.answer).toHaveBeenCalledWith({ text: 'yes', question: 'b', session: 'impl' });
+    });
+
+    it('answer with a question id and session passes both', async () => {
+      const { service, bridge } = setup();
+      await service.answer(ID, { text: 'yes', question: 'qx', session: 'impl' });
+      expect(bridge.answer).toHaveBeenCalledWith({ text: 'yes', question: 'qx', session: 'impl' });
+    });
+  });
+
   it('cancel calls the bridge', async () => {
     const { service, bridge } = setup();
     const view = await service.cancel(ID);

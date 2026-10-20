@@ -1,10 +1,10 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
-import { TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
+import { SessionRecord, TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
 import { BRIDGE_CLIENT_FACTORY, BridgeClientFactory, BridgeEvent, BridgeQuestion, BridgeStatus } from './bridge-client';
 import { TaskCostService } from './cost/task-cost.service';
 import { TaskUpdates } from './task-updates';
-import { toView, viewsDiffer } from './task-view';
+import { MAIN_SESSION, toView, viewsDiffer } from './task-view';
 
 // Tasks polled at the same time: one slow bridge must not hold up the others.
 const CONCURRENCY = 4;
@@ -111,12 +111,30 @@ export function applyEvents(record: TaskRecord, events: BridgeEvent[]): Partial<
   let lastMessage = record.lastMessage;
   let lastMessageAt = record.lastMessageAt;
   let stateSeen = false;
+  const sessions: SessionRecord[] = (record.sessions ?? []).map((x) => ({ ...x }));
+  let sessionsTouched = false;
+  // The session an event names, created from the event when the record does not know it yet.
+  const sessionOf = (name: string, ts: string): SessionRecord => {
+    let s = sessions.find((x) => x.name === name);
+    if (!s) {
+      s = { name, state: 'running', createdAt: ts };
+      sessions.push(s);
+    }
+    sessionsTouched = true;
+    return s;
+  };
 
   for (const event of fresh) {
     const data = event.data;
     switch (event.type) {
       case 'state':
-        if (typeof data.state === 'string') {
+        if (typeof data.state === 'string' && typeof event.name === 'string') {
+          // A session's own state: the task's state is the task-level event.
+          const s = sessionOf(event.name, event.ts);
+          s.state = data.state;
+          s.reason = typeof data.reason === 'string' ? data.reason : '';
+          if (QUIET_STATES.has(data.state)) questions = questions.filter((q) => (q.session ?? MAIN_SESSION) !== event.name);
+        } else if (typeof data.state === 'string') {
           state = data.state;
           reason = typeof data.reason === 'string' ? data.reason : '';
           stateSeen = true;
@@ -133,6 +151,7 @@ export function applyEvents(record: TaskRecord, events: BridgeEvent[]): Partial<
             options: Array.isArray(data.options) ? data.options.filter((o): o is string => typeof o === 'string') : [],
             recommendation: typeof data.recommendation === 'string' ? data.recommendation : null,
             asked: event.ts,
+            session: typeof event.name === 'string' ? event.name : MAIN_SESSION,
           });
         }
         break;
@@ -143,6 +162,11 @@ export function applyEvents(record: TaskRecord, events: BridgeEvent[]): Partial<
         if (data.final === true && data.role !== 'user' && typeof data.text === 'string') {
           lastMessage = data.text;
           lastMessageAt = event.ts;
+          if (typeof event.name === 'string') {
+            const s = sessionOf(event.name, event.ts);
+            s.lastMessage = data.text;
+            s.lastMessageAt = event.ts;
+          }
         }
         break;
       default:
@@ -155,6 +179,7 @@ export function applyEvents(record: TaskRecord, events: BridgeEvent[]): Partial<
     lastStatus: { ...(record.lastStatus as object | undefined), state, reason, questions },
   };
   if (stateSeen) patch.lastState = state;
+  if (sessionsTouched) patch.sessions = sessions.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   if (lastMessage !== undefined) {
     patch.lastMessage = lastMessage;
     patch.lastMessageAt = lastMessageAt;

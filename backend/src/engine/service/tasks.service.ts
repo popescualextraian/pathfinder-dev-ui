@@ -2,15 +2,15 @@ import { BadGatewayException, BadRequestException, ConflictException, Inject, In
 import { randomBytes, randomInt } from 'node:crypto';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 import {
-  BRIDGE_CLIENT_FACTORY, BridgeClient, BridgeClientFactory, BridgeError, BridgeEvent, BridgeStatus,
+  BRIDGE_CLIENT_FACTORY, BridgeClient, AddSessionInput as BridgeAddSessionInput, AnswerInput, BridgeClientFactory, BridgeError, BridgeEvent, BridgeStatus,
   BridgeUnreachableError, waitForStatus,
 } from './bridge-client';
 import { TASK_LAUNCHER, TaskLauncher } from './task-launcher';
-import { TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
+import { RecordPatch, TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
 import { repoNameOf } from '../../commons/repo-name';
 import { TaskCostService } from './cost/task-cost.service';
 import { TaskUpdates } from './task-updates';
-import { Live, titleFrom, toView, TaskView, viewsDiffer } from './task-view';
+import { Live, MAIN_SESSION, mergeSessions, titleFrom, toView, TaskView, viewsDiffer } from './task-view';
 
 
 export type { TaskView } from './task-view';
@@ -23,6 +23,15 @@ export interface StartTaskInput {
   repoUrl?: string;
   repoRef?: string;
   model?: string;
+}
+
+export interface AddSessionInput {
+  name: string;
+  model?: string;
+  // Name of the session to copy the conversation from.
+  forkFrom?: string;
+  // First prompt of the new session.
+  prompt?: string;
 }
 
 export interface TasksServiceOptions {
@@ -119,28 +128,51 @@ export class TasksService {
     }
   }
 
-  async prompt(id: string, text: string): Promise<TaskView> {
+  async prompt(id: string, text: string, session?: string): Promise<TaskView> {
     const record = await this.wake(id);
     this.updates.markActed(id);
-    return this.observe(record, await this.bridgeFor(record).prompt(text));
+    const client = this.bridgeFor(record);
+    return this.observe(record, await (session === undefined ? client.prompt(text) : client.prompt(text, session)));
   }
 
-  async answer(id: string, input: { text: string; question?: string }): Promise<TaskView> {
+  // A new session in the task; wakes the task like prompt does.
+  async addSession(id: string, input: AddSessionInput): Promise<TaskView> {
+    const record = await this.wake(id);
+    this.updates.markActed(id);
+    const client = this.bridgeFor(record);
+    const bridgeInput: BridgeAddSessionInput = { name: input.name };
+    if (input.model !== undefined) bridgeInput.model = input.model;
+    if (input.forkFrom !== undefined) bridgeInput.fork = input.forkFrom;
+    if (input.prompt !== undefined) bridgeInput.text = input.prompt;
+    await client.addSession(bridgeInput);
+    return this.observe(record, await client.status());
+  }
+
+  // Without a question id the oldest open question answers (of the given session, if any), and the
+  // answer goes to the session that asked.
+  async answer(id: string, input: { text: string; question?: string; session?: string }): Promise<TaskView> {
     const record = await this.wake(id);
     this.updates.markActed(id);
     const client = this.bridgeFor(record);
     let question = input.question;
+    let session = input.session;
     if (question === undefined) {
-      const open = [...(await client.status()).questions].sort((a, b) => a.asked.localeCompare(b.asked));
+      const open = (await client.status()).questions
+        .filter((q) => input.session === undefined || (q.session ?? MAIN_SESSION) === input.session)
+        .sort((a, b) => a.asked.localeCompare(b.asked));
       question = open[0]?.id; // none: the bridge answers 409 itself
+      if (open[0]?.session !== undefined) session = open[0].session;
     }
-    return this.observe(record, await client.answer({ text: input.text, question }));
+    const body: AnswerInput = { text: input.text, question };
+    if (session !== undefined) body.session = session;
+    return this.observe(record, await client.answer(body));
   }
 
-  async cancel(id: string): Promise<TaskView> {
+  async cancel(id: string, session?: string): Promise<TaskView> {
     const record = await this.require(id);
     if (record.closed) throw closedConflict(id);
-    return this.observe(record, await this.bridgeFor(record).cancel());
+    const client = this.bridgeFor(record);
+    return this.observe(record, await (session === undefined ? client.cancel() : client.cancel(session)));
   }
 
   async stop(id: string): Promise<TaskView> {
@@ -301,14 +333,20 @@ export class TasksService {
   }
 
   private async observe(record: TaskRecord, status: BridgeStatus, persist = true): Promise<TaskView> {
-    const live: Live = { state: status.state, reason: status.reason, questions: status.questions, summary: status.summary, branch: status.branch ?? undefined };
+    const live: Live = {
+      state: status.state, reason: status.reason, questions: status.questions, summary: status.summary,
+      sessions: status.sessions, branch: status.branch ?? undefined,
+    };
     if (!persist) return toView(record, live);
+    // The sessions are merged into the record as it is at write time: the poller keeps their last messages.
+    const sessions = (current: TaskRecord): Partial<TaskRecord> =>
+      status.sessions ? { sessions: mergeSessions(current.sessions, status.sessions) } : {};
     // A task that left starting/running without the poller seeing it still has events to read.
     if (['starting', 'running'].includes(record.lastState ?? 'starting') && !['starting', 'running'].includes(status.state)) {
       this.updates.markActed(record.id);
-      return this.persist(record, { lastState: status.state, lastStatus: status, ...this.costs.armRecheck() }, live);
+      return this.persist(record, (current) => ({ lastState: status.state, lastStatus: status, ...sessions(current), ...this.costs.armRecheck() }), live);
     }
-    return this.persist(record, { lastState: status.state, lastStatus: status }, live);
+    return this.persist(record, (current) => ({ lastState: status.state, lastStatus: status, ...sessions(current) }), live);
   }
 
   private async refreshCost(record: TaskRecord): Promise<void> {
@@ -317,7 +355,7 @@ export class TasksService {
   }
 
   // Writes the patch and announces the task on the status stream when its view changed.
-  private async persist(record: TaskRecord, patch: Partial<TaskRecord>, live: Live = {}): Promise<TaskView> {
+  private async persist(record: TaskRecord, patch: RecordPatch, live: Live = {}): Promise<TaskView> {
     const updated = await this.records.update(record.id, patch);
     const view = toView(updated, live);
     if (viewsDiffer(toView(record), view)) this.updates.changed(view);

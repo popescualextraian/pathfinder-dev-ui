@@ -430,3 +430,46 @@ describe('TaskPoller', () => {
     });
   });
 });
+
+describe('applyEvents sessions', () => {
+  const ev = (seq: number, type: BridgeEvent['type'], data: Record<string, unknown>, name?: string): BridgeEvent => ({
+    seq, ts: `2026-01-01T00:00:0${seq}.000Z`, task: 'T', session: null, ...(name !== undefined ? { name } : {}), agent: 'fake', type, data,
+  });
+
+  it('keeps the last final agent message per session and at task level', () => {
+    const patch = applyEvents(record({ lastState: 'running' }), [
+      ev(1, 'message', { role: 'agent', final: true, text: 'main one' }, 'main'),
+      ev(2, 'message', { role: 'agent', final: true, text: 'impl one' }, 'impl'),
+      ev(3, 'message', { role: 'agent', final: false, text: 'partial' }, 'main'),
+      ev(4, 'message', { role: 'user', final: true, text: 'user' }, 'main'),
+    ])!;
+    expect(patch.lastMessage).toBe('impl one');
+    expect(patch.sessions!.map((s) => [s.name, s.lastMessage])).toEqual([['main', 'main one'], ['impl', 'impl one']]);
+  });
+
+  it('puts questions on the session that asked and a session state does not change the task state', () => {
+    const patch = applyEvents(record({ lastState: 'running' }), [
+      ev(1, 'question', { id: 'Q1', source: 'ask', text: 't' }, 'impl'),
+      ev(2, 'state', { state: 'waiting', reason: 'question Q1' }, 'impl'),
+      ev(3, 'question', { id: 'Q2', source: 'ask', text: 't' }),
+    ])!;
+    expect((patch.lastStatus as { questions: { id: string; session: string }[] }).questions.map((q) => [q.id, q.session])).toEqual([['Q1', 'impl'], ['Q2', 'main']]);
+    expect(patch.lastState).toBeUndefined();
+    expect(patch.sessions![0]).toMatchObject({ name: 'impl', state: 'waiting' });
+  });
+
+  it('a session going quiet clears only its questions; a task-level state works as before', () => {
+    const rec = record({
+      lastState: 'waiting',
+      lastStatus: { questions: [{ id: 'Q1', session: 'impl' }, { id: 'Q2', session: 'main' }] },
+      sessions: [{ name: 'impl', state: 'waiting', createdAt: '2026-01-01T00:00:00Z' }],
+    });
+    const patch = applyEvents(rec, [ev(1, 'state', { state: 'idle', reason: '' }, 'impl')])!;
+    expect((patch.lastStatus as { questions: { id: string }[] }).questions.map((q) => q.id)).toEqual(['Q2']);
+    expect(patch.sessions![0].state).toBe('idle');
+    const task = applyEvents(rec, [ev(1, 'state', { state: 'idle', reason: '' })])!;
+    expect(task.lastState).toBe('idle');
+    expect(task.sessions).toBeUndefined();
+  });
+});
+
