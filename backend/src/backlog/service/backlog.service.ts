@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { BACKLOG_CONFIG, BacklogConfig } from './backlog-config';
 import { BACKLOG_CONNECTOR, BacklogConnector, FileLink, Item } from './backlog-connector';
-import { BacklogConflictError, BacklogNotFoundError } from './backlog-errors';
+import { BacklogConflictError, BacklogNotFoundError, BacklogUnreachableError, safeMessage } from './backlog-errors';
 import { BACKLOG_STORE, BacklogStore } from './backlog-store';
 import { BacklogTriggers } from './backlog-triggers';
 import { BacklogUpdates } from './backlog-updates';
@@ -11,6 +11,9 @@ export class BacklogService implements OnModuleInit {
   private readonly logger = new Logger(BacklogService.name);
   private readonly cache = new Map<string, Item>();
   private loaded?: Promise<void>;
+  // Cache writes are numbered so a refresh can tell which items changed while it waited for the source.
+  private generation = 0;
+  private readonly touched = new Map<string, number>();
   private me = '';
 
   constructor(
@@ -25,7 +28,7 @@ export class BacklogService implements OnModuleInit {
     try {
       this.me = await this.connector.me();
     } catch (error) {
-      this.logger.warn(`Could not read the current user: ${describe(error)}`);
+      this.logger.warn(`Could not read the current user: ${safeMessage(error)}`);
     }
   }
 
@@ -50,18 +53,22 @@ export class BacklogService implements OnModuleInit {
   // Reads the source, publishes what differs from the cache and saves. An unreachable source keeps the cache.
   async refresh(): Promise<Item[]> {
     await this.ensureLoaded();
+    const started = this.generation;
     let fresh: Item[];
     try {
       fresh = await this.connector.list();
     } catch (error) {
-      this.logger.warn(`Refresh failed: ${describe(error)}`);
-      this.updates.publish({ kind: 'error', message: error instanceof Error ? error.message : undefined });
+      this.logger.warn(`Refresh failed: ${safeMessage(error)}`);
+      this.updates.publish({ kind: 'error', message: error instanceof BacklogUnreachableError ? error.message : 'Backlog source failed' });
       return this.sorted();
     }
     const seen = new Set<string>();
     let changed = false;
+    // Items written by a move, link change or get while the source was read are newer than the snapshot.
+    const newer = (id: string): boolean => (this.touched.get(id) ?? 0) > started;
     for (const item of fresh) {
       seen.add(item.id);
+      if (newer(item.id)) continue;
       if (differs(this.cache.get(item.id), item)) {
         this.cache.set(item.id, item);
         this.updates.publish({ kind: 'item', item });
@@ -69,8 +76,9 @@ export class BacklogService implements OnModuleInit {
       }
     }
     for (const id of [...this.cache.keys()]) {
-      if (seen.has(id)) continue;
+      if (seen.has(id) || newer(id)) continue;
       this.cache.delete(id);
+      this.touched.delete(id);
       this.updates.publish({ kind: 'removed', id });
       changed = true;
     }
@@ -107,18 +115,24 @@ export class BacklogService implements OnModuleInit {
     try {
       await this.put(await this.connector.get(id));
     } catch (error) {
-      this.logger.warn(`Could not reload item ${id}: ${describe(error)}`);
+      this.logger.warn(`Could not reload item ${id}: ${safeMessage(error)}`);
     }
   }
 
   private async put(item: Item): Promise<void> {
     this.cache.set(item.id, item);
+    this.touched.set(item.id, ++this.generation);
     this.updates.publish({ kind: 'item', item });
     await this.save();
   }
 
-  private save(): Promise<void> {
-    return this.store.save([...this.cache.values()]);
+  // The source is the truth and the cache is rebuilt from it, so a failing write is not an error for the caller.
+  private async save(): Promise<void> {
+    try {
+      await this.store.save([...this.cache.values()]);
+    } catch (error) {
+      this.logger.warn(`Could not save the cache: ${safeMessage(error)}`);
+    }
   }
 
   private sorted(): Item[] {
@@ -128,7 +142,7 @@ export class BacklogService implements OnModuleInit {
   private ensureLoaded(): Promise<void> {
     this.loaded ??= this.store.load().then(
       (items) => { for (const item of items) this.cache.set(item.id, item); },
-      (error: unknown) => { this.logger.warn(`Could not load the cache: ${describe(error)}`); },
+      (error: unknown) => { this.logger.warn(`Could not load the cache: ${safeMessage(error)}`); },
     );
     return this.loaded;
   }
@@ -136,8 +150,4 @@ export class BacklogService implements OnModuleInit {
 
 function differs(a: Item | undefined, b: Item): boolean {
   return !a || JSON.stringify(a) !== JSON.stringify(b);
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : 'unknown error';
 }

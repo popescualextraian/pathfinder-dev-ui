@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { BacklogConflictError, BacklogNotFoundError, BacklogUnreachableError } from '../../../../src/backlog/service/backlog-errors';
 import { Item } from '../../../../src/backlog/service/backlog-connector';
 import { BacklogStore } from '../../../../src/backlog/service/backlog-store';
@@ -98,6 +99,59 @@ describe('BacklogService', () => {
     connector.failure = new BacklogUnreachableError();
     await service.onModuleInit();
     expect(service.lanes().me).toBe('');
+  });
+
+  it('a move that completes while a refresh is reading the source is not reverted by it', async () => {
+    const { connector, service } = setup([item('1')], [item('1')]);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const list = connector.list.bind(connector);
+    connector.list = async () => {
+      const snapshot = await list();
+      await gate;
+      return snapshot;
+    };
+    const refreshing = service.refresh();
+    await service.move('1', 'todo', 'doing');
+    release();
+    await refreshing;
+    expect((await service.get('1')).lane).toBe('doing');
+  });
+
+  it('a refresh does not delete an item added while it was reading the source', async () => {
+    const { connector, service } = setup([], []);
+    connector.items.set('9', item('9'));
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    connector.list = async () => { await gate; return []; };
+    const refreshing = service.refresh();
+    await service.get('9');
+    release();
+    await refreshing;
+    expect((await service.list()).map((i) => i.id)).toEqual(['9']);
+  });
+
+  it('does not publish or log the message of an unexpected connector error', async () => {
+    const { connector, service, changes } = setup([], [item('1')]);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    connector.failure = new Error('https://gitlab.example/secret-token-abc');
+    await service.refresh();
+    await service.onModuleInit();
+    expect(JSON.stringify(changes)).not.toContain('secret-token-abc');
+    expect(changes).toEqual([{ kind: 'error', message: 'Backlog source failed' }]);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-token-abc');
+    warn.mockRestore();
+  });
+
+  it('a failing cache save does not fail a move that the source accepted', async () => {
+    const { store, service, changes, events } = setup([item('1')], [item('1')]);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    store.save = async () => { throw new Error('EACCES /data/secret'); };
+    const moved = await service.move('1', 'todo', 'plan');
+    expect(moved.lane).toBe('plan');
+    expect(changes).toEqual([{ kind: 'item', item: moved }]);
+    expect(events).toEqual([expect.objectContaining({ trigger: 'plan.enter' })]);
+    warn.mockRestore();
   });
 
   it('setFileLinks stores through the connector and updates the cache', async () => {

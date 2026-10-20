@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { BACKLOG_CONFIG, BacklogConfig } from './backlog-config';
+import { safeMessage } from './backlog-errors';
 import { BacklogService } from './backlog.service';
 
 // Refreshes the backlog once at start (without holding up startup) and then every pollSeconds.
@@ -30,7 +31,7 @@ export class BacklogPoller implements OnModuleInit, OnModuleDestroy {
     this.round ??= this.backlog
       .refresh()
       .then(() => undefined)
-      .catch((error: unknown) => this.logger.warn(`Refresh failed: ${error instanceof Error ? error.message : 'unknown error'}`))
+      .catch((error: unknown) => this.logger.warn(`Refresh failed: ${safeMessage(error)}`))
       .finally(() => { this.round = undefined; });
     return this.round;
   }

@@ -19,3 +19,9 @@ export class BacklogUnreachableError extends Error {
     this.name = 'BacklogUnreachableError';
   }
 }
+
+// Text that is safe to log or send to clients: the message of our own errors, otherwise only the error class.
+export function safeMessage(error: unknown): string {
+  if (error instanceof BacklogNotFoundError || error instanceof BacklogConflictError || error instanceof BacklogUnreachableError) return error.message;
+  return `unexpected ${error instanceof Error ? error.name : 'error'}`;
+}
