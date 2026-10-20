@@ -2,7 +2,7 @@
 #
 # NOT the task image: task containers run ENGINE_IMAGE (for example agentic-pathfinder-dev-ui:local),
 # the project's agentic-dev-base image that you build with `agentic build`. This file builds only
-# the UI that starts those task containers through the Docker socket.
+# the UI that starts those task containers through the filtered Docker socket (docker-filter in compose.yaml).
 
 FROM node:22-slim AS build
 WORKDIR /app
@@ -21,8 +21,8 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 # Task records live here (ENGINE_DATA_DIR=/data in compose); a named volume copies this ownership.
 RUN mkdir /data && chown node:node /data
-# Non-root. To use the Docker socket the container needs the socket's group: compose.yaml adds the
-# numeric DOCKER_GID with group_add.
+# Non-root (uid 1000). The UI reaches Docker only through the socket filter's socket (DOCKER_HOST in compose.yaml),
+# which is owned by this user; it needs no Docker group and does not mount the raw Docker socket.
 USER node
 EXPOSE 3000
 CMD ["node", "dist/backend/main.js"]

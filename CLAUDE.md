@@ -57,6 +57,8 @@ Backlog (`backend/src/backlog`, its own package like the engine; optional: on on
 
 Test helpers (`backend/test/helpers`; the fake agent is `tools/fake-agent/fake-agent.mjs`) provide a fake bridge, fake launcher, local-process launcher and fake agent used by the e2e/bridge/docker suites.
 
+Socket filter (`socket-filter/`, self-contained: own package.json, tsconfig, Dockerfile and tests, no runtime deps, imports nothing from `backend/`; only backend tests import it): a Unix-socket HTTP proxy in front of `/var/run/docker.sock` that allows only what `DockerTaskLauncher` sends, only for task containers; the rules (`src/rules.ts`, pure `decide`) are in `socket-filter/README.md`, keep them in sync. Compose runs it as `docker-filter`; `ui` talks to it via `DOCKER_HOST`. Because of it `ENGINE_TASK_EXTRA_BINDS` fails with 403 in compose; start by full container id is the one allowed id action; no exec. If the launcher's Docker calls change, change the allowlist and `backend/test/unit/engine/integration/launcher/docker-task-launcher-filter.spec.ts`. Deploy with `tools/deploy.sh <env-file>` (README, Deployment); tests `npm run test:filter`, `npm run test:docker:filter` (real Docker, skipped without it).
+
 ## Frontend
 
 `frontend/src`, strict layering `views` → `state` → `api`:
@@ -72,5 +74,5 @@ Test helpers (`backend/test/helpers`; the fake agent is `tools/fake-agent/fake-a
 ## Notes
 
 - `ENGINE_IMAGE` is the project's agentic image (`agentic build`), not the image built from `Dockerfile` (which is the UI itself).
-- The engine has no authentication, and the compose setup mounts the Docker socket; don't expose it beyond a trusted network. With the backlog on, anyone who can reach the unauthenticated API can also write GitLab issues through `/api/backlog`.
+- The engine has no authentication, and the compose setup's `docker-filter` service mounts the raw Docker socket (the `ui` service does not, it uses the filtered socket); don't expose it beyond a trusted network. With the backlog on, anyone who can reach the unauthenticated API can also write GitLab issues through `/api/backlog`.
 - `.worktrees/` is git-ignored (agentic task worktrees).
