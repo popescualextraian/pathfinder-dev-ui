@@ -49,7 +49,7 @@ services:
         - CMD
         - node
         - -e
-        - "require('http').get({socketPath:'/run/docker-filter/docker.sock',path:'/_ping'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+        - "require('http').get({socketPath:'/run/docker-filter/docker.sock',path:'/_ping'},r=>{r.resume();r.on('end',()=>process.exit(r.statusCode===200?0:1))}).on('error',()=>process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 5
@@ -94,7 +94,7 @@ services:
         - CMD
         - node
         - -e
-        - "require('http').get('http://127.0.0.1:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+        - "require('http').get('http://127.0.0.1:3000/api/health',r=>{r.resume();r.on('end',()=>process.exit(r.statusCode===200?0:1))}).on('error',()=>process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 5

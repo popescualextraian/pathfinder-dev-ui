@@ -2,11 +2,11 @@ import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { connect, Socket } from 'node:net';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FilterConfig } from '../src/config';
-import { DEFAULT_LIMITS, FilterServer, startFilterServer } from '../src/server';
+import { DEFAULT_LIMITS, FilterServer, isClientGone, startFilterServer } from '../src/server';
 import { call, raw } from './helpers/client';
 import { FakeUpstream } from './helpers/fake-upstream';
 
@@ -398,6 +398,38 @@ describe('filter server', () => {
       expect(reply.status).toBe(502);
       expect(JSON.parse(reply.body.toString()).message).toMatch(/^docker-filter: /);
       upstream = await new FakeUpstream().start();
+    });
+  });
+
+  describe('client going away', () => {
+    it('treats a reset, a closed pipe and a truncated request as the client leaving, parse errors as refusals', () => {
+      for (const code of ['ECONNRESET', 'EPIPE', 'HPE_INVALID_EOF_STATE']) expect(isClientGone(code)).toBe(true);
+      for (const code of [undefined, 'HPE_INVALID_METHOD', 'HPE_HEADER_OVERFLOW', 'ERR_HTTP_REQUEST_TIMEOUT']) expect(isClientGone(code)).toBe(false);
+    });
+
+    it('does not log a refusal when the client exits right after the status line', async () => {
+      // The compose healthcheck's old pattern: exit as soon as the response head arrives, with the body unread.
+      const script = `require('http').get({socketPath:process.argv[1],path:'/_ping'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))`;
+      for (let i = 0; i < 5; i++) await new Promise((resolve) => spawn(process.execPath, ['-e', script, sock]).on('close', resolve));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(logs).toEqual([]);
+    });
+
+    it('does not log a refusal when the client drops the connection mid-request', async () => {
+      const client = connect(sock);
+      await new Promise<void>((resolve) => client.once('connect', resolve));
+      client.write('POST /containers/create HTTP/1.1\r\nHost: docker\r\nContent-Length: 100\r\n\r\n{');
+      client.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(logs).toEqual([]);
+      expect(upstream.requests).toEqual([]);
+    });
+
+    it('still logs and answers a real parse error', async () => {
+      const reply = await raw(sock, 'GARBAGE\r\n\r\n');
+      expect(reply).toMatch(/^HTTP\/1\.1 400/);
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toContain('refused a malformed request');
     });
   });
 

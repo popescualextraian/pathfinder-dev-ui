@@ -16,6 +16,11 @@ import { CheckLabel, Forward, MAX_BODY_BYTES, decide, inspectShowsKind } from '.
 
 export type Log = (line: string) => void;
 
+/** clientError codes that mean the client went away (reset, closed pipe, truncated request), not that it sent a bad request. */
+export function isClientGone(code: string | undefined): boolean {
+  return code === 'ECONNRESET' || code === 'EPIPE' || code === 'HPE_INVALID_EOF_STATE';
+}
+
 export interface FilterServer {
   close(): Promise<void>;
 }
@@ -218,6 +223,7 @@ export async function startFilterServer(
   const checkEvery = Math.max(50, Math.min(5000, Math.floor(limits.requestTimeoutMs / 2)));
   const server = createServer({ connectionsCheckingInterval: checkEvery }, (req, res) => {
     handle(req, res).catch(() => {
+      if (req.socket.destroyed) return; // the client went away while its body was read: nothing to answer or log
       if (!res.headersSent) refuse(req, res, 'internal error', true);
       else res.destroy();
     });
@@ -236,6 +242,11 @@ export async function startFilterServer(
   server.on('upgrade', refuseHijack);
   server.on('connect', refuseHijack);
   server.on('clientError', (error: NodeJS.ErrnoException, socket: Duplex) => {
+    // The client went away (a truncated request, or a healthcheck that exits right after the status line): not a refusal, nothing to log or answer.
+    if (isClientGone(error.code)) {
+      socket.destroy();
+      return;
+    }
     log(`docker-filter: refused a malformed request: ${String(error.code ?? 'parse error').replace(/[^\x21-\x7e]/g, '?')}`);
     if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
     else socket.destroy();
