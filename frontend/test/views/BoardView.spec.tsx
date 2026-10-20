@@ -142,7 +142,7 @@ describe('BoardView', () => {
   it('opens the detail with description, source link and file links save', async () => {
     const { onSaveFileLinks } = renderBoard();
     fireEvent.click(screen.getByText('Mine'));
-    expect(screen.getByText('desc')).toBeTruthy();
+    expect(screen.getAllByText('desc')).toHaveLength(2); // card preview and detail
     expect(screen.getByRole('link', { name: 'Open in source' }).getAttribute('href')).toBe('https://x/1');
     fireEvent.click(screen.getByRole('button', { name: 'Add link' }));
     fireEvent.change(screen.getByLabelText('Repo 1'), { target: { value: 'r' } });
