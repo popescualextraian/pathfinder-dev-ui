@@ -1,13 +1,15 @@
-import { Body, Controller, Get, HttpCode, MessageEvent, Param, Post, Put, Sse, UseFilters } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, MessageEvent, Param, Patch, Post, Put, Sse, UseFilters } from '@nestjs/common';
 import { interval, map, merge, Observable } from 'rxjs';
 import { BacklogChange, BacklogService, BacklogUpdates, FileLink, Item } from '../../backlog';
 import { BacklogErrorFilter } from './backlog-error.filter';
+import { CreateItemDto } from './dto/create-item.dto';
 import { FileLinksDto } from './dto/file-links.dto';
 import { MoveDto } from './dto/move.dto';
+import { UpdateItemDto } from './dto/update-item.dto';
 
 const PING_INTERVAL_MS = 25_000;
 
-// Status codes: reads, move, file links and refresh answer 200 with the result.
+// Status codes: create answers 201 with the item; reads, update, move, file links and refresh answer 200 with the result.
 @Controller('backlog')
 @UseFilters(BacklogErrorFilter)
 export class BacklogController {
@@ -35,6 +37,16 @@ export class BacklogController {
   @Get('items')
   list(): Promise<Item[]> {
     return this.backlog.list();
+  }
+
+  @Post('items')
+  create(@Body() body: CreateItemDto): Promise<Item> {
+    return this.backlog.create(body);
+  }
+
+  @Patch('items/:id')
+  update(@Param('id') id: string, @Body() body: UpdateItemDto): Promise<Item> {
+    return this.backlog.update(id, body);
   }
 
   @Get('items/:id')

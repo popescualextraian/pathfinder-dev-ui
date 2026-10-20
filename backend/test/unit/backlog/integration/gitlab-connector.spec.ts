@@ -2,7 +2,7 @@ import { GitlabClient } from '../../../../src/backlog/integration/gitlab/gitlab-
 import { GitlabConnector } from '../../../../src/backlog/integration/gitlab/gitlab-connector';
 import { renderFileLinks } from '../../../../src/backlog/integration/gitlab/file-links-comment';
 import { BacklogConfig } from '../../../../src/backlog/service/backlog-config';
-import { BacklogConflictError, BacklogNotFoundError, BacklogUnreachableError } from '../../../../src/backlog/service/backlog-errors';
+import { BacklogConflictError, BacklogInvalidError, BacklogNotFoundError, BacklogUnreachableError } from '../../../../src/backlog/service/backlog-errors';
 import { FakeGitlab } from '../../../helpers/fake-gitlab';
 
 const lanes: BacklogConfig['lanes'] = [
@@ -121,6 +121,67 @@ describe('GitlabConnector', () => {
 
     it('maps 404 to BacklogNotFoundError', async () => {
       await expect(connector.get('99')).rejects.toBeInstanceOf(BacklogNotFoundError);
+    });
+  });
+
+  describe('create', () => {
+    it('creates the issue in the default lane with its label when no lane is given', async () => {
+      const item = await connector.create({ title: 'New', description: 'Body' });
+      expect(item).toMatchObject({ title: 'New', description: 'Body', lane: 'todo' });
+      expect(gitlab.writes.find((w) => w.path.endsWith('/issues'))).toMatchObject({ method: 'POST', body: { title: 'New', description: 'Body', labels: 'status::todo' } });
+    });
+
+    it('adds the label of the given lane and creates the label when missing', async () => {
+      const item = await connector.create({ title: 'N', lane: 'plan' });
+      expect(item.lane).toBe('plan');
+      expect(gitlab.labels.has('status::plan')).toBe(true);
+      expect(gitlab.issues.get(Number(item.id))!.labels).toEqual(['status::plan']);
+    });
+
+    it('adds no label for a default lane without mapping', async () => {
+      const bare = new GitlabConnector({ ...config(gitlab.baseUrl), lanes: [{ id: 'inbox', title: 'Inbox', default: true }, ...lanes.slice(1)] }, new GitlabClient(gitlab.baseUrl, FakeGitlab.PROJECT, gitlab.token));
+      await bare.create({ title: 'N' });
+      expect(gitlab.writes.find((w) => w.path.endsWith('/issues'))!.body).not.toHaveProperty('labels');
+    });
+
+    it('rejects a lane mapped to closed and an unknown lane without writing', async () => {
+      await expect(connector.create({ title: 'N', lane: 'done' })).rejects.toBeInstanceOf(BacklogInvalidError);
+      await expect(connector.create({ title: 'N', lane: 'nowhere' })).rejects.toBeInstanceOf(BacklogInvalidError);
+      expect(gitlab.writes).toEqual([]);
+    });
+  });
+
+  describe('update', () => {
+    it('changes title and description only and leaves labels and lane alone', async () => {
+      const iid = gitlab.addIssue({ labels: ['status::plan', 'ADMIN'] });
+      const item = await connector.update(String(iid), { title: 'T2', description: 'D2' });
+      expect(item).toMatchObject({ title: 'T2', description: 'D2', lane: 'plan' });
+      expect(gitlab.writes[0]).toMatchObject({ method: 'PUT', body: { title: 'T2', description: 'D2' } });
+      expect(gitlab.writes[0].body).not.toHaveProperty('add_labels');
+      expect(gitlab.writes[0].body).not.toHaveProperty('remove_labels');
+      expect(gitlab.issues.get(iid)!.labels).toEqual(['status::plan', 'ADMIN']);
+    });
+
+    it('resolves assignee usernames to ids, one request per name, and an empty list unassigns', async () => {
+      gitlab.users.set('bob', 7);
+      const iid = gitlab.addIssue({});
+      const item = await connector.update(String(iid), { assignees: ['tester', 'bob'] });
+      expect(item.assignees).toEqual(['tester', 'bob']);
+      expect(gitlab.requests.filter((r) => r.path === '/users').map((r) => r.query)).toEqual([{ username: 'tester' }, { username: 'bob' }]);
+      expect(gitlab.writes[0].body).toEqual({ assignee_ids: [1, 7] });
+      expect((await connector.update(String(iid), { assignees: [] })).assignees).toEqual([]);
+      expect(gitlab.writes[1].body).toEqual({ assignee_ids: [] });
+    });
+
+    it('rejects an unknown assignee and writes nothing', async () => {
+      const iid = gitlab.addIssue({});
+      await expect(connector.update(String(iid), { title: 'X', assignees: ['ghost'] })).rejects.toBeInstanceOf(BacklogInvalidError);
+      expect(gitlab.writes).toEqual([]);
+    });
+
+    it('answers an unknown or non-numeric item with not found', async () => {
+      await expect(connector.update('99', { title: 'X' })).rejects.toBeInstanceOf(BacklogNotFoundError);
+      await expect(connector.update('abc', { title: 'X' })).rejects.toBeInstanceOf(BacklogNotFoundError);
     });
   });
 

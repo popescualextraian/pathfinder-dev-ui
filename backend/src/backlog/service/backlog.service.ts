@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { BACKLOG_CONFIG, BacklogConfig } from './backlog-config';
-import { BACKLOG_CONNECTOR, BacklogConnector, FileLink, Item } from './backlog-connector';
-import { BacklogConflictError, BacklogNotFoundError, BacklogUnreachableError, safeMessage } from './backlog-errors';
+import { BACKLOG_CONNECTOR, BacklogConnector, FileLink, Item, ItemDraft, ItemPatch } from './backlog-connector';
+import { BacklogConflictError, BacklogInvalidError, BacklogNotFoundError, BacklogUnreachableError, safeMessage } from './backlog-errors';
 import { BACKLOG_STORE, BacklogStore } from './backlog-store';
 import { BacklogTriggers } from './backlog-triggers';
 import { BacklogUpdates } from './backlog-updates';
@@ -102,6 +102,22 @@ export class BacklogService implements OnModuleInit {
     }
     await this.put(item);
     if (lane.trigger) this.triggers.emit({ itemId: id, from, to, trigger: lane.trigger, at: new Date().toISOString() });
+    return item;
+  }
+
+  // Create and update publish the item like any change but are not board moves: no trigger event.
+  async create(draft: ItemDraft): Promise<Item> {
+    await this.ensureLoaded();
+    if (draft.lane !== undefined && !this.config.lanes.some((l) => l.id === draft.lane)) throw new BacklogInvalidError('Unknown lane');
+    const item = await this.connector.create(draft);
+    await this.put(item);
+    return item;
+  }
+
+  async update(id: string, patch: ItemPatch): Promise<Item> {
+    await this.ensureLoaded();
+    const item = await this.connector.update(id, patch);
+    await this.put(item);
     return item;
   }
 

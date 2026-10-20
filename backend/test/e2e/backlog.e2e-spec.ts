@@ -82,6 +82,55 @@ describe('backlog API (e2e)', () => {
     await api().post('/api/backlog/items/999/move').send({ from: 'backlog', to: 'doing' }).expect(404);
   });
 
+  it('creates an item in a lane and in the default lane, answering 201', async () => {
+    const res = await api().post('/api/backlog/items').send({ title: 'Created', description: 'Body', lane: 'doing' }).expect(201);
+    expect(res.body).toMatchObject({ title: 'Created', description: 'Body', lane: 'doing' });
+    expect(res.text).not.toContain(TOKEN);
+    const plain = await api().post('/api/backlog/items').send({ title: 'Plain' }).expect(201);
+    expect(plain.body.lane).toBe('backlog');
+    expect((await api().get(`/api/backlog/items/${res.body.id}`)).body.title).toBe('Created');
+    expect([...gitlab.issues.values()].find((i) => i.title === 'Created')!.labels).toEqual(['status::doing']);
+  });
+
+  it('validates the create body and rejects an unknown or closed lane with 400', async () => {
+    await api().post('/api/backlog/items').send({ title: '' }).expect(400);
+    await api().post('/api/backlog/items').send({}).expect(400);
+    await api().post('/api/backlog/items').send({ title: 'x'.repeat(256) }).expect(400);
+    await api().post('/api/backlog/items').send({ title: 'T', lane: 'nowhere' }).expect(400);
+    const closed = await api().post('/api/backlog/items').send({ title: 'T', lane: 'done' }).expect(400);
+    expect(closed.text).not.toContain(TOKEN);
+    expect(gitlab.issues.size).toBe(2);
+  });
+
+  it('updates title, description and assignees, and unassigns with an empty list', async () => {
+    await api().post('/api/backlog/refresh').expect(200);
+    const { id } = await itemByTitle('First');
+    const res = await api().patch(`/api/backlog/items/${id}`).send({ title: 'Renamed', description: 'New body', assignees: ['tester'] }).expect(200);
+    expect(res.body).toMatchObject({ id, title: 'Renamed', description: 'New body', assignees: ['tester'], lane: 'backlog' });
+    expect(res.text).not.toContain(TOKEN);
+    const cleared = await api().patch(`/api/backlog/items/${id}`).send({ assignees: [] }).expect(200);
+    expect(cleared.body.assignees).toEqual([]);
+  });
+
+  it('validates the update body: empty patch, empty title, unknown assignee are 400, unknown item 404', async () => {
+    await api().post('/api/backlog/refresh').expect(200);
+    const { id } = await itemByTitle('First');
+    await api().patch(`/api/backlog/items/${id}`).send({}).expect(400);
+    await api().patch(`/api/backlog/items/${id}`).send({ title: '' }).expect(400);
+    await api().patch(`/api/backlog/items/${id}`).send({ assignees: 'tester' }).expect(400);
+    await api().patch(`/api/backlog/items/${id}`).send({ assignees: ['ghost'] }).expect(400);
+    await api().patch('/api/backlog/items/999').send({ title: 'x' }).expect(404);
+  });
+
+  it('answers create and update with 503 when the source is down', async () => {
+    await api().post('/api/backlog/refresh').expect(200);
+    const { id } = await itemByTitle('First');
+    gitlab.forceStatus = 500;
+    const created = await api().post('/api/backlog/items').send({ title: 'T' }).expect(503);
+    const updated = await api().patch(`/api/backlog/items/${id}`).send({ title: 'T' }).expect(503);
+    expect(created.text + updated.text).not.toContain(TOKEN);
+  });
+
   it('sets file links', async () => {
     await api().post('/api/backlog/refresh').expect(200);
     const { id } = await itemByTitle('First');

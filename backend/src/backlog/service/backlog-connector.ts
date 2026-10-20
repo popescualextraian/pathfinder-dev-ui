@@ -35,7 +35,8 @@ export interface BacklogConnector {
   moveToLane(id: string, from: string, to: string): Promise<Item>;
   getFileLinks(id: string): Promise<FileLink[]>;
   setFileLinks(id: string, links: FileLink[]): Promise<FileLink[]>;
-  // Milestone 2 (a later task makes them required).
-  create?(draft: ItemDraft): Promise<Item>;
-  update?(id: string, patch: ItemPatch): Promise<Item>;
+  // BacklogInvalidError for a lane the source cannot create into or an unknown assignee.
+  create(draft: ItemDraft): Promise<Item>;
+  // Never changes the lane: moves are the only way to do that.
+  update(id: string, patch: ItemPatch): Promise<Item>;
 }

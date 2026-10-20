@@ -35,6 +35,8 @@ export class FakeGitlab {
   user = 'tester';
   issues = new Map<number, FakeIssue>();
   labels = new Set<string>();
+  // Users known to GET /users, by username (the token's user is always known).
+  users = new Map<string, number>([['tester', 1]]);
   notes = new Map<number, FakeNote[]>();
   requests: RecordedRequest[] = [];
   // Set to make every authenticated request fail with this status (for example 500).
@@ -112,6 +114,11 @@ export class FakeGitlab {
     if (this.forceStatus) return send(this.forceStatus, { message: 'forced' });
 
     if (method === 'GET' && path === '/user') return send(200, { username: this.user });
+    if (method === 'GET' && path === '/users') {
+      const name = url.searchParams.get('username') ?? '';
+      const id = this.users.get(name);
+      return send(200, id === undefined ? [] : [{ id, username: name }]);
+    }
     const base = `/projects/${FakeGitlab.PROJECT}`;
     if (!path.startsWith(`${base}/`)) return send(404, { message: '404 Project Not Found' });
     this.route(method, path.slice(base.length), url.searchParams, body, send);
@@ -127,6 +134,12 @@ export class FakeGitlab {
         this.labels.add(name);
         return send(201, { name });
       }
+    }
+    if (sub === '/issues' && method === 'POST') {
+      const labels = String(body?.labels ?? '').split(',').filter(Boolean);
+      for (const l of labels) this.labels.add(l);
+      const iid = this.addIssue({ title: String(body?.title ?? ''), description: body?.description === undefined ? '' : String(body.description), labels });
+      return send(201, this.issues.get(iid));
     }
     if (sub === '/issues' && method === 'GET') {
       const state = q.get('state') ?? 'all';
@@ -144,6 +157,12 @@ export class FakeGitlab {
         const remove = String(body?.remove_labels ?? '').split(',').filter(Boolean);
         issue.labels = [...issue.labels.filter((l) => !remove.includes(l)), ...add.filter((l) => !issue.labels.includes(l))];
         for (const l of add) this.labels.add(l);
+        if (typeof body?.title === 'string') issue.title = body.title;
+        if (typeof body?.description === 'string') issue.description = body.description;
+        if (Array.isArray(body?.assignee_ids)) {
+          const names = new Map([...this.users].map(([n, id]) => [id, n]));
+          issue.assignees = (body.assignee_ids as number[]).flatMap((id) => (names.has(id) ? [{ username: names.get(id)! }] : []));
+        }
         if (body?.state_event === 'close') issue.state = 'closed';
         if (body?.state_event === 'reopen') issue.state = 'opened';
         issue.updated_at = this.tick();

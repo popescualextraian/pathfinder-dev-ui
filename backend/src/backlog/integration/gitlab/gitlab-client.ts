@@ -13,7 +13,7 @@ export class GitlabClient {
     private readonly fetchFn: typeof fetch = fetch,
   ) {}
 
-  // `/user` is global; every other path is below the project. Arrays are read page by page (X-Next-Page).
+  // `/user` and `/users` are global; every other path is below the project. Arrays are read page by page (X-Next-Page).
   async get<T>(path: string, query: Record<string, string> = {}): Promise<T> {
     const first = await this.request('GET', path, query);
     if (!Array.isArray(first.body)) return first.body as T;
@@ -34,7 +34,7 @@ export class GitlabClient {
 
   private url(path: string, query: Record<string, string>): string {
     const root = `${this.baseUrl.replace(/\/+$/, '')}/api/v4`;
-    const scoped = path === '/user' ? path : `/projects/${encodeURIComponent(this.project)}${path}`;
+    const scoped = path === '/user' || path === '/users' ? path : `/projects/${encodeURIComponent(this.project)}${path}`;
     const qs = new URLSearchParams(query).toString();
     return `${root}${scoped}${qs ? `?${qs}` : ''}`;
   }

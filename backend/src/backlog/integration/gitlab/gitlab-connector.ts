@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { BacklogConfig, LaneConfig } from '../../service/backlog-config';
-import { BacklogConnector, FileLink, Item } from '../../service/backlog-connector';
-import { BacklogConflictError, BacklogNotFoundError, BacklogUnreachableError, safeMessage } from '../../service/backlog-errors';
+import { BacklogConnector, FileLink, Item, ItemDraft, ItemPatch } from '../../service/backlog-connector';
+import { BacklogConflictError, BacklogInvalidError, BacklogNotFoundError, BacklogUnreachableError, safeMessage } from '../../service/backlog-errors';
 import { isFileLinksComment, parseFileLinks, renderFileLinks } from './file-links-comment';
 import { GitlabClient } from './gitlab-client';
 
@@ -86,6 +86,27 @@ export class GitlabConnector implements BacklogConnector {
     return this.toItem(await this.client.send<GitlabIssue>('PUT', `/issues/${this.iid(id)}`, body), true);
   }
 
+  async create(draft: ItemDraft): Promise<Item> {
+    const lane = draft.lane === undefined ? (this.config.lanes.find((l) => l.default) ?? this.config.lanes[0]) : this.lane(draft.lane);
+    if (lane.gitlab?.state === 'closed') throw new BacklogInvalidError('Cannot create an item in a closed lane');
+    const label = lane.gitlab?.label;
+    if (label) await this.ensureLabels(label);
+    const body: Record<string, string> = { title: draft.title };
+    if (draft.description !== undefined) body.description = draft.description;
+    if (label) body.labels = label;
+    return this.toItem(await this.client.send<GitlabIssue>('POST', '/issues', body), true);
+  }
+
+  async update(id: string, patch: ItemPatch): Promise<Item> {
+    const iid = this.iid(id);
+    await this.issue(id); // a missing issue is "not found" before anything else is looked up
+    const body: Record<string, unknown> = {};
+    if (patch.title !== undefined) body.title = patch.title;
+    if (patch.description !== undefined) body.description = patch.description;
+    if (patch.assignees !== undefined) body.assignee_ids = await this.userIds(patch.assignees);
+    return this.toItem(await this.client.send<GitlabIssue>('PUT', `/issues/${iid}`, body), true);
+  }
+
   async getFileLinks(id: string): Promise<FileLink[]> {
     await this.issue(id); // a missing issue is "not found", not "no links"
     const note = await this.ownedNote(id);
@@ -110,9 +131,20 @@ export class GitlabConnector implements BacklogConnector {
     }
   }
 
+  private async userIds(usernames: string[]): Promise<number[]> {
+    const ids: number[] = [];
+    for (const name of usernames) {
+      const found = await this.client.get<Array<{ id: number; username: string }>>('/users', { username: name });
+      const user = found.find((u) => u.username.toLowerCase() === name.toLowerCase());
+      if (!user) throw new BacklogInvalidError('Unknown assignee');
+      if (!ids.includes(user.id)) ids.push(user.id);
+    }
+    return ids;
+  }
+
   private lane(id: string): LaneConfig {
     const lane = this.config.lanes.find((l) => l.id === id);
-    if (!lane) throw new Error(`Unknown lane ${id}`);
+    if (!lane) throw new BacklogInvalidError('Unknown lane');
     return lane;
   }
 

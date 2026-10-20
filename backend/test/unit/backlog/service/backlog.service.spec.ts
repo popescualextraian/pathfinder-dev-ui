@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { BacklogConflictError, BacklogNotFoundError, BacklogUnreachableError } from '../../../../src/backlog/service/backlog-errors';
+import { BacklogConflictError, BacklogInvalidError, BacklogNotFoundError, BacklogUnreachableError } from '../../../../src/backlog/service/backlog-errors';
 import { Item } from '../../../../src/backlog/service/backlog-connector';
 import { BacklogStore } from '../../../../src/backlog/service/backlog-store';
 import { BacklogChange, BacklogUpdates } from '../../../../src/backlog/service/backlog-updates';
@@ -159,5 +159,57 @@ describe('BacklogService', () => {
     const links = [{ repo: 'g/p', path: 'a.md' }];
     expect(await service.setFileLinks('1', links)).toEqual(links);
     expect((await service.get('1')).fileLinks).toEqual(links);
+  });
+
+  it('create writes through, publishes the item and emits no trigger event', async () => {
+    const { connector, service, changes, events } = setup([], []);
+    const created = await service.create({ title: 'New', lane: 'plan' });
+    expect(created).toMatchObject({ title: 'New', lane: 'plan' });
+    expect(connector.creates).toEqual([{ title: 'New', lane: 'plan' }]);
+    expect(changes).toEqual([{ kind: 'item', item: created }]);
+    expect(events).toEqual([]);
+    expect(await service.list()).toEqual([created]);
+  });
+
+  it('create refuses an unknown lane and surfaces the connector rejecting a closed lane', async () => {
+    const { connector, service, changes } = setup([], []);
+    await expect(service.create({ title: 'N', lane: 'nowhere' })).rejects.toBeInstanceOf(BacklogInvalidError);
+    await expect(service.create({ title: 'N', lane: 'closed-lane' })).rejects.toBeInstanceOf(BacklogInvalidError);
+    expect(connector.creates).toEqual([]);
+    expect(changes).toEqual([]);
+  });
+
+  it('update writes through, publishes the item and emits no trigger event', async () => {
+    const { connector, service, changes, events } = setup([item('1')], [item('1')]);
+    const updated = await service.update('1', { title: 'Changed', assignees: ['bob'] });
+    expect(updated.title).toBe('Changed');
+    expect(connector.updates).toEqual([{ id: '1', patch: { title: 'Changed', assignees: ['bob'] } }]);
+    expect(changes).toEqual([{ kind: 'item', item: updated }]);
+    expect(events).toEqual([]);
+    expect((await service.get('1')).title).toBe('Changed');
+  });
+
+  it('a poll that read the source before an update does not revert it', async () => {
+    const { connector, service } = setup([item('1')], [item('1')]);
+    const before = [item('1')];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    connector.list = async () => { await gate; return before; };
+    const refreshing = service.refresh();
+    await service.update('1', { title: 'Changed' });
+    release();
+    await refreshing;
+    expect((await service.get('1')).title).toBe('Changed');
+  });
+
+  it('create and update keep working when the cache cannot be saved, and pass source errors on', async () => {
+    const { connector, store, service } = setup([item('1')], [item('1')]);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    store.save = async () => { throw new Error('EACCES'); };
+    await expect(service.create({ title: 'N' })).resolves.toMatchObject({ title: 'N' });
+    await expect(service.update('1', { title: 'U' })).resolves.toMatchObject({ title: 'U' });
+    connector.failure = new BacklogUnreachableError();
+    await expect(service.update('1', { title: 'V' })).rejects.toBeInstanceOf(BacklogUnreachableError);
+    warn.mockRestore();
   });
 });
