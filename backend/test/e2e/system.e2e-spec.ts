@@ -25,3 +25,17 @@ describe('GET /api/system/info (e2e)', () => {
     expect(res.body).toMatchObject({ statusCode: 404, path: '/api/nope' });
   });
 });
+
+describe('GET /api/health (e2e)', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    app = (await createApp()).app;
+  });
+  afterAll(() => app.close());
+
+  it('answers 200 {"ok":true}', async () => {
+    const res = await request(app.getHttpServer()).get('/api/health').expect(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+});

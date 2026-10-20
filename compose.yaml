@@ -1,54 +1,110 @@
-# The UI/engine. Task containers are started by it through the Docker socket and join the same
-# network (name: agentic-ui), where the UI reaches each bridge by container name.
+# The UI/engine plus the Docker socket filter. Task containers are started by the UI through the filter,
+# not through the raw Docker socket, and join the same network (name: agentic-ui), where the UI reaches
+# each bridge by container name.
 #
-# Before `docker compose up --build`:
+#   docker-filter  the only service that mounts /var/run/docker.sock. No network, read-only, no
+#                  capabilities. It serves a narrowed Docker API on /run/docker-filter/docker.sock (named
+#                  volume `docker-filter`): only the calls the task launcher needs, only for task containers.
+#   ui             has no Docker socket and no Docker group; DOCKER_HOST points at the filtered socket.
+#
+# Deploy with tools/deploy.sh <env-file> (it also checks main, pulls and waits for healthy). By hand:
 #   1. Build the TASK image with `agentic build` (agentic-dev-base); its tag is ENGINE_IMAGE.
 #      It is a different image from the one built by ./Dockerfile (that one is only this UI).
-#   2. Copy .env.example to .env and fill it in (secrets, ENGINE_IMAGE, ENGINE_REPO_URL, ENGINE_PROJECT, ENGINE_GIT_NAME, ENGINE_GIT_EMAIL).
-#   3. Set DOCKER_GID to the numeric group id of the host's Docker socket: either
-#        DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up --build
-#      or write the number (from `stat -c %g /var/run/docker.sock`) into .env.
+#   2. Copy .env.example to an env file (.env, or elsewhere: set PATHFINDER_ENV_FILE to its path) and fill it in
+#      (secrets, ENGINE_IMAGE, ENGINE_REPO_URL, ENGINE_PROJECT, ENGINE_GIT_NAME, ENGINE_GIT_EMAIL).
+#   3. Set DOCKER_GID to the numeric group id of the host's Docker socket (`stat -c %g /var/run/docker.sock`)
+#      in that file. docker compose reads ${VARIABLES} below from the file given with --env-file (or .env).
+#   4. docker compose --env-file <file> up -d --build --wait   (with PATHFINDER_ENV_FILE=<file> if not .env)
 #
-# Mounting the Docker socket gives this container root-equivalent control of the host.
+# The filter container has root-equivalent control of the host through the raw socket; its rules are what
+# limits that (socket-filter/README.md). The ui container no longer has it.
 name: agentic-pathfinder-dev-ui
 
+# Values the filter and the ui must agree on: the task image and the network.
+x-task-image: &task-image ${ENGINE_IMAGE:-agentic-pathfinder-dev-ui:local}
+x-task-network: &task-network agentic-ui
+
 services:
+  docker-filter:
+    build: ./socket-filter
+    environment:
+      FILTER_IMAGE: *task-image
+      FILTER_NETWORK: *task-network
+      FILTER_LISTEN: /run/docker-filter/docker.sock
+      FILTER_UPSTREAM: /var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - docker-filter:/run/docker-filter
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID to the numeric group id of /var/run/docker.sock}"
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # The filtered socket answers /_ping (forwarded to the daemon).
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get({socketPath:'/run/docker-filter/docker.sock',path:'/_ping'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
   ui:
     build: .
     ports:
       - "127.0.0.1:${UI_PORT:-3000}:3000"
     env_file:
-      - path: .env
+      - path: ${PATHFINDER_ENV_FILE:-.env}
         required: false
     environment:
-      # These win over the same names in .env: inside the container the paths and network are fixed.
+      # These win over the same names in the env file: inside the container the paths and network are fixed.
       ENGINE_LAUNCHER: docker
-      ENGINE_IMAGE: ${ENGINE_IMAGE:-agentic-pathfinder-dev-ui:local}
-      ENGINE_DOCKER_NETWORK: agentic-ui
+      DOCKER_HOST: unix:///run/docker-filter/docker.sock
+      ENGINE_IMAGE: *task-image
+      ENGINE_DOCKER_NETWORK: *task-network
       ENGINE_DATA_DIR: /data
       ENGINE_MAX_RUNNING: ${ENGINE_MAX_RUNNING:-2}
       # Backlog board (optional): set BACKLOG_CONFIG_FILE to the host path of the lanes YAML to turn it on.
-      # The token variable named by gitlab.tokenEnv (GITLAB_TOKEN) comes from .env.
+      # The token variable named by gitlab.tokenEnv (GITLAB_TOKEN) comes from the env file.
       BACKLOG_CONFIG: ${BACKLOG_CONFIG_FILE:+/etc/pathfinder/backlog.yaml}
       BACKLOG_DATA_DIR: /data/backlog
       # Workflows (optional, need the backlog): set WORKFLOWS_DIR_HOST to the host directory of the definitions to turn them on.
       WORKFLOWS_DIR: ${WORKFLOWS_DIR_HOST:+/etc/pathfinder/workflows}
       WORKFLOWS_DATA_DIR: /data/workflows
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - docker-filter:/run/docker-filter
       - engine-data:/data
       # Read-only lanes config; without BACKLOG_CONFIG_FILE the example is mounted and the backlog stays off.
       - ${BACKLOG_CONFIG_FILE:-./backlog.example.yaml}:/etc/pathfinder/backlog.yaml:ro
       # Read-only workflow definitions; without WORKFLOWS_DIR_HOST the example is mounted and workflows stay off.
       - ${WORKFLOWS_DIR_HOST:-./workflows.example}:/etc/pathfinder/workflows:ro
-    group_add:
-      - "${DOCKER_GID:?set DOCKER_GID to the numeric group id of /var/run/docker.sock}"
+    depends_on:
+      docker-filter:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - agentic-ui
     restart: unless-stopped
 
 volumes:
   engine-data:
+  docker-filter:
 
 networks:
   agentic-ui:
