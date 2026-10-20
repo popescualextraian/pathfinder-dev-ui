@@ -2,7 +2,7 @@ import { Logger } from '@nestjs/common';
 import { ChildProcess, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, stat } from 'node:fs/promises';
-import { createServer } from 'node:net';
+import { createConnection, createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { EngineConfig } from '../../../commons/engine-config';
 import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
@@ -17,6 +17,10 @@ const FAKE_AGENT_RELATIVE = join('tools', 'fake-agent', 'fake-agent.mjs');
 const KILL_TIMEOUT_MS = 5000;
 const CLONE_TIMEOUT_MS = 120_000;
 const LOG_LIMIT = 64 * 1024;
+const DEFAULT_AGENTIC_DIR = '/opt/agentic';
+const START_TIMEOUT_MS = 120_000;
+const START_POLL_MS = 100;
+const FAILURE_LINES = 10;
 
 // The fake agent lives in tools/ at the repository root, next to backend/src and dist/backend:
 // walk up from this file until it is found (works from src and from dist).
@@ -60,6 +64,8 @@ export function bridgeEnv({ config, spec, taskDir, workDir, port, path, fakeAgen
     AGENTIC_EVENTS_DIR: join(taskDir, 'no-events'),
     AGENTIC_BRIDGE_PORT: String(port),
     AGENTIC_ALLOWED_ACTIONS: TASK_GRANTS,
+    // On whatever the entrypoint's default is: a local task never runs unguarded.
+    AGENTIC_GATE: '1',
   };
   if (spec.model) env.AGENTIC_MODEL = spec.model;
   if (config.localAgent === 'fake') {
@@ -81,6 +87,10 @@ export interface LocalLauncherOptions {
   cloneTimeoutMs?: number;
   gitCommand?: string;
   bridgeCommand?: string;
+  // The image's folder with entrypoint.sh and start.d (default: AGENTIC_DIR or /opt/agentic).
+  agenticDir?: string;
+  // How long a launch waits for the start steps to finish and the bridge to listen.
+  startTimeoutMs?: number;
 }
 
 export function cloneEnv(config: Pick<LauncherConfig, 'ghToken'>, spec: Pick<LaunchSpec, 'repoUrl'>, taskDir: string, path: string | undefined): Record<string, string> {
@@ -107,6 +117,8 @@ interface LocalTask {
   cloneChild?: ChildProcess;
   launchDone: Promise<void>;
   stopping: boolean;
+  // Settles when the bridge process and its output streams are closed.
+  closed?: Promise<void>;
 }
 
 function freePort(): Promise<number> {
@@ -129,7 +141,8 @@ function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   }
 }
 
-// Development only: a task is an `agentic-bridge` child process in this container, in its own
+// Development only: a task is an `agentic-bridge` child process in this container (started through
+// the image's entrypoint, so it gets the start steps and the gate of a Docker task), in its own
 // folder under <dataDir>/local-tasks, on its own port that the launcher reaches on the loopback
 // address (the bridge itself listens on all interfaces; its tokens protect it). No isolation
 // between tasks. Tasks do not survive an app restart.
@@ -139,11 +152,15 @@ export class LocalTaskLauncher implements TaskLauncher {
   private readonly cloneTimeoutMs: number;
   private readonly gitCommand: string;
   private readonly bridgeCommand: string;
+  private readonly agenticDir: string;
+  private readonly startTimeoutMs: number;
 
   constructor(private readonly config: LauncherConfig, options: LocalLauncherOptions = {}) {
     this.cloneTimeoutMs = options.cloneTimeoutMs ?? CLONE_TIMEOUT_MS;
     this.gitCommand = options.gitCommand ?? 'git';
     this.bridgeCommand = options.bridgeCommand ?? 'agentic-bridge';
+    this.agenticDir = options.agenticDir ?? process.env.AGENTIC_DIR ?? DEFAULT_AGENTIC_DIR;
+    this.startTimeoutMs = options.startTimeoutMs ?? START_TIMEOUT_MS;
   }
 
   get root(): string {
@@ -151,6 +168,8 @@ export class LocalTaskLauncher implements TaskLauncher {
   }
 
   async launch(spec: LaunchSpec): Promise<LaunchResult> {
+    // Never a real agent without the gate: refused before anything is made.
+    this.command();
     const dir = join(this.root, spec.taskId);
     const work = join(dir, 'work');
     const fakeAgent = this.config.localAgent === 'fake' ? findFakeAgent() : '';
@@ -169,8 +188,10 @@ export class LocalTaskLauncher implements TaskLauncher {
       const port = await freePort();
       this.throwIfCancelled(task);
       task.port = port;
-      task.env = bridgeEnv({ config: this.config, spec, taskDir: dir, workDir: work, port, path: process.env.PATH, fakeAgent });
-      this.spawnBridge(spec.taskId, task);
+      task.env = { ...bridgeEnv({ config: this.config, spec, taskDir: dir, workDir: work, port, path: process.env.PATH, fakeAgent }), ...this.stepsEnv(dir) };
+      const child = this.spawnBridge(spec.taskId, task);
+      // A failing start step ends the launch here, with its message, not as a bridge that never answers.
+      if (this.entrypoint()) await this.awaitUp(task, child);
       task.launching = false;
       return { bridgeUrl: this.bridgeUrl(task) };
     } catch (error) {
@@ -187,7 +208,9 @@ export class LocalTaskLauncher implements TaskLauncher {
   // Respawns the bridge on the same port, so the bridge URL the service keeps stays valid.
   async start(taskId: string): Promise<void> {
     const task = this.must(taskId);
-    if (!task.launching && !this.alive(task)) this.spawnBridge(taskId, task);
+    if (task.launching || this.alive(task)) return;
+    const child = this.spawnBridge(taskId, task);
+    if (this.entrypoint()) await this.awaitUp(task, child);
   }
 
   async stop(taskId: string): Promise<void> {
@@ -239,6 +262,57 @@ export class LocalTaskLauncher implements TaskLauncher {
     await Promise.all([...this.tasks.values()].map(async (t) => { await this.cancelLaunch(t); await this.kill(t); }));
   }
 
+  private entrypoint(): string | undefined {
+    const file = join(this.agenticDir, 'entrypoint.sh');
+    return existsSync(file) ? file : undefined;
+  }
+
+  // What to spawn: the image's entrypoint, which runs the start steps and then the bridge. Without
+  // it only the fake agent may run (a plain host); Claude is refused.
+  private command(): { file: string; args: string[] } {
+    const entrypoint = this.entrypoint();
+    if (entrypoint) return { file: entrypoint, args: [this.bridgeCommand] };
+    if (this.config.localAgent !== 'fake') {
+      throw new Error(`The local launcher with ENGINE_LOCAL_AGENT=${this.config.localAgent} needs the project image: ${join(this.agenticDir, 'entrypoint.sh')} was not found, and a real agent never runs without the gate`);
+    }
+    return { file: this.bridgeCommand, args: [] };
+  }
+
+  // Start-step settings for the local paths: nothing leaves the task folder (no /workspaces, no /agentic-config).
+  private stepsEnv(dir: string): Record<string, string> {
+    return { AGENTIC_DIR: this.agenticDir, AGENTIC_WORKSPACES_DIR: join(dir, 'workspaces'), AGENTIC_CONFIG_MOUNT: join(dir, 'no-config') };
+  }
+
+  // Resolves when the bridge accepts connections; rejects when the process ends first (the
+  // entrypoint stops at a failed start step, so the bridge never starts) or the launch is cancelled.
+  // A bridge that is slow beyond the timeout is left to the service's own wait.
+  private async awaitUp(task: LocalTask, child: ChildProcess): Promise<void> {
+    const deadline = Date.now() + this.startTimeoutMs;
+    while (Date.now() < deadline) {
+      this.throwIfCancelled(task);
+      if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) {
+        await task.closed;
+        throw new Error(`The task's start steps failed (${child.signalCode ? `signal ${child.signalCode}` : `exit code ${child.exitCode}`}): ${this.failureLines(task)}`);
+      }
+      if (await this.listening(task.port)) return;
+      await new Promise((r) => setTimeout(r, START_POLL_MS));
+    }
+    this.logger.warn(`The bridge of a local task did not listen within ${Math.round(this.startTimeoutMs / 1000)}s`);
+  }
+
+  private listening(port: number): Promise<boolean> {
+    return new Promise((done) => {
+      const socket = createConnection({ host: '127.0.0.1', port });
+      socket.once('connect', () => { socket.destroy(); done(true); });
+      socket.once('error', () => { socket.destroy(); done(false); });
+    });
+  }
+
+  private failureLines(task: LocalTask): string {
+    const lines = task.log.split('\n').map((l) => l.trim()).filter((l) => l !== '');
+    return lines.slice(-FAILURE_LINES).join(' | ') || 'no output';
+  }
+
   private bridgeUrl(task: LocalTask): string {
     return `http://127.0.0.1:${task.port}`;
   }
@@ -276,8 +350,10 @@ export class LocalTaskLauncher implements TaskLauncher {
     });
   }
 
-  private spawnBridge(taskId: string, task: LocalTask): void {
-    const child = spawn(this.bridgeCommand, [], { env: task.env, cwd: task.dir, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  private spawnBridge(taskId: string, task: LocalTask): ChildProcess {
+    const { file, args } = this.command();
+    task.log = '';
+    const child = spawn(file, args, { env: task.env, cwd: task.dir, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     const append = (d: Buffer) => { task.log = (task.log + d.toString()).slice(-LOG_LIMIT); };
     child.stdout.on('data', append);
     child.stderr.on('data', append);
@@ -287,8 +363,10 @@ export class LocalTaskLauncher implements TaskLauncher {
       if (task.stopping || task.child !== child) return;
       this.logger.warn(`The bridge of task ${taskId} exited unexpectedly (${signal ? `signal ${signal}` : `code ${code}`})`);
     });
+    task.closed = new Promise<void>((done) => { child.once('close', () => done()); });
     task.stopping = false;
     task.child = child;
+    return child;
   }
 
   private alive(task: LocalTask): boolean {

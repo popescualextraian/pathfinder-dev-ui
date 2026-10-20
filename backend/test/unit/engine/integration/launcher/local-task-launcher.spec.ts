@@ -14,6 +14,8 @@ const AGENT_TOKEN = 'made-up-agent-token-bbbb';
 const spec: LaunchSpec = {
   taskId: 'T-1', taskToken: TASK_TOKEN, agentToken: AGENT_TOKEN, prompt: 'do it', repoUrl: 'https://github.com/acme/r.git', branch: 'agentic/T-1', model: 'm1',
 };
+// A folder without entrypoint.sh: a host without the image.
+const NO_IMAGE = '/nonexistent-agentic-dir';
 const base = { dataDir: '/data', project: 'proj', claudeCodeOauthToken: '', ghToken: '', gitName: '', gitEmail: '' };
 const input = (config: object, s: LaunchSpec = spec) => ({
   config: { ...base, localAgent: 'fake' as const, ...config }, spec: s, taskDir: '/data/local-tasks/T-1', workDir: '/data/local-tasks/T-1/work', port: 4321, path: '/usr/bin', fakeAgent: '/repo/tools/fake-agent/fake-agent.mjs',
@@ -27,7 +29,7 @@ describe('bridgeEnv', () => {
       PATH: '/usr/bin', HOME: '/data/local-tasks/T-1', AGENTIC_TASK_TOKEN: TASK_TOKEN, AGENTIC_AGENT_TOKEN: AGENT_TOKEN,
       AGENTIC_PROJECT: 'proj', AGENTIC_WORKTREE: '1', AGENTIC_BRANCH: 'agentic/T-1', AGENTIC_BRIDGE_PORT: '4321',
       AGENTIC_WORK: '/data/local-tasks/T-1/work', AGENTIC_MODEL: 'm1', AGENTIC_ALLOWED_ACTIONS: 'push,open-pr',
-      AGENTIC_TASK_DIR: '/data/local-tasks/T-1/task', AGENTIC_COST_LEDGER_DIR: '/data/local-tasks/T-1/task',
+      AGENTIC_TASK_DIR: '/data/local-tasks/T-1/task', AGENTIC_COST_LEDGER_DIR: '/data/local-tasks/T-1/task', AGENTIC_GATE: '1',
     });
     expect(JSON.parse(env.AGENTIC_ACP_CMD)).toEqual(['node', '/repo/tools/fake-agent/fake-agent.mjs']);
     const text = JSON.stringify(env);
@@ -97,7 +99,7 @@ describe('LocalTaskLauncher', () => {
   });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
-  const launcherFor = () => new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' });
+  const launcherFor = () => new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { agenticDir: NO_IMAGE });
   // Reaches the private clone step without starting a bridge.
   const clone = (l: LocalTaskLauncher, s: LaunchSpec, dir: string, work: string) =>
     (l as unknown as { clone(s: LaunchSpec, d: string, w: string, t: object): Promise<void> }).clone(s, dir, work, {});
@@ -151,7 +153,7 @@ describe('LocalTaskLauncher', () => {
   it('kills the whole process group of a bridge, grandchildren included', async () => {
     const pidFile = join(tmp, 'grandchild.pid');
     const bridge = script('bridge.sh', `sleep 300 &\necho $! > ${pidFile}\nwait`);
-    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { bridgeCommand: bridge });
+    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { bridgeCommand: bridge, agenticDir: NO_IMAGE });
     await l.launch({ ...spec, repoUrl: origin });
     await waitFor('grandchild pid', () => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== '');
     const pid = Number(readFileSync(pidFile, 'utf8'));
@@ -164,7 +166,7 @@ describe('LocalTaskLauncher', () => {
   it('onModuleDestroy kills a grandchild too', async () => {
     const pidFile = join(tmp, 'grandchild.pid');
     const bridge = script('bridge.sh', `sleep 300 &\necho $! > ${pidFile}\nwait`);
-    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { bridgeCommand: bridge });
+    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { bridgeCommand: bridge, agenticDir: NO_IMAGE });
     await l.launch({ ...spec, repoUrl: origin });
     await waitFor('grandchild pid', () => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== '');
     const pid = Number(readFileSync(pidFile, 'utf8'));
@@ -174,7 +176,7 @@ describe('LocalTaskLauncher', () => {
 
   it('times out a hanging clone with a clear message, killing git, and cleans up', async () => {
     const git = script('slow-git.sh', 'sleep 300');
-    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { gitCommand: git, cloneTimeoutMs: 300 });
+    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { gitCommand: git, cloneTimeoutMs: 300, agenticDir: NO_IMAGE });
     await expect(l.launch({ ...spec, repoUrl: 'https://user:s3cret@example.invalid/a/b.git' })).rejects.toThrow(/git clone timed out after/);
     expect(existsSync(join(l.root, 'T-1'))).toBe(false);
     expect(await l.inspect('T-1')).toMatchObject({ exists: false });
@@ -184,7 +186,7 @@ describe('LocalTaskLauncher', () => {
     const marker = join(tmp, 'bridge-started');
     const git = script('slow-git.sh', 'sleep 300');
     const bridge = script('bridge.sh', `touch ${marker}\nsleep 300`);
-    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { gitCommand: git, bridgeCommand: bridge });
+    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { gitCommand: git, bridgeCommand: bridge, agenticDir: NO_IMAGE });
     const launching = l.launch({ ...spec, repoUrl: origin });
     const outcome = launching.then(() => 'launched', (e: Error) => e.message);
     await waitFor('launch registered', () => existsSync(join(l.root, 'T-1')));
@@ -196,9 +198,83 @@ describe('LocalTaskLauncher', () => {
     expect(await l.inspect('T-1')).toMatchObject({ exists: false });
   });
 
+  describe('through the image entrypoint', () => {
+    // A stand-in image: entrypoint.sh records what it was run with, then plays the bridge by
+    // listening on the bridge port (or fails like a failed start step).
+    const image = (body: string) => {
+      const dir = join(tmp, 'image');
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, 'entrypoint.sh');
+      writeFileSync(file, `#!/bin/sh\n${body}\n`);
+      chmodSync(file, 0o755);
+      return dir;
+    };
+    const listen = `echo "$@" > "$AGENTIC_STATE/args"; env > "$AGENTIC_STATE/env.txt"; exec node -e 'require("net").createServer().listen(Number(process.env.AGENTIC_BRIDGE_PORT),"127.0.0.1")'`;
+    const launcher = (agenticDir: string, localAgent: 'fake' | 'claude' = 'fake') =>
+      new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent, claudeCodeOauthToken: OAUTH }, { agenticDir, bridgeCommand: 'agentic-bridge', startTimeoutMs: 5000 });
+
+    it('spawns the entrypoint with agentic-bridge and AGENTIC_GATE=1', async () => {
+      const l = launcher(image(listen));
+      await l.launch({ ...spec, repoUrl: origin });
+      const state = join(l.root, 'T-1', 'state');
+      expect(readFileSync(join(state, 'args'), 'utf8').trim()).toBe('agentic-bridge');
+      const env = readFileSync(join(state, 'env.txt'), 'utf8');
+      expect(env).toContain('AGENTIC_GATE=1');
+      expect(env).toContain(`AGENTIC_TASK_DIR=${join(l.root, 'T-1', 'task')}`);
+      expect(env).toContain(`AGENTIC_WORKSPACES_DIR=${join(l.root, 'T-1', 'workspaces')}`);
+      await l.remove('T-1');
+    });
+
+    it('refuses Claude without an entrypoint, before anything is made', async () => {
+      const l = launcher(NO_IMAGE, 'claude');
+      await expect(l.launch({ ...spec, repoUrl: origin })).rejects.toThrow(/needs the project image.*never runs without the gate/);
+      expect(existsSync(join(l.root, 'T-1'))).toBe(false);
+    });
+
+    it('spawns the fake agent directly without an entrypoint', async () => {
+      const bridge = script('bridge.sh', 'echo "gate=$AGENTIC_GATE" > "$AGENTIC_STATE/direct"\nsleep 300');
+      const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { agenticDir: NO_IMAGE, bridgeCommand: bridge });
+      await l.launch({ ...spec, repoUrl: origin });
+      await waitFor('direct marker', () => existsSync(join(l.root, 'T-1', 'state', 'direct')));
+      expect(readFileSync(join(l.root, 'T-1', 'state', 'direct'), 'utf8').trim()).toBe('gate=1');
+      await l.remove('T-1');
+    });
+
+    it('fails the launch with the step message when the entrypoint exits non-zero, and cleans up', async () => {
+      const l = launcher(image('echo "agentic: start step 45-hooks failed (rc=1)" >&2\nexit 1'));
+      await expect(l.launch({ ...spec, repoUrl: origin })).rejects.toThrow(/start steps failed \(exit code 1\).*45-hooks failed/);
+      expect(existsSync(join(l.root, 'T-1'))).toBe(false);
+      expect(await l.inspect('T-1')).toMatchObject({ exists: false });
+    });
+
+    it('stop during the start wait cancels the launch and kills the entrypoint', async () => {
+      const l = launcher(image('sleep 300'));
+      const outcome = l.launch({ ...spec, repoUrl: origin }).then(() => 'launched', (e: Error) => e.message);
+      await waitFor('state folder', () => existsSync(join(l.root, 'T-1', 'state')));
+      await new Promise((r) => setTimeout(r, 500));
+      await l.stop('T-1');
+      expect(await outcome).toMatch(/stopped or removed/);
+      expect(await l.countRunning()).toBe(0);
+    });
+
+    it('respawns through the entrypoint, and fails the respawn with the message when a step fails', async () => {
+      const marker = join(tmp, 'fail-now');
+      const dir = image(`if [ -e ${marker} ]; then echo "agentic: seed broke" >&2; exit 1; fi\n${listen}`);
+      const l = launcher(dir);
+      await l.launch({ ...spec, repoUrl: origin });
+      await l.stop('T-1');
+      await l.start('T-1');
+      expect(await l.countRunning()).toBe(1);
+      await l.stop('T-1');
+      writeFileSync(marker, '');
+      await expect(l.start('T-1')).rejects.toThrow(/seed broke/);
+      await l.remove('T-1');
+    });
+  });
+
   it('keeps only the tail of the bridge output', async () => {
     const bridge = script('bridge.sh', 'head -c 200000 /dev/zero | tr "\\0" x\necho END\nsleep 300');
-    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { bridgeCommand: bridge });
+    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { bridgeCommand: bridge, agenticDir: NO_IMAGE });
     await l.launch({ ...spec, repoUrl: origin });
     await waitFor('output end', () => l.output('T-1').includes('END'));
     expect(l.output('T-1').length).toBeLessThanOrEqual(64 * 1024);
@@ -208,7 +284,7 @@ describe('LocalTaskLauncher', () => {
   it('warns, without output, when a bridge exits unexpectedly', async () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const bridge = script('bridge.sh', 'echo secret-output\nexit 3');
-    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { bridgeCommand: bridge });
+    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { bridgeCommand: bridge, agenticDir: NO_IMAGE });
     await l.launch({ ...spec, repoUrl: origin });
     await waitFor('warning', () => warn.mock.calls.length > 0);
     expect(String(warn.mock.calls[0][0])).toMatch(/T-1.*exited unexpectedly.*code 3/);
