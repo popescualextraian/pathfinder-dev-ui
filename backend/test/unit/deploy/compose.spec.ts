@@ -29,6 +29,13 @@ describe('compose.yaml', () => {
     expect(mounting).toEqual(['docker-filter']);
   });
 
+  it('mounts the workflow definitions writable (the editor saves into them) and the lanes config read-only', () => {
+    const vol = (target: string) => (ui.volumes ?? []).map(String).find((v) => v.includes(`:${target}`));
+    expect(vol('/etc/pathfinder/workflows')).toMatch(/^\$\{WORKFLOWS_DIR_HOST:-\.\/workflows\.example\}:\/etc\/pathfinder\/workflows$/);
+    expect(vol('/etc/pathfinder/backlog.yaml')).toMatch(/:ro$/);
+    expect((ui.volumes ?? []).filter((v) => String(v).includes('/etc/pathfinder'))).toHaveLength(2);
+  });
+
   it('gives the ui no Docker group and the filtered socket instead', () => {
     expect(ui.group_add).toBeUndefined();
     expect(ui.volumes).toContain('docker-filter:/run/docker-filter');

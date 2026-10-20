@@ -84,8 +84,9 @@ services:
       - engine-data:/data
       # Read-only lanes config; without BACKLOG_CONFIG_FILE the example is mounted and the backlog stays off.
       - ${BACKLOG_CONFIG_FILE:-./backlog.example.yaml}:/etc/pathfinder/backlog.yaml:ro
-      # Read-only workflow definitions; without WORKFLOWS_DIR_HOST the example is mounted and workflows stay off.
-      - ${WORKFLOWS_DIR_HOST:-./workflows.example}:/etc/pathfinder/workflows:ro
+      # Workflow definitions, writable: the editor saves into them (the ui runs as uid 1000, the host folder must be writable by it;
+      # otherwise the editor is read-only). Without WORKFLOWS_DIR_HOST the example is mounted and workflows stay off.
+      - ${WORKFLOWS_DIR_HOST:-./workflows.example}:/etc/pathfinder/workflows
     depends_on:
       docker-filter:
         condition: service_healthy
