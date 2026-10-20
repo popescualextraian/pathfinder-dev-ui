@@ -260,7 +260,7 @@ source of truth; the app keeps a cache and polls it.
 | Variable | Meaning |
 |---|---|
 | `BACKLOG_CONFIG` | Path of the lanes YAML (copy `backlog.example.yaml`). Unset or empty: the backlog is off. |
-| `BACKLOG_DATA_DIR` | Absolute directory of the cache, one mode-600 JSON file per project. Required when `BACKLOG_CONFIG` is set. |
+| `BACKLOG_DATA_DIR` | Absolute directory of the cache, one file `backlog.json`. Required when `BACKLOG_CONFIG` is set. |
 | the token variable | Named by `gitlab.tokenEnv` in the YAML (`GITLAB_TOKEN` in the example); a GitLab token with the `api` scope. The YAML never holds the value, and the value is never logged or returned. |
 
 The YAML is read at start-up (a restart applies changes); a bad key is refused naming the key, never a value:
@@ -381,7 +381,7 @@ Docker host, not to the UI container.
 
 Backlog in Docker: set `BACKLOG_CONFIG_FILE` (in `.env` or the shell) to the host path of the lanes YAML;
 compose mounts it read-only at `/etc/pathfinder/backlog.yaml`, sets `BACKLOG_CONFIG` to it and
-`BACKLOG_DATA_DIR=/backlog-data` (volume `backlog-data`). The token variable named in the YAML (`GITLAB_TOKEN`)
+`BACKLOG_DATA_DIR=/data/backlog` (inside the `engine-data` volume, which the `node` user can write). The token variable named in the YAML (`GITLAB_TOKEN`)
 comes from `.env`. Without `BACKLOG_CONFIG_FILE` the backlog is off.
 
 Warning: access to the Docker socket is root on the host. Whoever controls this container, or can

@@ -30,11 +30,10 @@ services:
       # Backlog board (optional): set BACKLOG_CONFIG_FILE to the host path of the lanes YAML to turn it on.
       # The token variable named by gitlab.tokenEnv (GITLAB_TOKEN) comes from .env.
       BACKLOG_CONFIG: ${BACKLOG_CONFIG_FILE:+/etc/pathfinder/backlog.yaml}
-      BACKLOG_DATA_DIR: /backlog-data
+      BACKLOG_DATA_DIR: /data/backlog
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - engine-data:/data
-      - backlog-data:/backlog-data
       # Read-only lanes config; without BACKLOG_CONFIG_FILE the example is mounted and the backlog stays off.
       - ${BACKLOG_CONFIG_FILE:-./backlog.example.yaml}:/etc/pathfinder/backlog.yaml:ro
     group_add:
@@ -45,7 +44,6 @@ services:
 
 volumes:
   engine-data:
-  backlog-data:
 
 networks:
   agentic-ui:
