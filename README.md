@@ -185,7 +185,8 @@ git checkout with at least one commit. In the Docker launcher the `05-workspace`
 clone from `AGENTIC_REPO_URL`.
 
 The engine has no authentication of its own: whoever can reach port 3000 can start tasks that use
-your tokens. Do not expose it beyond a trusted network.
+your tokens. With the backlog on, anyone who can reach the unauthenticated API can also write GitLab
+issues through `/api/backlog`. Do not expose it beyond a trusted network.
 
 ## Configuration
 
@@ -254,13 +255,13 @@ blank, `title` at most 200 (shortened to 80). Errors have the body `{statusCode,
 ## Backlog
 
 An optional board of the issues of one GitLab project, in lanes (todo, plan, in progress, ...). It is off
-unless `BACKLOG_CONFIG` is set: then there are no `/api/backlog` routes and no board. GitLab stays the
+unless `BACKLOG_CONFIG` is set; while it is unset there are no `/api/backlog` routes and no board. GitLab stays the
 source of truth; the app keeps a cache and polls it.
 
 | Variable | Meaning |
 |---|---|
 | `BACKLOG_CONFIG` | Path of the lanes YAML (copy `backlog.example.yaml`). Unset or empty: the backlog is off. |
-| `BACKLOG_DATA_DIR` | Absolute directory of the cache, one file `backlog.json`. Required when `BACKLOG_CONFIG` is set. |
+| `BACKLOG_DATA_DIR` | Directory of the cache (relative paths resolve against the working directory), one file `backlog.json`. Required when `BACKLOG_CONFIG` is set. |
 | the token variable | Named by `gitlab.tokenEnv` in the YAML (`GITLAB_TOKEN` in the example); a GitLab token with the `api` scope. The YAML never holds the value, and the value is never logged or returned. |
 
 The YAML is read at start-up (a restart applies changes); a bad key is refused naming the key, never a value:
@@ -292,13 +293,13 @@ and closes or reopens the issue for a `state: closed` lane. Missing lane labels 
 | `GET /api/backlog/items/:id` | One item | 200 |
 | `POST /api/backlog/items` `{title, description?, lane?}` | Creates an issue (title 1-255 characters, description up to 100000). Without `lane` it goes to the default lane; a lane that GitLab closes (state `closed`) or an unknown lane is 400 | 201 item |
 | `PATCH /api/backlog/items/:id` `{title?, description?, assignees?}` | Changes the given fields (at least one, else 400). `assignees` are usernames (at most 20); an unknown user is 400, `[]` unassigns everyone. The lane never changes here, only moves change it. Unknown item is 404 | 200 item |
-| `POST /api/backlog/items/:id/move` `{from, to}` | Moves the item to lane `to`. `from` is the lane the client believes it is in: if the source has it elsewhere the move is refused with 409 and nothing is written (the board reloads the item). Unknown item or lane is 404 | 200 item |
+| `POST /api/backlog/items/:id/move` `{from, to}` | Moves the item to lane `to`. `from` is the lane the client believes it is in: if the source has it elsewhere the move is refused with 409 and nothing is written (the board reloads the item). Unknown item is 404, unknown lane is 400 | 200 item |
 | `PUT /api/backlog/items/:id/file-links` `{links: [{repo, path, ref?, note?}]}` | Replaces the item's file links (at most 100) | 200 links |
 | `POST /api/backlog/refresh` | Reads GitLab now; 503 when it is unreachable (the cache stays) | 200 items |
 | `GET /api/backlog/stream` | SSE: `event: item` with the item when one is added or changed, `event: removed` with `{"id"}`, `event: error` with `{"message"}` when GitLab could not be read, and a `: ping` comment every 25 seconds. Nothing is replayed: load `items` first | 200 |
 
-Errors have the usual `{statusCode, message, path}` body: not found 404, changed in the source 409, GitLab
-unreachable 503, with fixed messages (no tokens, URLs or upstream bodies).
+Errors have the usual `{statusCode, message, path}` body: invalid request 400 (also what GitLab answers with 400 or 422), not found 404, changed in the source 409, GitLab
+unreachable 503 (also any other unexpected GitLab answer), with fixed messages (no tokens, URLs or upstream bodies).
 
 File links are stored in GitLab as one comment per issue, written by the token's user: an HTML comment marker
 `<!-- pathfinder:file-links v1`, the links as JSON, then a readable list. The app rewrites that comment (it
@@ -338,7 +339,7 @@ There is **no isolation** between tasks or from the app: development only. The a
 at start-up. The fake agent's `SHELL:` prompt runs commands as the app's user, so anyone who can send a prompt
 can read what the app's user can read (including the app's environment); keep real tokens out of such an app.
 `npm run start:local` therefore drops `CLAUDE_CODE_OAUTH_TOKEN` from the app's environment when the agent is `fake`,
-and `GH_TOKEN` as well when `ENGINE_REPO_URL` is a local path. `BACKLOG_CONFIG`, `BACKLOG_DATA_DIR` and the backlog token variable (`GITLAB_TOKEN`) pass through unchanged, so with a backlog configured the fake agent's `SHELL:` could read that token: use a throwaway token. `ENGINE_MAX_RUNNING` applies as usual. Stopping the app (SIGINT/SIGTERM) stops the bridges (each bridge runs in its own process group, which is killed as a whole).
+and `GH_TOKEN` as well when `ENGINE_REPO_URL` is a local path. `BACKLOG_CONFIG`, `BACKLOG_DATA_DIR` and the backlog token variable (`GITLAB_TOKEN`) pass through unchanged, so with a backlog configured the fake agent's `SHELL:` could read that token: use a project access token for the test project only (an api-scope personal token gives account-wide access, and the app and the bridges listen on 0.0.0.0 without authentication). `ENGINE_MAX_RUNNING` applies as usual. Stopping the app (SIGINT/SIGTERM) stops the bridges (each bridge runs in its own process group, which is killed as a whole).
 Local tasks do not survive an app crash or restart: after a SIGKILL of the app, bridges may be left running and must be stopped
 manually. `ENGINE_TASK_EXTRA_ENV` and `ENGINE_TASK_EXTRA_BINDS` are ignored by `local`, and SSH-form repository URLs
 (`git@host:path`) are not supported (use https or a local path). The clone is aborted after 120 seconds.
