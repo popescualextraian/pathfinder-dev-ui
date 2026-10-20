@@ -561,8 +561,10 @@ the backlog and workflows; these win over the same names in the env file. `ENGIN
    the lanes YAML file (mounted read-only); for workflows set `WORKFLOWS_DIR_HOST` to the directory of
    the definitions (they also need the backlog). The definitions are mounted **writable**, because the
    editor saves into them. The `ui` container runs as the image's `node` user (uid 1000, no `user:` in
-   compose), so the host folder must be writable by uid 1000 (`chown 1000 <dir>`, or mode 777; the files
-   inside too if they should be editable: `chown -R 1000 <dir>`). Otherwise the editor shows the workflows
+   compose), so the host folder must be owned by uid 1000
+   (`chown -R 1000 <dir>`, the files inside too) or by a group the ui user is in, with group write
+   (`chgrp -R 1000 <dir> && chmod -R g+w <dir>`; the user has no other group). Do not make it world-writable.
+   Otherwise the editor shows the workflows
    read-only (403 on writes); everything else works. The token variable named by `gitlab.tokenEnv`
    (`GITLAB_TOKEN`) comes from the env file. Without them the example files are mounted and the backlog and
    workflows stay off. The data directories are inside `engine-data` (`/data/backlog`, `/data/workflows`).
