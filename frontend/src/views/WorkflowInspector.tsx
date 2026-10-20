@@ -118,9 +118,10 @@ export function WorkflowInspector({ draft, step: index, lanes, error, readOnly, 
     );
   }
   const step = draft.steps[index];
-  const bad = (field: string, session?: string) =>
-    errorAt(error, { stepId: step.id, field, ...(session !== undefined && { session }) }) &&
-    (session !== undefined || error?.session === undefined);
+  const bad = (field: string, session?: string, sessionIndex?: number) =>
+    (errorAt(error, { stepId: step.id, field, ...(session !== undefined && { session }) }) ||
+      errorAt(error, { stepIndex: index, field, ...(sessionIndex !== undefined && { sessionIndex }) })) &&
+    (session !== undefined || (error?.session === undefined && error?.sessionIndex === undefined));
   const patch = (p: Parameters<typeof updateStep>[2]) => onChange((d) => updateStep(d, index, p));
   const requires = step.requires ?? [];
 
@@ -184,7 +185,7 @@ export function WorkflowInspector({ draft, step: index, lanes, error, readOnly, 
         const n = j + 1;
         const main = isMainSession(index, j);
         const options = forkOptions(draft, index, j);
-        const sbad = (field: string) => bad(field, s.name);
+        const sbad = (field: string) => bad(field, s.name, j);
         return (
           <fieldset key={j} className={styles.group} data-testid={`session-${n}`}>
             <legend>Session {n}</legend>

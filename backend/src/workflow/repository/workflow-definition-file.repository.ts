@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { access, constants, link, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { extname, join, basename } from 'node:path';
-import { parseWorkflowDefinition, validateWorkflowDefinition, WORKFLOW_ID } from '../service/parse-workflow';
+import { parseWorkflowDefinition, validateWorkflowDefinition, WORKFLOW_ID, WORKFLOW_ID_MESSAGE } from '../service/parse-workflow';
 import { serializeWorkflowDefinition } from '../service/serialize-workflow';
 import type { WorkflowDefinition, WorkflowDefinitions } from '../service/workflow-definition';
 import type { StoredWorkflow, WorkflowDefinitionRepository } from '../service/workflow-definition.repository';
@@ -20,10 +20,12 @@ const code = (e: unknown): string | undefined => (e as NodeJS.ErrnoException).co
 /**
  * One definition per *.yaml / *.yml file of a directory, read on every call; writes are atomic (temp file in the same
  * folder, then rename; create uses a hard link so it never overwrites). The version is the hash of the file content.
- * A check-then-rename race with another writer of the same file is possible; the window is a few microseconds.
+ * Writes and deletes of this process are serialized (one lock for the folder), so check + write + rename is atomic
+ * among them; another process writing the same folder can still race in the window between check and rename.
  */
 export class WorkflowDefinitionFileRepository implements WorkflowDefinitionRepository {
   private readonly canWrite: (dir: string) => Promise<void>;
+  private lock: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly dir: string,
@@ -84,8 +86,19 @@ export class WorkflowDefinitionFileRepository implements WorkflowDefinitionRepos
     throw new WorkflowNotFoundError('Workflow not found');
   }
 
-  async save(id: string, definition: WorkflowDefinition, expectedVersion?: string): Promise<StoredWorkflow> {
-    if (!WORKFLOW_ID.test(id)) throw new WorkflowInvalidError(`The workflow id must match ${WORKFLOW_ID}`);
+  /** Runs `task` after every earlier locked task has finished (whatever their outcome). */
+  private locked<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.lock.then(task, task);
+    this.lock = run.catch(() => undefined);
+    return run;
+  }
+
+  save(id: string, definition: WorkflowDefinition, expectedVersion?: string): Promise<StoredWorkflow> {
+    return this.locked(() => this.doSave(id, definition, expectedVersion));
+  }
+
+  private async doSave(id: string, definition: WorkflowDefinition, expectedVersion?: string): Promise<StoredWorkflow> {
+    if (!WORKFLOW_ID.test(id)) throw new WorkflowInvalidError(WORKFLOW_ID_MESSAGE);
     await this.requireWritable();
     const stages = this.items?.stages ? await this.items.stages() : undefined;
     const valid = validateWorkflowDefinition(id, definition, { stages });
@@ -116,13 +129,21 @@ export class WorkflowDefinitionFileRepository implements WorkflowDefinitionRepos
     return { definition: valid, version: hash(text) };
   }
 
-  async delete(id: string, expectedVersion: string): Promise<void> {
+  delete(id: string, expectedVersion: string): Promise<void> {
+    return this.locked(() => this.doDelete(id, expectedVersion));
+  }
+
+  deleteRefused(file: string, expectedVersion: string): Promise<void> {
+    return this.locked(() => this.doDeleteRefused(file, expectedVersion));
+  }
+
+  private async doDelete(id: string, expectedVersion: string): Promise<void> {
     const found = await this.find(id);
     if (!found) throw new WorkflowNotFoundError('Workflow not found');
     await this.remove(found.file, found.text, expectedVersion);
   }
 
-  async deleteRefused(file: string, expectedVersion: string): Promise<void> {
+  private async doDeleteRefused(file: string, expectedVersion: string): Promise<void> {
     const entry = (await this.list()).refused.find((r) => r.file === file);
     if (!entry) throw new WorkflowNotFoundError('Workflow file not found');
     let text: string;

@@ -59,7 +59,7 @@ describe('workflow definition DTOs', () => {
     expect(await errorsOf(UpdateWorkflowDto, { definition, version: 'v' })).toEqual([]);
   });
 
-  it.each(['', 'A', '-a', 'a/b', '../x', 5, undefined])('rejects workflow id %p', async (id) => {
+  it.each(['', 'A', '-a', 'a/b', '../x', 'new', 5, undefined])('rejects workflow id %p', async (id) => {
     expect(await errorsOf(CreateWorkflowDto, { id, definition })).toContain('id');
   });
 

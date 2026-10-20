@@ -9,6 +9,8 @@ import type {
 
 export const MAIN_SESSION = 'main';
 export const MAX_ID_LENGTH = 64;
+/** Ids the backend refuses: `new` is the route of an unsaved workflow. */
+const RESERVED_IDS = ['new'];
 
 /** `[a-z0-9][a-z0-9-]{0,63}` from free text; '' when nothing usable is left. */
 export function slugify(text: string): string {
@@ -18,7 +20,7 @@ export function slugify(text: string): string {
     .replace(/^-+/, '')
     .slice(0, MAX_ID_LENGTH)
     .replace(/-+$/, '');
-  return slug;
+  return RESERVED_IDS.includes(slug) ? `${slug}-workflow` : slug;
 }
 
 /** The slug of a title, made unique among `taken` with -2, -3, ... ('' stays ''). */
@@ -53,15 +55,9 @@ export function duplicateDraft(def: WorkflowDefinition): WorkflowDefinition {
   return { ...copy, title: `${def.title} (copy)` };
 }
 
-/** Same structure with the rules of the draft restored: first session is `main`, forks only name earlier sessions. */
+/** Same structure with the rules of the draft restored: forks only name earlier sessions. Never renames a session. */
 export function normalize(def: WorkflowDefinition): WorkflowDefinition {
   const steps = def.steps.map((s) => ({ ...s, sessions: s.sessions.map((x) => ({ ...x })) }));
-  const first = steps[0]?.sessions[0];
-  if (first && first.name !== MAIN_SESSION) {
-    const old = first.name;
-    first.name = MAIN_SESSION;
-    for (const s of steps) for (const x of s.sessions) if (x.fork === old) x.fork = MAIN_SESSION;
-  }
   const seen = new Set<string>();
   for (const s of steps) {
     for (const x of s.sessions) {
@@ -99,8 +95,13 @@ function moved<T>(list: readonly T[], index: number, delta: -1 | 1): T[] | null 
   return copy;
 }
 
-/** Moves a step one place; out of range is a no-op. */
+/** The first step holds `main`, which starts the task: it cannot move and nothing moves into its place. */
+export const canMoveStep = (length: number, index: number, delta: -1 | 1): boolean =>
+  index >= 1 && index + delta >= 1 && index + delta < length;
+
+/** Moves a step one place; out of range, or any move involving the first step, is a no-op. */
 export function moveStep(def: WorkflowDefinition, index: number, delta: -1 | 1): WorkflowDefinition {
+  if (!canMoveStep(def.steps.length, index, delta)) return def;
   const steps = moved(def.steps, index, delta);
   return steps ? normalize({ ...def, steps }) : def;
 }
@@ -233,6 +234,8 @@ export function errorAt(
 ): boolean {
   if (!error) return false;
   return (
+    (where.stepIndex === undefined || error.stepIndex === where.stepIndex) &&
+    (where.sessionIndex === undefined || error.sessionIndex === where.sessionIndex) &&
     (where.stepId === undefined || error.stepId === where.stepId) &&
     (where.session === undefined || error.session === where.session) &&
     (where.field === undefined || error.field === where.field)

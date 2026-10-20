@@ -208,6 +208,9 @@ export interface StoredWorkflow {
 export interface WorkflowErrorLocation {
   stepId?: string;
   session?: string;
+  /** Set instead of stepId / session when the id / name is empty or missing. */
+  stepIndex?: number;
+  sessionIndex?: number;
   field?: string;
 }
 

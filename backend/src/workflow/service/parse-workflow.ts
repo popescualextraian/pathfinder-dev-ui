@@ -5,6 +5,9 @@ import type { Gate, SessionDef, StepDef, WorkflowDefinition } from './workflow-d
 export interface WorkflowErrorLocation {
   stepId?: string;
   session?: string;
+  /** Index of the step / session, set when its id / name is unusable (missing or empty), so it cannot be named. */
+  stepIndex?: number;
+  sessionIndex?: number;
   field?: string;
 }
 
@@ -23,7 +26,8 @@ export const PLACEHOLDERS = [
 ] as const;
 
 /** Ids of workflows (file names without extension) chosen at create. */
-export const WORKFLOW_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+export const WORKFLOW_ID = /^(?!new$)[a-z0-9][a-z0-9-]{0,63}$/;
+export const WORKFLOW_ID_MESSAGE = `The workflow id must match ${WORKFLOW_ID} ("new" is reserved: it is the editor's route for a new workflow)`;
 const SESSION_NAME = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
 export interface ParseOptions {
@@ -88,7 +92,7 @@ export function validateWorkflowDefinition(id: string, doc: unknown, opts: Parse
   const steps: StepDef[] = (doc.steps as unknown[]).map((raw, i) => {
     const at = `steps[${i}]`;
     if (!isMap(raw)) return fail(`${at} must be a mapping`);
-    const stepId = str(raw.id, `${at}.id`, { field: 'id' });
+    const stepId = str(raw.id, `${at}.id`, { stepIndex: i, field: 'id' });
     const sl = (field: string, session?: string): WorkflowErrorLocation => ({ stepId, ...(session !== undefined && { session }), field });
     if (stepIds.has(stepId)) fail(`duplicate step id "${stepId}"`, sl('id'));
     stepIds.add(stepId);
@@ -101,7 +105,7 @@ export function validateWorkflowDefinition(id: string, doc: unknown, opts: Parse
     const sessions: SessionDef[] = (raw.sessions as unknown[]).map((s, j) => {
       const sat = `${at}.sessions[${j}]`;
       if (!isMap(s)) return fail(`${sat} must be a mapping`, sl('sessions'));
-      const name = str(s.name, `${sat}.name`, sl('name'));
+      const name = str(s.name, `${sat}.name`, { stepId, sessionIndex: j, field: 'name' });
       const loc = (field: string): WorkflowErrorLocation => sl(field, name);
       if (!SESSION_NAME.test(name)) fail(`${sat}: session name "${name}" must match ${SESSION_NAME}`, loc('name'));
       if (i === 0 && j === 0 && name !== 'main') fail(`${sat}: the first session must be named "main"`, loc('name'));

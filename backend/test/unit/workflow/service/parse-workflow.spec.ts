@@ -160,6 +160,9 @@ describe('validateWorkflowDefinition (on the parsed object)', () => {
     ['requires', doc({ steps: [step({ requires: ['../x'] })] }), { stepId: 's1', field: 'requires' }],
     ['exitPrompt', doc({ steps: [step({ exitPrompt: '{{bad}}' })] }), { stepId: 's1', field: 'exitPrompt' }],
     ['doneStage', doc({ doneStage: 'nope' }), { field: 'doneStage' }],
+    ['empty step id', doc({ steps: [step(), step({ id: ' ' })] }), { stepIndex: 1, field: 'id' }],
+    ['missing step id', doc({ steps: [step({ id: undefined })] }), { stepIndex: 0, field: 'id' }],
+    ['empty session name', doc({ steps: [step({ sessions: [session(), session({ name: '' })] })] }), { stepId: 's1', sessionIndex: 1, field: 'name' }],
   ])('locates %s', (_n, d, location) => {
     expect(err(d, { stages: ['plan'] }).location).toEqual(location);
   });

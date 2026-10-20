@@ -110,19 +110,21 @@ describe('WorkflowEditor', () => {
     expect(screen.getByLabelText('Gate')).toHaveValue('auto');
   });
 
-  it('reorders the selected step and deletes it after a confirm', async () => {
+  it('cannot move the first step or into its place; deletes a step after a confirm', async () => {
     renderEditor();
     await screen.findByDisplayValue('Two steps');
-    fireEvent.click(screen.getByRole('button', { name: 'Move step right' }));
     const boxes = () => screen.getAllByTestId(/^step-box-/).map((b) => b.getAttribute('aria-label'));
-    expect(boxes()).toEqual(['Step 1: Build', 'Step 2: Plan']);
+    const before = boxes();
+    expect(screen.getByRole('button', { name: 'Move step left' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Move step right' })).toBeDisabled();
-    // the main session stays main: the moved-up fork no longer has an earlier source
-    expect(screen.getByRole('button', { name: 'Step 2: Plan' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByTestId('step-box-2'));
+    expect(screen.getByRole('button', { name: 'Move step left' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move step right' })).toBeDisabled();
+    expect(boxes()).toEqual(before);
     fireEvent.click(screen.getByRole('button', { name: 'Delete step' }));
     expect(boxes()).toHaveLength(2);
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete step' }));
-    expect(boxes()).toEqual(['Step 1: Build']);
+    expect(boxes()).toEqual(['Step 1: Plan']);
   });
 
   it('a step without a lane shows no move and saves without stage', async () => {
@@ -165,6 +167,19 @@ describe('WorkflowEditor', () => {
     expect(screen.getByLabelText('Session 1 prompt')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByLabelText('Session 2 prompt')).not.toHaveAttribute('aria-invalid');
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('marks a step and session located by index when the id or name is empty', async () => {
+    m(api.validateWorkflow).mockResolvedValue([{ message: 'steps[1].sessions[1].name must be a non-empty string', stepIndex: 1, sessionIndex: 1, field: 'name' }]);
+    renderEditor();
+    await screen.findByDisplayValue('Two steps');
+    fireEvent.click(screen.getByTestId('step-box-2'));
+    type('Session 2 prompt', 'changed');
+    await screen.findByTestId('validation-error');
+    expect(screen.getByTestId('step-box-2')).toHaveAttribute('data-error', 'true');
+    expect(screen.getByTestId('step-box-1')).not.toHaveAttribute('data-error');
+    expect(screen.getByLabelText('Session 2 name')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('Session 1 name')).not.toHaveAttribute('aria-invalid');
   });
 
   it('shows a 409 conflict with reload and keep-mine', async () => {

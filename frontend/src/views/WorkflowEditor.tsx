@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Lane } from '../api/models';
 import type { WorkflowEditor as Editor } from '../state/use-workflow-editor';
-import { addStep, errorAt, moveStep, removeStep, toggleGate } from '../state/workflow-draft';
+import { addStep, canMoveStep, errorAt, moveStep, removeStep, toggleGate } from '../state/workflow-draft';
 import { Button } from './Button';
 import { ConfirmDialog } from './Dialog';
 import { WorkflowInspector } from './WorkflowInspector';
@@ -42,7 +42,6 @@ export function WorkflowEditor({ editor, lanes, onClose, onSaved }: Props) {
   };
   const cancel = () => (editor.dirty && !readOnly ? setAsking('cancel') : onClose());
   const change = editor.setDraft;
-  const lastIndex = draft.steps.length - 1;
 
   return (
     <div className={styles.editor}>
@@ -103,7 +102,7 @@ export function WorkflowEditor({ editor, lanes, onClose, onSaved }: Props) {
         <div className={styles.flowPane}>
           <ol className={styles.flow} aria-label="Steps">
             {draft.steps.map((s, i) => {
-              const bad = errorAt(error, { stepId: s.id });
+              const bad = errorAt(error, { stepId: s.id }) || errorAt(error, { stepIndex: i });
               const gate = s.gate === 'human';
               return (
                 <li key={i} className={styles.item}>
@@ -179,7 +178,7 @@ export function WorkflowEditor({ editor, lanes, onClose, onSaved }: Props) {
             <div className={styles.toolbar} role="toolbar" aria-label={`Step ${sel + 1} actions`}>
               <Button
                 aria-label="Move step left"
-                disabled={sel === 0}
+                disabled={!canMoveStep(draft.steps.length, sel, -1)}
                 onClick={() => {
                   change((d) => moveStep(d, sel, -1));
                   setSelected(sel - 1);
@@ -189,7 +188,7 @@ export function WorkflowEditor({ editor, lanes, onClose, onSaved }: Props) {
               </Button>
               <Button
                 aria-label="Move step right"
-                disabled={sel === lastIndex}
+                disabled={!canMoveStep(draft.steps.length, sel, 1)}
                 onClick={() => {
                   change((d) => moveStep(d, sel, 1));
                   setSelected(sel + 1);

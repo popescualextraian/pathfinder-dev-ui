@@ -72,6 +72,25 @@ describe('WorkflowDefinitionFileRepository write side', () => {
     await r.save('one', def('T', { doneStage: 'plan' }));
   });
 
+  it('refuses the reserved id "new" with a clear message', async () => {
+    await expect(repo.save('new', def())).rejects.toThrow(/"new" is reserved/);
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('two concurrent updates with the same version: one succeeds, the other conflicts', async () => {
+    const a = await repo.save('one', def('A'));
+    const results = await Promise.allSettled([repo.save('one', def('B'), a.version), repo.save('one', def('C'), a.version)]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(lost.reason).toBeInstanceOf(WorkflowConflictError);
+  });
+
+  it('two concurrent deletes with the same version: one succeeds, the other is not found or conflicts', async () => {
+    const a = await repo.save('one', def('A'));
+    const results = await Promise.allSettled([repo.delete('one', a.version), repo.delete('one', a.version)]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+  });
+
   it.each(['', 'A', '../x', 'a/b', '.hidden', 'a.b', '-a', 'a'.repeat(65)])('refuses the id %j', async (id) => {
     await expect(repo.save(id, def())).rejects.toBeInstanceOf(WorkflowInvalidError);
     expect(readdirSync(dir)).toEqual([]);

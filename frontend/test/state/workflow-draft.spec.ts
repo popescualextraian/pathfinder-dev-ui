@@ -1,6 +1,6 @@
 import type { WorkflowDefinition } from '../../src/api/models';
 import {
-  addSession, addStep, duplicateDraft, errorAt, forkOptions, moveSession, moveStep, newDraft, proposeId, removeSession,
+  addSession, addStep, duplicateDraft, errorAt, normalize, forkOptions, moveSession, moveStep, newDraft, proposeId, removeSession,
   removeStep, setDoneStage, slugify, toggleGate, toWire, updateSession, updateStep,
 } from '../../src/state/workflow-draft';
 
@@ -21,6 +21,7 @@ describe('ids', () => {
     expect(slugify('  Plan & Implement!  ')).toBe('plan-implement');
     expect(slugify('--Ünï')).toBe('n');
     expect(slugify('!!!')).toBe('');
+    expect(slugify('New')).toBe('new-workflow');
     const long = slugify('a'.repeat(100));
     expect(long).toHaveLength(64);
     expect(slugify(`${'a'.repeat(63)} b`)).toBe('a'.repeat(63));
@@ -30,6 +31,8 @@ describe('ids', () => {
     expect(proposeId('Review', ['review', 'review-2'])).toBe('review-3');
     expect(proposeId('Review')).toBe('review');
     expect(proposeId('')).toBe('');
+    expect(proposeId('new')).toBe('new-workflow');
+    expect(proposeId('New', ['new-workflow'])).toBe('new-workflow-2');
     expect(proposeId('a'.repeat(64), ['a'.repeat(64)])).toHaveLength(64);
   });
 });
@@ -56,20 +59,27 @@ describe('steps', () => {
     expect(new Set(names(d).flat()).size).toBe(names(d).flat().length);
   });
 
-  it('removing the first step makes the next first session main and fixes forks', () => {
+  it('removing the first step renames nothing (validation then asks for main) and drops forks to gone sessions', () => {
     const d = removeStep(two(), 0);
-    expect(names(d)).toEqual([['main', 'b']]);
+    expect(names(d)).toEqual([['a', 'b']]);
     expect(d.steps[0].sessions[0].fork).toBeUndefined();
   });
 
-  it('moveStep swaps, no-op out of range, keeps main first and drops forks to later sessions', () => {
-    const d = moveStep(two(), 1, -1);
-    expect(d.steps.map((s) => s.id)).toEqual(['impl', 'plan']);
-    expect(names(d)[0][0]).toBe('main');
-    expect(d.steps[1].sessions[0].fork).toBeUndefined();
+  it('moveStep swaps later steps, is a no-op out of range and for any move involving the first step', () => {
+    const three = addStep(two());
+    const d = moveStep(three, 2, -1);
+    expect(d.steps.map((s) => s.id)).toEqual(['plan', 'step-1', 'impl']);
     const same = two();
     expect(moveStep(same, 0, -1)).toBe(same);
+    expect(moveStep(same, 0, 1)).toBe(same);
+    expect(moveStep(same, 1, -1)).toBe(same);
     expect(moveStep(same, 1, 1)).toBe(same);
+  });
+
+  it('normalize never renames sessions', () => {
+    const d = two();
+    d.steps[0].sessions[0].name = 'first';
+    expect(names(normalize(d))[0]).toEqual(['first']);
   });
 
   it('updateStep: stage optional, empty clears it', () => {
@@ -171,5 +181,10 @@ describe('toWire and errorAt', () => {
     expect(errorAt(err, { stepId: 'plan' })).toBe(false);
     expect(errorAt(err, { stepId: 'impl', field: 'prompt' })).toBe(false);
     expect(errorAt(null, { stepId: 'impl' })).toBe(false);
+    const byIndex = { message: 'm', stepIndex: 1, sessionIndex: 0, field: 'name' };
+    expect(errorAt(byIndex, { stepIndex: 1 })).toBe(true);
+    expect(errorAt(byIndex, { stepIndex: 1, sessionIndex: 0, field: 'name' })).toBe(true);
+    expect(errorAt(byIndex, { stepIndex: 0 })).toBe(false);
+    expect(errorAt(byIndex, { stepIndex: 1, sessionIndex: 1 })).toBe(false);
   });
 });

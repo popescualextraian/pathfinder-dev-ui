@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsArray, IsIn, IsNotEmpty, IsObject, IsOptional, IsString, Matches, ValidateNested } from 'class-validator';
-import { WORKFLOW_ID } from '../../../workflow';
+import { WORKFLOW_ID, WORKFLOW_ID_MESSAGE } from '../../../workflow';
 
 // Shape only (types, presence of the lists); the rules (non-empty, names, placeholders, stages) are the service's,
 // so the editor gets them as located errors.
@@ -33,7 +33,7 @@ export class ValidateWorkflowDto {
 }
 
 export class CreateWorkflowDto extends ValidateWorkflowDto {
-  @IsString() @Matches(WORKFLOW_ID, { message: `id must match ${WORKFLOW_ID}` })
+  @IsString() @Matches(WORKFLOW_ID, { message: WORKFLOW_ID_MESSAGE })
   id!: string;
 }
 

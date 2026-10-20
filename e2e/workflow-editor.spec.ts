@@ -17,7 +17,11 @@ test.afterEach(async ({ request }) => {
     await request.post(`/api/tasks/${run.taskId}/close`);
     await request.delete(`/api/tasks/${run.taskId}`);
   }
-  await request.delete(`/api/workflows/${id}`);
+  const stored = await request.get(`/api/workflows/${id}`);
+  if (stored.ok()) {
+    const { version } = (await stored.json()) as { version: string };
+    await request.delete(`/api/workflows/${id}?version=${version}`);
+  }
 });
 
 test('create a workflow in the editor, run it on a card, edit it', async ({ page }) => {
