@@ -44,4 +44,7 @@ export interface TaskLauncher {
   // Raw text of the task's cost ledger (ledger.jsonl in the task dir); works on a stopped task.
   // undefined when it is missing or larger than LEDGER_MAX_BYTES.
   readLedger(taskId: string): Promise<string | undefined>;
+  // Whether each path (relative to the worktree, as the agent sees it: /work) exists, file or directory.
+  // Works on a stopped task. Refuses bad paths itself (BadRequestException, see assertWorktreePaths).
+  hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>>;
 }

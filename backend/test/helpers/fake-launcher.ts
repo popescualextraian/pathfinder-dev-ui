@@ -1,4 +1,5 @@
 import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher } from '../../src/engine/service/task-launcher';
+import { assertWorktreePaths } from '../../src/engine/service/worktree-paths';
 
 // In-memory TaskLauncher: "containers" are map entries; every task's bridge is at `bridgeUrl`.
 export class FakeLauncher implements TaskLauncher {
@@ -30,6 +31,12 @@ export class FakeLauncher implements TaskLauncher {
   }
   async countRunning(): Promise<number> {
     return [...this.containers.values()].filter((c) => c.running).length;
+  }
+  // Which worktree paths exist, per task (hasFiles answers false for any path not listed).
+  files = new Map<string, Set<string>>();
+  async hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>> {
+    assertWorktreePaths(paths);
+    return Object.fromEntries(paths.map((p) => [p, this.files.get(taskId)?.has(p) ?? false]));
   }
   async readLedger(): Promise<string | undefined> {
     return this.ledger;

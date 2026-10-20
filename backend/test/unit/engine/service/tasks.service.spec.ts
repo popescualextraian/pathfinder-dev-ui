@@ -605,3 +605,23 @@ describe('TasksService announces changes', () => {
 
 beforeEach(() => { jest.spyOn(Logger.prototype, 'warn').mockImplementation(); });
 afterEach(() => jest.restoreAllMocks());
+
+describe('TasksService.hasFiles', () => {
+  it('delegates to the launcher with the task id', async () => {
+    const hasFiles = jest.fn(async () => ({ 'a.md': true }));
+    const { service } = setup({ launcher: { hasFiles } });
+    await expect(service.hasFiles(ID, ['a.md'])).resolves.toEqual({ 'a.md': true });
+    expect(hasFiles).toHaveBeenCalledWith(ID, ['a.md']);
+  });
+  it('refuses bad paths with 400 without calling the launcher', async () => {
+    const hasFiles = jest.fn(async () => ({}));
+    const { service } = setup({ launcher: { hasFiles } });
+    await expect(service.hasFiles(ID, ['../x'])).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.hasFiles(ID, ['/x'])).rejects.toBeInstanceOf(BadRequestException);
+    expect(hasFiles).not.toHaveBeenCalled();
+  });
+  it('is 404 for an unknown task', async () => {
+    const { service } = setup({ records: [] });
+    await expect(service.hasFiles('T-nope', ['a'])).rejects.toBeInstanceOf(NotFoundException);
+  });
+});

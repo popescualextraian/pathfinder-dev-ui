@@ -1,5 +1,5 @@
 import Docker from 'dockerode';
-import { Logger } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../../../src/commons/engine-config';
 import { DockerTaskLauncher } from '../../../../../src/engine/integration/launcher/docker-task-launcher';
@@ -319,5 +319,33 @@ describe('DockerTaskLauncher.readLedger', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('T-1'));
     expect(stream.destroyed).toBe(true);
     warn.mockRestore();
+  });
+});
+
+describe('DockerTaskLauncher.hasFiles', () => {
+  it('asks the container archive for each path under /work (true when it answers, false on 404)', async () => {
+    const { launcher, docker, container } = setup();
+    const stream = Readable.from([Buffer.alloc(512)]);
+    container.getArchive.mockImplementation(async ({ path }: { path: string }) => {
+      if (path === '/work/plans/7.md') return stream;
+      throw dockerError(404);
+    });
+    await expect(launcher.hasFiles('T-1', ['plans/7.md', 'plans/8.md'])).resolves.toEqual({ 'plans/7.md': true, 'plans/8.md': false });
+    expect(docker.getContainer).toHaveBeenCalledWith('agentic-ui-task-T-1');
+    expect(container.getArchive).toHaveBeenCalledWith({ path: '/work/plans/7.md' });
+    expect(stream.destroyed).toBe(true);
+  });
+
+  it('rethrows other docker errors', async () => {
+    const { launcher, container } = setup();
+    container.getArchive.mockRejectedValue(dockerError(500));
+    await expect(launcher.hasFiles('T-1', ['a'])).rejects.toThrow('docker 500');
+  });
+
+  it('refuses .. and absolute paths before calling docker', async () => {
+    const { launcher, container } = setup();
+    await expect(launcher.hasFiles('T-1', ['ok', '../etc/passwd'])).rejects.toThrow(BadRequestException);
+    await expect(launcher.hasFiles('T-1', ['/etc/passwd'])).rejects.toThrow(BadRequestException);
+    expect(container.getArchive).not.toHaveBeenCalled();
   });
 });

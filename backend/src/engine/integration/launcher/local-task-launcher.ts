@@ -6,6 +6,7 @@ import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { EngineConfig } from '../../../commons/engine-config';
 import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
+import { assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from './git-credential-env';
 
 type LauncherConfig = Pick<
@@ -252,6 +253,24 @@ export class LocalTaskLauncher implements TaskLauncher {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
       throw error;
     }
+  }
+
+  // The agent's /work is <task dir>/work here.
+  async hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>> {
+    assertWorktreePaths(paths);
+    const work = join(this.root, taskId, 'work');
+    const result: Record<string, boolean> = {};
+    for (const path of paths) {
+      try {
+        await stat(join(work, path));
+        result[path] = true;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
+        result[path] = false;
+      }
+    }
+    return result;
   }
 
   // Bridge stdout/stderr so far (the last 64 KiB), for diagnostics.

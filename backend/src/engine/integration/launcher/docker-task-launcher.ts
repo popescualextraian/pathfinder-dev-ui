@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import Docker from 'dockerode';
 import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../commons/engine-config';
+import { assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from './git-credential-env';
 import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
 
@@ -134,6 +135,24 @@ export class DockerTaskLauncher implements TaskLauncher {
       return undefined;
     }
     return file.toString('utf8');
+  }
+
+  // The agent's worktree is /work in the container; a 404 from the archive API means the path is absent.
+  async hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>> {
+    assertWorktreePaths(paths);
+    const container = this.docker.getContainer(this.name(taskId));
+    const result: Record<string, boolean> = {};
+    for (const path of paths) {
+      try {
+        const stream = (await container.getArchive({ path: `/work/${path}` })) as unknown as Readable;
+        stream.destroy();
+        result[path] = true;
+      } catch (error) {
+        if (!hasStatus(error, 404)) throw error;
+        result[path] = false;
+      }
+    }
+    return result;
   }
 
   private name(taskId: string): string {

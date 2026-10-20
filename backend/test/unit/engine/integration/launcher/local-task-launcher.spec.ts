@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -325,5 +325,33 @@ describe('LocalTaskLauncher.readLedger', () => {
     await expect(launcher().readLedger('T-1')).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('T-1'));
     warn.mockRestore();
+  });
+});
+
+describe('LocalTaskLauncher.hasFiles', () => {
+  let dataDir: string;
+  beforeEach(() => {
+    dataDir = mkdtempSync(join(tmpdir(), 'hasfiles-'));
+    mkdirSync(join(dataDir, 'local-tasks', 'T-1', 'work', 'plans', 'sub'), { recursive: true });
+    writeFileSync(join(dataDir, 'local-tasks', 'T-1', 'work', 'plans', '7.md'), 'x');
+    writeFileSync(join(dataDir, 'local-tasks', 'T-1', 'work', 'plans', 'sub', 'a.txt'), 'x');
+    writeFileSync(join(dataDir, 'local-tasks', 'T-1', 'secret.txt'), 'x');
+  });
+  afterEach(() => rmSync(dataDir, { recursive: true, force: true }));
+  const launcher = () => new LocalTaskLauncher({ ...base, dataDir, localAgent: 'fake' });
+
+  it('reports present, missing, nested files and directories in the worktree', async () => {
+    await expect(launcher().hasFiles('T-1', ['plans/7.md', 'plans/8.md', 'plans/sub/a.txt', 'plans'])).resolves.toEqual({
+      'plans/7.md': true, 'plans/8.md': false, 'plans/sub/a.txt': true, plans: true,
+    });
+  });
+
+  it('reports false for everything when the task folder is missing', async () => {
+    await expect(launcher().hasFiles('T-9', ['a'])).resolves.toEqual({ a: false });
+  });
+
+  it('refuses .. and absolute paths itself', async () => {
+    await expect(launcher().hasFiles('T-1', ['../secret.txt'])).rejects.toThrow(BadRequestException);
+    await expect(launcher().hasFiles('T-1', [join(dataDir, 'local-tasks', 'T-1', 'secret.txt')])).rejects.toThrow(BadRequestException);
   });
 });

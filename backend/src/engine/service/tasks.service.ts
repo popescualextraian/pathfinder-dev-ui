@@ -1,4 +1,5 @@
 import { BadGatewayException, BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { assertWorktreePaths } from './worktree-paths';
 import { randomBytes, randomInt } from 'node:crypto';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 import {
@@ -375,6 +376,13 @@ export class TasksService {
     const view = toView(updated, live);
     if (viewsDiffer(toView(record), view)) this.updates.changed(view);
     return view;
+  }
+
+  // Whether each path exists in the task's worktree (as the agent sees it); works on a stopped task.
+  async hasFiles(id: string, paths: string[]): Promise<Record<string, boolean>> {
+    assertWorktreePaths(paths);
+    const record = await this.require(id);
+    return this.launcher.hasFiles(record.id, paths);
   }
 
   private async require(id: string): Promise<TaskRecord> {
