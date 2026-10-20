@@ -37,7 +37,7 @@ flowchart LR
     end
     DATA[("<b>Task records</b><br/>one JSON file per task, with its tokens<br/><i>ENGINE_DATA_DIR: volume engine-data at /data</i>")]
   end
-  DOCKER["<b>Docker engine</b><br/>creates and removes task containers<br/><i>/var/run/docker.sock</i>"]
+  DOCKER["<b>Docker engine</b><br/>creates and removes task containers<br/><i>/var/run/docker.sock, reached through the docker-filter in the compose setup</i>"]
   subgraph task["<b>Pathfinder Dev Base</b> (one task container per task)"]
     BR["<b>agentic-bridge</b><br/>task state, questions, action gate,<br/>event stream<br/><i>HTTP API v1 + WebSocket, port 8765</i>"]
     AG["<b>Agent</b><br/>does the work on the task's branch<br/><i>Claude Code</i>"]
@@ -220,10 +220,10 @@ is missing or invalid, naming the variable, never printing a value.
 | `CLAUDE_CODE_OAUTH_TOKEN` | `docker`; `local` only with `ENGINE_LOCAL_AGENT=claude`; secret | Passed into task containers. |
 | `GH_TOKEN` | `docker`; optional for `local` (needed only to push); secret | Passed into task containers; used for the clone and for push. |
 | `ENGINE_TASK_EXTRA_ENV` | no, test hook | JSON object of strings added to each task container's environment (keys must be valid variable names; keys the engine sets itself, such as the tokens, `GH_TOKEN`, `AGENTIC_TASK_ID`, `AGENTIC_BRANCH`, `AGENTIC_BRIDGE_HOSTS`, the four `GIT_AUTHOR_*`/`GIT_COMMITTER_*` identity variables, `GIT_CONFIG_COUNT` and `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, are refused at start-up). |
-| `ENGINE_TASK_EXTRA_BINDS` | no, test hook | JSON array of `host:container[:mode]` binds added to each task container. |
+| `ENGINE_TASK_EXTRA_BINDS` | no, test hook | JSON array of `host:container[:mode]` binds added to each task container. Does not work through the Docker socket filter of the compose setup: every launch is refused with 403 (the filter allows only the task volume as bind). |
 
 `ENGINE_DATA_DIR`, `ENGINE_REPO_URL` and `ENGINE_PROJECT` are required for every launcher. `PORT` (default 3000) sets the HTTP port; the app listens on all interfaces. Docker itself is reached through the usual socket or
-`DOCKER_HOST` (dockerode).
+`DOCKER_HOST` (dockerode); in the compose setup `DOCKER_HOST` points at the filtered socket (see Deployment).
 
 ## REST API
 
@@ -504,7 +504,7 @@ The fake agent and `agentic-bridge` come from a checkout of this repository and 
 `Dockerfile` image contains neither `tools/` nor the bridge, so use `local` from a checkout (the Docker image is for the `docker`
 launcher). `tools/` is deliberately not copied into the image: `local` would still lack `agentic-bridge` there.
 
-## Run in Docker
+## Deployment
 
 Two different images are involved:
 
@@ -513,31 +513,83 @@ Two different images are involved:
 - The **UI image** is built from `Dockerfile` (Node 22, `npm ci`, `npm run build`, runs
   `node dist/backend/main.js` as user `node`, port 3000). It only contains this engine.
 
+`compose.yaml` runs two services:
+
+- `docker-filter` (built from `socket-filter/`) is the only service that mounts the raw `/var/run/docker.sock`.
+  It has no network (`network_mode: none`), a read-only file system, no capabilities, `no-new-privileges`,
+  and `group_add` of `DOCKER_GID`. It serves a narrowed Docker API on a Unix socket in the named volume
+  `docker-filter` (`/run/docker-filter/docker.sock`). Its rules are in `socket-filter/README.md`.
+- `ui` has neither the raw socket nor the Docker group. `DOCKER_HOST=unix:///run/docker-filter/docker.sock`
+  points dockerode at the filtered socket. It is published on `127.0.0.1:${UI_PORT:-3000}` only, keeps task
+  records, backlog cache and workflow runs in the named volume `engine-data` at `/data`, and waits for the
+  filter to be healthy. Both services have health checks (`GET /api/health` for the UI: `{"ok":true}`, no Docker call).
+
+Both services and the task containers use the network `agentic-ui` (fixed name; the filter allows task
+containers only on it), so the UI reaches each bridge by container name. `compose.yaml` sets
+`ENGINE_LAUNCHER=docker`, `ENGINE_DOCKER_NETWORK=agentic-ui`, `ENGINE_DATA_DIR=/data` and the container paths of
+the backlog and workflows; these win over the same names in the env file. `ENGINE_IMAGE` (default
+`agentic-pathfinder-dev-ui:local`) is passed to the filter as well, which allows exactly that image.
+
+### One-time setup
+
+1. Build the task image: `agentic build`; note its tag.
+2. Create the env file: `cp .env.example .env` and fill in secrets, `ENGINE_IMAGE`, `ENGINE_REPO_URL`,
+   `ENGINE_PROJECT`, `ENGINE_GIT_NAME`, `ENGINE_GIT_EMAIL`. It may live elsewhere (it holds secrets); then
+   `PATHFINDER_ENV_FILE` names its path (`tools/deploy.sh` sets it for you). Compose reads the `ui`
+   environment from it and, with `--env-file`, the `${...}` variables of `compose.yaml`.
+3. Put `DOCKER_GID` in that file: the numeric group id of the host's Docker socket,
+   `stat -c %g /var/run/docker.sock`. Compose refuses to start without it. Optional: `UI_PORT`,
+   `ENGINE_MAX_RUNNING`.
+4. Host folders (optional, absolute paths on the Docker host, mounted read-only): for the backlog set
+   `BACKLOG_CONFIG_FILE` to the lanes YAML file; for workflows set `WORKFLOWS_DIR_HOST` to the directory of
+   the definitions (they also need the backlog). The token variable named by `gitlab.tokenEnv`
+   (`GITLAB_TOKEN`) comes from the env file. Without them the example files are mounted and the backlog and
+   workflows stay off. The data directories are inside `engine-data` (`/data/backlog`, `/data/workflows`).
+
+### Deploy and redeploy
+
 ```sh
-agentic build                       # the task image; note its tag for ENGINE_IMAGE
-cp .env.example .env                # fill in secrets, ENGINE_IMAGE, ENGINE_REPO_URL, ENGINE_PROJECT, ENGINE_GIT_*
-DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up --build
+tools/deploy.sh /path/to/env-file
 ```
 
-`compose.yaml` runs service `ui` (published on `127.0.0.1:${UI_PORT:-3000}` only) with `.env`, the Docker socket, a named volume `engine-data` at
-`/data` (task records), `group_add` of the numeric `DOCKER_GID` (so the non-root user may use the
-socket; compose refuses to start without it), and a network with the fixed name `agentic-ui`. It sets
-`ENGINE_DOCKER_NETWORK=agentic-ui` and `ENGINE_DATA_DIR=/data`, which win over `.env`; `ENGINE_IMAGE`
-defaults to `agentic-pathfinder-dev-ui:local`. Task containers started by the UI join `agentic-ui`, so
-the UI reaches each bridge by container name. Host paths in `ENGINE_TASK_EXTRA_BINDS` refer to the
-Docker host, not to the UI container.
+The script refuses to run when the checkout has local changes or is not on `main`, runs
+`git pull --ff-only`, checks that the task image (`ENGINE_IMAGE` in the env file) exists locally (otherwise it
+stops and tells you to run `agentic build`), runs `docker compose --env-file <file> up -d --build --wait` and prints
+the URL. The env file is never printed or sourced (only `ENGINE_IMAGE` and `UI_PORT` are read from it).
+Redeploying is the same command. By hand: `PATHFINDER_ENV_FILE=<file> docker compose --env-file <file> up -d --build --wait`
+(just `docker compose up -d --build --wait` with `.env` and `DOCKER_GID` in it).
 
-Backlog in Docker: set `BACKLOG_CONFIG_FILE` (in `.env` or the shell) to the host path of the lanes YAML;
-compose mounts it read-only at `/etc/pathfinder/backlog.yaml`, sets `BACKLOG_CONFIG` to it and
-`BACKLOG_DATA_DIR=/data/backlog` (inside the `engine-data` volume, which the `node` user can write). The token variable named in the YAML (`GITLAB_TOKEN`)
-comes from `.env`. Without `BACKLOG_CONFIG_FILE` the backlog is off.
+What survives a redeploy: everything in the volume `engine-data` (task records, workflow runs, the backlog
+cache), the task containers and their volumes `agentic-ui-task-<id>` (they are not compose services and keep
+running; the new UI finds them again through the records), and the host files. What does not: open browser
+streams (SSE and WebSocket connections reconnect) and requests in flight. `docker compose down -v` would delete
+`engine-data`, so the records; plain `down` keeps it.
 
-Workflows in Docker: set `WORKFLOWS_DIR_HOST` to the host directory of the definitions (for example a copy of `workflows.example/`);
-compose mounts it read-only at `/etc/pathfinder/workflows`, sets `WORKFLOWS_DIR` to it and `WORKFLOWS_DATA_DIR=/data/workflows`. They need the
-backlog (`BACKLOG_CONFIG_FILE`) too; without `WORKFLOWS_DIR_HOST` workflows are off. The `Dockerfile` needs no change.
+### What the filter allows, and its limits
 
-Warning: access to the Docker socket is root on the host. Whoever controls this container, or can
-call its API, can control the host. Run it only where that is acceptable.
+The filter allows only what the task launcher needs, and only for task containers (name prefix
+`agentic-ui-task-`, label `agentic-ui.kind=task`, image `ENGINE_IMAGE`, network `agentic-ui`): create a task
+volume and container with exactly the launcher's settings, start (by name, or by the full container id the
+launcher gets from create), stop, inspect, copy a file out (`archive`) and remove them, list task containers, and `_ping`/`version`.
+Everything else is answered 403, including exec, attach, logs, images, networks, other containers, and every
+connection upgrade. Consequences:
+
+- `ENGINE_TASK_EXTRA_BINDS` does not work: the filter allows only the task's own volume as bind, so a launch with
+  extra binds fails with 403 (and the launcher removes the volume again). Use it only without the filter
+  (`npm start` on a host with a Docker socket).
+- No `docker exec` into task containers through the UI's socket; use the host's Docker for debugging.
+- TOCTOU: for actions on an existing container the filter inspects it first and then forwards the action; the
+  container could be replaced in between. Only a client with raw socket access could do that, so this is accepted.
+- The filter container is still root-equivalent on the host (it has the raw socket); its rules limit what the
+  UI can ask for, not what a compromised filter can do. The task containers themselves run with all capabilities
+  dropped, but their environment holds the tokens (see below).
+
+Tests: `npm run test:filter` (the filter's own suite; `npm test` includes it) and `npm run test:docker:filter`
+(real Docker: the filter on a temporary socket against the real daemon, the launcher through it, and forbidden
+requests that must change nothing; needs `ENGINE_IMAGE` and a reachable Docker daemon, otherwise skipped with a message on stderr).
+
+Backlog and workflow variables are described in Backlog and Workflows; `BACKLOG_CONFIG_FILE` and
+`WORKFLOWS_DIR_HOST` (host paths) are the compose names for `BACKLOG_CONFIG` and `WORKFLOWS_DIR`.
 
 Push credentials: the task image configures git credentials only for the clone host during its own
 start steps, so the engine also gives each task container the same git settings through
@@ -549,11 +601,11 @@ the token, and nothing is written to a file. Commits are made as `ENGINE_GIT_NAM
 
 Secrets in container environments: each task container gets `CLAUDE_CODE_OAUTH_TOKEN`, `GH_TOKEN`,
 its task token and its agent token as environment variables, so anyone who can run `docker inspect`
-on it (anyone with Docker socket access, i.e. root-equivalent anyway) can read them; the same holds
+on it (anyone with raw Docker socket access, i.e. root-equivalent anyway; the `ui` container has none) can read them; the same holds
 for `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` in the `ui` container's environment (from `.env`). This
 is accepted for now; API responses and container labels never contain them.
 
-The Docker parts (`Dockerfile`, `compose.yaml`, `npm run test:docker`) were written without a Docker
+The Docker parts (`Dockerfile`, `compose.yaml`, `tools/deploy.sh`, `npm run test:docker`, `npm run test:docker:filter`) were written without a Docker
 daemon available and have not been run yet; `docker compose config` accepts the compose file.
 
 ## Test
@@ -564,6 +616,8 @@ daemon available and have not been run yet; `docker compose config` accepts the 
 | `npm run test:e2e` | Backend e2e tests (`backend/test/e2e/`, Jest + supertest; REST API with a fake launcher and a fake bridge). Needs a prior `npm run build` for the frontend tests. |
 | `npm run test:bridge` | `backend/test/bridge/`: the real `agentic-bridge` as a local process with a fake agent (`tools/fake-agent/fake-agent.mjs`), driven through the bridge client, the task service and the REST API (local launcher); also the poller and the status stream (a turn, an `ASK:` question and its answer, close), with a one-second poll interval. Skipped with a message on stderr where `agentic-bridge` is not on PATH. |
 | `npm run test:docker` | `backend/test/docker/`: real Docker, real task image, fake agent: start a task, reach idle, prompt and see the echo, wake it after `docker stop`, stop it (a prompt is then refused with 409 without starting it), remove, check container and volume are gone. Needs both `ENGINE_IMAGE` (the task image) and `FAKE_AGENT_DIR` (directory holding agentic-dev-base's `bridge/test/fake-agent.mjs`, mounted at `/fake`), and a reachable Docker daemon (Linux Docker or Docker Desktop); otherwise skipped with a message on stderr. The test process never connects to container IPs: bridge requests run in a helper container from `ENGINE_IMAGE` on the test network (`node` with a small built-ins-only script, `backend/test/docker/bridge-request.cjs`) and reach the task by container name, as the UI does. It creates a temporary network, the helper container and a local git repository (bound into the task and cloned from there, no GitHub needed), and removes all of them, task containers and volumes in `afterAll`, also after a failure. Example: `ENGINE_IMAGE=agentic-pathfinder-dev-ui:local FAKE_AGENT_DIR=/path/to/agentic-dev-base/bridge/test npm run test:docker` |
+| `npm run test:filter` | `socket-filter/test/`: the Docker socket filter's own suite (rules, server against a fake daemon). Also part of `npm test`. |
+| `npm run test:docker:filter` | `backend/test/docker-filter/`: real Docker; the filter on a temporary socket, `DockerTaskLauncher` through it, and forbidden requests (privileged, bind of `/`, other image, exec, foreign container, bind volume) that must answer 403 and change nothing. Needs `ENGINE_IMAGE` and a Docker daemon on a Unix socket, otherwise skipped with a message on stderr. |
 | `npm run test:ui` | Playwright (`e2e/`). Builds and starts the app on port 3100, uses the Chromium under `PLAYWRIGHT_BROWSERS_PATH` if set. |
 | `npm run lint` | ESLint for `backend/src/` and `backend/test/` |
 
@@ -631,7 +685,9 @@ frontend/
   test/                     unit tests, mirroring src/
 e2e/                        Playwright tests (whole app)
 package.json                one, at the root
-Dockerfile, compose.yaml    the UI image and its compose setup (see Run in Docker)
+socket-filter/              the Docker socket filter, self-contained (own package.json, tsconfig, Dockerfile, tests; imports nothing from backend/)
+tools/deploy.sh             deploys or redeploys the compose setup (see Deployment)
+Dockerfile, compose.yaml    the UI image and its compose setup (see Deployment)
 backlog.example.yaml        lanes config of the backlog (BACKLOG_CONFIG)
 workflows.example/          example workflow definitions (WORKFLOWS_DIR)
 .env.example                engine and backlog configuration template
