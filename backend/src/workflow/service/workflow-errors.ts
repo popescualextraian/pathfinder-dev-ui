@@ -20,3 +20,10 @@ export class WorkflowInvalidError extends Error {
     this.name = 'WorkflowInvalidError';
   }
 }
+
+export class WorkflowReadOnlyError extends Error {
+  constructor(message = 'The workflow folder is read-only') {
+    super(message);
+    this.name = 'WorkflowReadOnlyError';
+  }
+}

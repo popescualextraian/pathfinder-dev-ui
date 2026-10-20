@@ -31,6 +31,8 @@ export interface WorkflowDefinition {
 export interface RefusedWorkflow {
   file: string;
   error: string;
+  /** Version of the file content (for deleting it); absent when the file could not be read. */
+  version?: string;
 }
 
 export interface WorkflowDefinitions {

@@ -1,8 +1,9 @@
 import { Subject } from 'rxjs';
 import type {
-  WorkflowDefinition, WorkflowDefinitionRepository, WorkflowDefinitions, WorkflowSessionSnapshot, WorkflowSessionStart,
+  StoredWorkflow, WorkflowDefinition, WorkflowDefinitionRepository, WorkflowDefinitions, WorkflowSessionSnapshot, WorkflowSessionStart,
   WorkflowTaskSnapshot, WorkflowTaskStart, WorkflowTasks, WorkItem, WorkItems,
 } from '../../src/workflow';
+import { WorkflowConflictError, WorkflowNotFoundError, WorkflowReadOnlyError } from '../../src/workflow';
 
 // In-memory WorkflowTasks. Sessions change only through the helpers, so tests control every state the runner sees.
 export class FakeWorkflowTasks implements WorkflowTasks {
@@ -92,6 +93,9 @@ export class FakeWorkItems implements WorkItems {
 }
 
 export class FakeDefinitions implements WorkflowDefinitionRepository {
+  private versions = new Map<string, number>();
+  isWritable = true;
+
   constructor(private readonly defs: WorkflowDefinition[]) {}
 
   async list(): Promise<WorkflowDefinitions> {
@@ -100,5 +104,39 @@ export class FakeDefinitions implements WorkflowDefinitionRepository {
 
   async get(id: string): Promise<WorkflowDefinition | undefined> {
     return this.defs.find((d) => d.id === id);
+  }
+
+  async read(id: string): Promise<StoredWorkflow> {
+    const definition = this.defs.find((d) => d.id === id);
+    if (!definition) throw new WorkflowNotFoundError('Workflow not found');
+    return { definition, version: String(this.versions.get(id) ?? 0) };
+  }
+
+  async save(id: string, definition: WorkflowDefinition, expectedVersion?: string): Promise<StoredWorkflow> {
+    if (!this.isWritable) throw new WorkflowReadOnlyError();
+    const at = this.defs.findIndex((d) => d.id === id);
+    if (expectedVersion === undefined && at >= 0) throw new WorkflowConflictError('exists');
+    if (expectedVersion !== undefined && at < 0) throw new WorkflowNotFoundError('Workflow not found');
+    if (expectedVersion !== undefined && expectedVersion !== String(this.versions.get(id) ?? 0)) throw new WorkflowConflictError('changed');
+    const next = { ...definition, id };
+    if (at >= 0) this.defs[at] = next; else this.defs.push(next);
+    this.versions.set(id, (this.versions.get(id) ?? 0) + 1);
+    return { definition: next, version: String(this.versions.get(id)) };
+  }
+
+  async delete(id: string, expectedVersion: string): Promise<void> {
+    if (!this.isWritable) throw new WorkflowReadOnlyError();
+    const at = this.defs.findIndex((d) => d.id === id);
+    if (at < 0) throw new WorkflowNotFoundError('Workflow not found');
+    if (expectedVersion !== String(this.versions.get(id) ?? 0)) throw new WorkflowConflictError('changed');
+    this.defs.splice(at, 1);
+  }
+
+  async deleteRefused(): Promise<void> {
+    throw new WorkflowNotFoundError('Workflow file not found');
+  }
+
+  async writable(): Promise<boolean> {
+    return this.isWritable;
   }
 }

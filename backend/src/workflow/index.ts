@@ -10,15 +10,16 @@ export type {
   TaskChanges, WorkflowSessionSnapshot, WorkflowSessionStart, WorkflowTaskSnapshot, WorkflowTaskStart, WorkflowTaskState, WorkflowTasks,
 } from './service/workflow-tasks';
 export { WORKFLOW_DEFINITION_REPOSITORY } from './service/workflow-definition.repository';
-export type { WorkflowDefinitionRepository } from './service/workflow-definition.repository';
+export type { StoredWorkflow, WorkflowDefinitionRepository } from './service/workflow-definition.repository';
 export { WorkflowDefinitionFileRepository } from './repository/workflow-definition-file.repository';
+export type { WorkflowDefinitionFileOptions } from './repository/workflow-definition-file.repository';
 export { ACTIVE_STATES, isActive } from './service/workflow-run';
 export { toRunView } from './service/workflow-run';
 export type { RunPhase, RunSession, RunSessionStatus, RunState, WorkflowRun, WorkflowRunView } from './service/workflow-run';
 export { WORKFLOW_RUN_REPOSITORY } from './service/workflow-run.repository';
 export type { WorkflowRunRepository } from './service/workflow-run.repository';
 export { WorkflowRunFileRepository } from './repository/workflow-run-file.repository';
-export { WorkflowConflictError, WorkflowInvalidError, WorkflowNotFoundError } from './service/workflow-errors';
+export { WorkflowConflictError, WorkflowInvalidError, WorkflowNotFoundError, WorkflowReadOnlyError } from './service/workflow-errors';
 export { WORKFLOW_RETRY_DELAYS, WorkflowRunner } from './service/workflow-runner';
 export type { RetryDelays } from './service/workflow-runner';
 export { WorkflowRunUpdates } from './service/workflow-run-updates';

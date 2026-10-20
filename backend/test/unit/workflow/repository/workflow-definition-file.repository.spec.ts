@@ -43,7 +43,7 @@ describe('WorkflowDefinitionFileRepository', () => {
     writeFileSync(join(dir, 'one.yml'), GOOD('Other one'));
     const r = await new WorkflowDefinitionFileRepository(dir).list();
     expect(r.definitions.map((d) => [d.id, d.title])).toEqual([['one', 'One']]);
-    expect(r.refused).toEqual([{ file: 'one.yml', error: 'one.yml: duplicate workflow id "one" (also one.yaml)' }]);
+    expect(r.refused).toEqual([{ file: 'one.yml', error: 'one.yml: duplicate workflow id "one" (also one.yaml)', version: expect.any(String) }]);
   });
 
   it('re-reads on every list', async () => {
