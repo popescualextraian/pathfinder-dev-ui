@@ -443,8 +443,7 @@ A save through the editor rewrites the file as YAML: comments of a hand-written 
 **Editor** (`#/workflows`, `#/workflows/<id>`, `#/workflows/new`): the list (Edit, Duplicate, Delete, refused files with Delete only) and
 an editor showing the workflow as a flow of steps with the gate on the arrow between them (click toggles), an inspector for the selected step
 (lane to move to or none, required files, exit prompt, sessions with placeholder chips) and the first error marked on its step and field.
-Read-only folders open the editor read-only. Docker: the compose mount of `WORKFLOWS_DIR_HOST` is read-only today, so the deployed UI shows
-the workflows read-only until the mount is made writable. `start:local` copies nothing by default: its folder is written in place
+Read-only folders open the editor read-only. Docker: compose mounts `WORKFLOWS_DIR_HOST` writable; see Docker deployment for who must be able to write it. `start:local` copies nothing by default: its folder is written in place
 (Playwright's server uses a copy under `.local/<port>/workflows`).
 
 In the UI (board, `#/backlog`): a card without a run has a **Workflow** button (a picker when there are several definitions, then a confirmation).
@@ -558,9 +557,13 @@ the backlog and workflows; these win over the same names in the env file. `ENGIN
 3. Put `DOCKER_GID` in that file: the numeric group id of the host's Docker socket,
    `stat -c %g /var/run/docker.sock`. Compose refuses to start without it. Optional: `UI_PORT`,
    `ENGINE_MAX_RUNNING`.
-4. Host folders (optional, absolute paths on the Docker host, mounted read-only): for the backlog set
-   `BACKLOG_CONFIG_FILE` to the lanes YAML file; for workflows set `WORKFLOWS_DIR_HOST` to the directory of
-   the definitions (they also need the backlog). The token variable named by `gitlab.tokenEnv`
+4. Host folders (optional, absolute paths on the Docker host): for the backlog set `BACKLOG_CONFIG_FILE` to
+   the lanes YAML file (mounted read-only); for workflows set `WORKFLOWS_DIR_HOST` to the directory of
+   the definitions (they also need the backlog). The definitions are mounted **writable**, because the
+   editor saves into them. The `ui` container runs as the image's `node` user (uid 1000, no `user:` in
+   compose), so the host folder must be writable by uid 1000 (`chown 1000 <dir>`, or mode 777; the files
+   inside too if they should be editable: `chown -R 1000 <dir>`). Otherwise the editor shows the workflows
+   read-only (403 on writes); everything else works. The token variable named by `gitlab.tokenEnv`
    (`GITLAB_TOKEN`) comes from the env file. Without them the example files are mounted and the backlog and
    workflows stay off. The data directories are inside `engine-data` (`/data/backlog`, `/data/workflows`).
 
