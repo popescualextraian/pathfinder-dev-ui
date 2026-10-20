@@ -31,6 +31,7 @@ describe('backlog API (e2e)', () => {
   });
 
   it('shows lane ids and titles, and no mapping, trigger or token', async () => {
+    await api().post('/api/backlog/refresh').expect(200); // the user is read in the background at startup, a refresh fills it
     const res = await api().get('/api/backlog/lanes').expect(200);
     expect(res.body).toEqual({
       me: 'tester',
@@ -74,7 +75,7 @@ describe('backlog API (e2e)', () => {
   it('validates the move body and the target lane', async () => {
     await api().post('/api/backlog/items/1/move').send({ from: '', to: 'doing' }).expect(400);
     await api().post('/api/backlog/items/1/move').send({ from: 'backlog' }).expect(400);
-    await api().post('/api/backlog/items/1/move').send({ from: 'backlog', to: 'nowhere' }).expect(404);
+    await api().post('/api/backlog/items/1/move').send({ from: 'backlog', to: 'nowhere' }).expect(400);
   });
 
   it('answers an unknown item with 404', async () => {

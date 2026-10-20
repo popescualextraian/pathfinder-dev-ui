@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
@@ -32,6 +33,17 @@ export class BacklogConfigError extends Error {
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+
+function warnIfClearText(baseUrl: string): void {
+  try {
+    const url = new URL(baseUrl);
+    if (url.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
+      new Logger('BacklogConfig').warn('gitlab.baseUrl uses http: the token would travel in clear text');
+    }
+  } catch {
+    // an unparsable URL is reported when it is used
+  }
+}
 
 export function parseBacklogConfig(yamlText: string, env: NodeJS.ProcessEnv): BacklogConfig {
   const problems: string[] = [];
@@ -70,6 +82,7 @@ export function parseBacklogConfig(yamlText: string, env: NodeJS.ProcessEnv): Ba
     const project = str(g.project);
     const tokenEnv = str(g.tokenEnv);
     if (!baseUrl) problems.push('gitlab.baseUrl is required');
+    else warnIfClearText(baseUrl);
     if (!project) problems.push('gitlab.project is required');
     let token = '';
     if (!tokenEnv) problems.push('gitlab.tokenEnv is required');
@@ -84,6 +97,7 @@ export function parseBacklogConfig(yamlText: string, env: NodeJS.ProcessEnv): Ba
   if (!Array.isArray(root.lanes) || root.lanes.length === 0) problems.push('lanes must be a non-empty list');
   else {
     const seen = new Set<string>();
+    const labels = new Set<string>();
     root.lanes.forEach((raw: unknown, i: number) => {
       const at = `lanes[${i}]`;
       if (!isObj(raw)) {
@@ -109,7 +123,12 @@ export function parseBacklogConfig(yamlText: string, env: NodeJS.ProcessEnv): Ba
       if (isObj(raw.gitlab)) {
         const m: NonNullable<LaneConfig['gitlab']> = {};
         const label = str(raw.gitlab.label);
-        if (label) m.label = label;
+        if (label) {
+          m.label = label;
+          if (label.includes(',')) problems.push(`${at}.gitlab.label must not contain a comma`);
+          else if (labels.has(label)) problems.push(`${at}.gitlab.label is used by another lane`);
+          else labels.add(label);
+        }
         if (raw.gitlab.state !== undefined) {
           if (raw.gitlab.state === 'closed') m.state = 'closed';
           else problems.push(`${at}.gitlab.state must be closed`);
@@ -119,6 +138,8 @@ export function parseBacklogConfig(yamlText: string, env: NodeJS.ProcessEnv): Ba
       } else if (connector === 'gitlab') problems.push(`${at}.gitlab is required for the gitlab connector`);
       lanes.push(lane);
     });
+    const closed = lanes.filter((l) => l.gitlab?.state === 'closed').length;
+    if (closed > 1) problems.push(`lanes: at most one lane may have gitlab.state closed (found ${closed})`);
     const defaults = lanes.filter((l) => l.default).length;
     if (defaults !== 1) problems.push(`lanes: exactly one lane must be default (found ${defaults})`);
   }

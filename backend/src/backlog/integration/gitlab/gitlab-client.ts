@@ -1,4 +1,4 @@
-import { BacklogNotFoundError, BacklogUnreachableError } from '../../service/backlog-errors';
+import { BacklogInvalidError, BacklogNotFoundError, BacklogUnreachableError } from '../../service/backlog-errors';
 
 const TIMEOUT_MS = 30_000;
 const MAX_PAGES = 1000;
@@ -55,7 +55,8 @@ export class GitlabClient {
     if (res.status === 404) throw new BacklogNotFoundError();
     if (res.status === 401 || res.status === 403) throw new BacklogUnreachableError('Backlog source rejected the credentials');
     if (res.status >= 500) throw new BacklogUnreachableError();
-    if (!res.ok) throw new Error(`Backlog source refused the request (${res.status})`);
+    if (res.status === 400 || res.status === 422) throw new BacklogInvalidError('Backlog source refused the request');
+    if (!res.ok) throw new BacklogUnreachableError('Backlog source is not reachable');
     try {
       return { body: await res.json(), next: res.headers.get('x-next-page') ?? '' };
     } catch {

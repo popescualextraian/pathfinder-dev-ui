@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -69,6 +70,30 @@ describe('parseBacklogConfig', () => {
     expect(problems.join()).toContain('gitlab.tokenEnv');
     const bad = problemsOf(VALID.replace('id: plan', 'id: todo'));
     expect(bad.message).not.toContain('secret-token-value');
+  });
+
+  it('rejects a lane label with a comma, a label on two lanes and two closed lanes, naming keys only', () => {
+    const comma = problemsOf(VALID.replace('status::plan', 'status::a,b'));
+    expect(comma.problems).toEqual(['lanes[1].gitlab.label must not contain a comma']);
+    const twice = problemsOf(VALID.replace('status::plan', 'status::todo'));
+    expect(twice.problems).toEqual(['lanes[1].gitlab.label is used by another lane']);
+    const closed = problemsOf(VALID.replace('{ id: review, title: Review, gitlab: { label: "status::review" } }', '{ id: review, title: Review, gitlab: { state: closed } }'));
+    expect(closed.problems).toEqual([expect.stringContaining('at most one lane may have gitlab.state closed')]);
+    expect(JSON.stringify([comma, twice, closed])).not.toContain('secret-token-value');
+  });
+
+  it('warns about a clear-text baseUrl unless the host is local, and does not reject it', () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    parseBacklogConfig(VALID.replace('https://gitlab.example.com', 'http://gitlab.example.com'), ENV);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain('clear text');
+    expect(String(warn.mock.calls[0][0])).not.toContain('gitlab.example.com');
+    warn.mockClear();
+    for (const host of ['http://127.0.0.1:8080', 'http://localhost:8080', 'http://[::1]:8080', 'https://gitlab.example.com']) {
+      parseBacklogConfig(VALID.replace('https://gitlab.example.com', host), ENV);
+    }
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('requires BACKLOG_DATA_DIR', () => {

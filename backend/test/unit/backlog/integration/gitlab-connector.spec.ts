@@ -326,6 +326,14 @@ describe('GitlabConnector', () => {
       await expect(connector.me()).rejects.toBeInstanceOf(BacklogUnreachableError);
     });
 
+    it.each([[400, BacklogInvalidError], [422, BacklogInvalidError], [429, BacklogUnreachableError], [418, BacklogUnreachableError]])('maps a %i to a fixed-message error without upstream text', async (status, type) => {
+      gitlab.forceStatus = status;
+      const error = await connector.me().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(type);
+      expect((error as Error).message).not.toContain('forced');
+      expect((error as Error).message).not.toContain(String(status));
+    });
+
     it('is safe for concurrent callers', async () => {
       const a = gitlab.addIssue({ labels: ['status::todo'] });
       const b = gitlab.addIssue({ labels: ['status::plan'] });
