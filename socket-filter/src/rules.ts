@@ -181,6 +181,8 @@ function noBody(req: FilterRequest): void {
 
 // ---- endpoints ----------------------------------------------------------------------------------
 
+const CONTAINER_ID = /^[0-9a-f]{64}$/;
+
 const CONTAINER_KEYS = ['Image', 'name', 'Cmd', 'Labels', 'Env', 'HostConfig'];
 const HOST_CONFIG_KEYS = ['Binds', 'NetworkMode', 'CapDrop', 'SecurityOpt'];
 const VOLUME_KEYS = ['Name', 'Labels', 'Driver'];
@@ -313,7 +315,9 @@ function route(req: FilterRequest, config: FilterConfig): Decision {
   const container = /^\/containers\/([^/]+)(?:\/(start|stop|json|archive))?$/.exec(path);
   if (container) {
     const name = container[1];
-    taskIdOf(name, config);
+    // dockerode's createContainer returns a handle by id, so the launcher starts a new container by its full id;
+    // that one action is allowed by id (the label check inspects the same id), everything else needs the name.
+    if (!(CONTAINER_ID.test(name) && method === 'POST' && container[2] === 'start')) taskIdOf(name, config);
     const forward = containerAction(req, target, name, container[2]);
     return { action: 'check-label', resource: 'container', name, inspectPath: `${target.prefix}/containers/${name}/json`, forward };
   }
@@ -340,10 +344,11 @@ export function decide(req: FilterRequest, config: FilterConfig): Decision {
   }
 }
 
-/** Whether the upstream inspect body shows the resource with exactly this name and the kind label. */
+/** Whether the upstream inspect body shows the resource with exactly this name (or full container id) and the kind label. */
 export function inspectShowsKind(resource: 'container' | 'volume', name: string, body: unknown, config: FilterConfig): boolean {
   if (!isObject(body)) return false;
   const labels = resource === 'container' ? (isObject(body.Config) ? body.Config.Labels : undefined) : body.Labels;
-  const expectedName = resource === 'container' ? `/${name}` : name;
-  return body.Name === expectedName && isObject(labels) && own(labels, config.kindLabel.key) && labels[config.kindLabel.key] === config.kindLabel.value;
+  const sameResource =
+    resource === 'volume' ? body.Name === name : CONTAINER_ID.test(name) ? body.Id === name : body.Name === `/${name}`;
+  return sameResource && isObject(labels) && own(labels, config.kindLabel.key) && labels[config.kindLabel.key] === config.kindLabel.value;
 }

@@ -337,7 +337,9 @@ describe('decide: forbidden endpoints and request tricks', () => {
   });
 
   it.each([
-    ['an id instead of a name', `/containers/${'a'.repeat(64)}/start`],
+    ['an id instead of a name (stop)', `/containers/${'a'.repeat(64)}/stop`],
+    ['an upper-case id', `/containers/${'A'.repeat(64)}/start`],
+    ['a 63-character id', `/containers/${'a'.repeat(63)}/start`],
     ['a short id', '/containers/abc123/start'],
     ['a foreign name', '/containers/other/start'],
     ['an upper-case path', `/CONTAINERS/${NAME}/start`],
@@ -417,7 +419,39 @@ describe('decide: forbidden endpoints and request tricks', () => {
   });
 });
 
+describe('decide: a container by full id', () => {
+  const CID = 'a1'.repeat(32);
+
+  // dockerode's createContainer returns a handle by id, so the launcher's start right after the create
+  // goes to /containers/<id>/start.
+  it('allows only start, after the label check by the same id', () => {
+    expect(decide(request('POST', `/containers/${CID}/start`), config)).toEqual({
+      action: 'check-label',
+      resource: 'container',
+      name: CID,
+      inspectPath: `/containers/${CID}/json`,
+      forward: { action: 'forward', method: 'POST', path: `/containers/${CID}/start` },
+    });
+  });
+
+  it.each([
+    ['POST', `/containers/${CID}/stop`],
+    ['DELETE', `/containers/${CID}`],
+    ['GET', `/containers/${CID}/json`],
+    ['GET', `/containers/${CID}/archive?path=%2F`],
+  ])('refuses %s %s', (method, url) => {
+    expect(refused(decide(request(method, url), config))).toMatch(/name/);
+  });
+});
+
 describe('inspectShowsKind', () => {
+  it('matches a full id against Id, not Name', () => {
+    const cid = 'b2'.repeat(32);
+    expect(inspectShowsKind('container', cid, { Id: cid, Name: `/${NAME}`, Config: { Labels: LABELS } }, config)).toBe(true);
+    expect(inspectShowsKind('container', cid, { Id: 'c3'.repeat(32), Name: `/${cid}`, Config: { Labels: LABELS } }, config)).toBe(false);
+    expect(inspectShowsKind('container', cid, { Id: cid, Name: `/${NAME}`, Config: { Labels: {} } }, config)).toBe(false);
+  });
+
   it('accepts a container with the kind label and the same name', () => {
     expect(inspectShowsKind('container', NAME, { Name: `/${NAME}`, Config: { Labels: LABELS } }, config)).toBe(true);
   });
