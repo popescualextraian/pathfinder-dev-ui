@@ -1,5 +1,6 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { fillPlaceholders } from './placeholders';
+import { isSafeRelativePath } from './requires-path';
 import type { SessionDef, StepDef, WorkflowDefinitions } from './workflow-definition';
 import { WORKFLOW_DEFINITION_REPOSITORY, WorkflowDefinitionRepository } from './workflow-definition.repository';
 import { WorkflowConflictError, WorkflowNotFoundError } from './workflow-errors';
@@ -27,7 +28,21 @@ class RunFailure extends Error {
   }
 }
 
+// Not recoverable by retrying (e.g. a required path that is unsafe once filled in): the run fails with this reason.
+class RunFatal extends Error {}
+
 type Snapshot = WorkflowTaskSnapshot;
+
+/** How many finished runs `list` returns (the most recently finished), besides all active ones. */
+export const RECENT_FINISHED_RUNS = 50;
+
+/** Delays of the retry of a run whose last action failed: initialMs, doubling up to maxMs. */
+export interface RetryDelays {
+  initialMs: number;
+  maxMs: number;
+}
+
+export const WORKFLOW_RETRY_DELAYS = Symbol('WORKFLOW_RETRY_DELAYS');
 
 /**
  * Drives workflow runs: one task per run, the steps' sessions one after another, gates, exit prompts, required files,
@@ -43,6 +58,8 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
   // Active runs by task id, so a change of a task finds its runs without reading every file.
   private readonly byTask = new Map<string, Set<string>>();
   private subscription?: { unsubscribe(): void };
+  // Runs whose last action failed: the timer of their next retry and its delay.
+  private readonly retries = new Map<string, { timer: ReturnType<typeof setTimeout>; delay: number }>();
 
   constructor(
     @Inject(WORKFLOW_TASKS) private readonly tasks: WorkflowTasks,
@@ -50,6 +67,7 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     @Inject(WORKFLOW_DEFINITION_REPOSITORY) private readonly defs: WorkflowDefinitionRepository,
     @Inject(WORKFLOW_RUN_REPOSITORY) private readonly runs: WorkflowRunRepository,
     private readonly updates: WorkflowRunUpdates,
+    @Optional() @Inject(WORKFLOW_RETRY_DELAYS) private readonly retryDelays: RetryDelays = { initialMs: 5_000, maxMs: 60_000 },
   ) {}
 
   // Reload active runs and reconcile them with their tasks (a task that is gone fails its run), then follow changes.
@@ -63,6 +81,7 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy(): void {
     this.subscription?.unsubscribe();
     this.subscription = undefined;
+    for (const runId of [...this.retries.keys()]) this.clearRetry(runId);
   }
 
   /** Resolves when all work queued so far (and work it queued) is done. */
@@ -74,10 +93,15 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     return this.defs.list();
   }
 
-  /** All runs (oldest first), or those of one item. */
+  /** Active runs and the most recently finished ones (RECENT_FINISHED_RUNS), oldest first; of all items or of one. */
   async list(itemId?: string): Promise<WorkflowRunView[]> {
-    const all = await this.runs.list();
-    return (itemId === undefined ? all : all.filter((r) => r.itemId === itemId)).map(toRunView);
+    const all = (await this.runs.list()).filter((r) => itemId === undefined || r.itemId === itemId);
+    const ended = (r: WorkflowRun) => r.finishedAt ?? r.updatedAt;
+    const recent = new Set(all.filter((r) => !isActive(r))
+      .sort((a, b) => ended(b).localeCompare(ended(a)))
+      .slice(0, RECENT_FINISHED_RUNS)
+      .map((r) => r.id));
+    return all.filter((r) => isActive(r) || recent.has(r.id)).map(toRunView);
   }
 
   async get(runId: string): Promise<WorkflowRunView> {
@@ -101,7 +125,7 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
       if (!item) throw new WorkflowNotFoundError(`Work item ${itemId} not found`);
       const step = def.steps[0];
       const first = step.sessions[0];
-      // The task does not exist yet: {{task.id}} and {{task.branch}} are empty in this prompt.
+      // The task does not exist yet: the parser refuses {{task.*}} in this prompt.
       const prompt = fillPlaceholders(first.prompt, { item, step });
       const taskId = await this.tasks.start({ title: `#${item.id} ${item.title}`, prompt, ...(first.model !== undefined && { model: first.model }) });
 
@@ -109,23 +133,16 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
       const sessions = Object.fromEntries(def.steps.flatMap((s) => s.sessions).map((s) => [s.name, { status: 'pending' as const }]));
       const run: WorkflowRun = {
         id: newRunId(), workflowId, definition: structuredClone(def), itemId, item: { ...item }, taskId, stepIndex: 0, phase: 'sessions',
-        sessions: { ...sessions, [first.name]: { status: 'running' } }, state: 'running', createdAt: now, updatedAt: now,
+        sessions: { ...sessions, [first.name]: { status: 'running' } }, state: 'running', pendingStage: step.stage,
+        createdAt: now, updatedAt: now,
       };
-      // Hold the run's queue so change events of the new task wait until it is recorded and the card moved.
+      // Hold the run's queue so change events of the new task wait until it is recorded.
       return this.exclusive(run.id, async () => {
         await this.runs.save(run);
         this.index(run);
         this.updates.changed(toRunView(run));
-        const r = structuredClone(run);
-        try {
-          await this.attempt(`could not move the item to "${step.stage}"`, () => this.items.moveTo(itemId, step.stage));
-        } catch (error) {
-          // The task exists already: keep the run, failed, rather than lose it.
-          if (!(error instanceof RunFailure)) throw error;
-          this.fail(r, error.message);
-        }
-        await this.persist(r, run);
-        // Changes of the task while it was being started found no run yet: look at it once now.
+        // Moves the card (a failure leaves a warning and is retried) and catches up with changes of the task that
+        // came while it was being started, when there was no run yet.
         await this.sync(run.id);
         return toRunView(await this.load(run.id));
       });
@@ -148,6 +165,10 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
         if (r.phase === 'awaiting-approval' && step.exitPrompt !== undefined) await this.sendExit(r, step, snap);
         else await this.moveOn(r, snap, options.force === true);
       } catch (error) {
+        if (error instanceof RunFatal) {
+          this.fail(r, error.message);
+          return toRunView(await this.persist(r, run));
+        }
         // The run stays as it was; the caller gets the adapter's error (e.g. the engine's 409).
         throw error instanceof RunFailure ? error.cause : error;
       }
@@ -192,18 +213,26 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     this.observe(r, snap);
     const observed = structuredClone(r);
     let current = r;
+    let failed = false;
     try {
       await this.progress(r, snap);
       // Whatever failed before was retried by this pass and went through.
       if (isActive(r) && r.phase !== 'blocked') delete r.warning;
     } catch (error) {
-      if (!(error instanceof RunFailure)) throw error;
-      // Keep the phase (drop what this pass changed); the next change of the task retries.
-      current = observed;
-      current.warning = error.message;
+      if (error instanceof RunFatal) {
+        this.fail(r, error.message);
+      } else {
+        if (!(error instanceof RunFailure)) throw error;
+        // Keep the phase (drop what this pass changed); retried on the next change of the task or by the timer.
+        current = observed;
+        current.warning = error.message;
+        failed = true;
+      }
     }
     this.deriveState(current, snap);
     await this.persist(current, run);
+    if (failed && isActive(current)) this.scheduleRetry(runId);
+    else this.clearRetry(runId);
   }
 
   // A session is done when it is idle with no open question after its turn: we saw it busy since we sent its prompt,
@@ -220,6 +249,11 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
   }
 
   private async progress(r: WorkflowRun, snap: Snapshot): Promise<void> {
+    const stage = r.pendingStage;
+    if (stage !== undefined) {
+      await this.attempt(`could not move the item to "${stage}"`, () => this.items.moveTo(r.itemId, stage));
+      delete r.pendingStage;
+    }
     const step = r.definition.steps[r.stepIndex];
     if (r.phase === 'sessions') {
       const next = step.sessions.find((s) => r.sessions[s.name].status !== 'done');
@@ -265,6 +299,8 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     }
     const next = steps[index];
     const paths = (next.requires ?? []).map((p) => fillPlaceholders(p, this.context(r, next, snap)));
+    const unsafe = paths.find((p) => !isSafeRelativePath(p));
+    if (unsafe !== undefined) throw new RunFatal(`required path "${unsafe}" is not a relative path inside the worktree`);
     if (paths.length > 0 && !force) {
       const found = await this.attempt('could not check the required files', () => this.tasks.hasFiles(r.taskId, paths));
       const missing = paths.filter((p) => found[p] !== true);
@@ -350,9 +386,30 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     const visible = JSON.stringify(toRunView(r)) !== JSON.stringify(toRunView(before));
     if (visible) r.updatedAt = new Date().toISOString();
     await this.runs.save(r);
-    if (!isActive(r)) this.unindex(r);
+    if (!isActive(r)) {
+      this.unindex(r);
+      this.clearRetry(r.id);
+    }
     if (visible) this.updates.changed(toRunView(r));
     return r;
+  }
+
+  // Retry a run whose last action failed even when its task does not change: initialMs, doubling up to maxMs.
+  private scheduleRetry(runId: string): void {
+    if (!this.subscription) return; // shut down
+    const previous = this.retries.get(runId);
+    if (previous) clearTimeout(previous.timer);
+    const delay = previous ? Math.min(previous.delay * 2, this.retryDelays.maxMs) : this.retryDelays.initialMs;
+    const timer = setTimeout(() => { void this.syncLogged(runId); }, delay);
+    timer.unref?.();
+    this.retries.set(runId, { timer, delay });
+  }
+
+  private clearRetry(runId: string): void {
+    const retry = this.retries.get(runId);
+    if (!retry) return;
+    clearTimeout(retry.timer);
+    this.retries.delete(runId);
   }
 
   private index(run: WorkflowRun): void {

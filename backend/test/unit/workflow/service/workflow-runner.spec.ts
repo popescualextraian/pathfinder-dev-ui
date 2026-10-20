@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  WorkflowConflictError, WorkflowDefinition, WorkflowNotFoundError, WorkflowRunFileRepository, WorkflowRunView,
+  WorkflowConflictError, WorkflowDefinition, WorkflowNotFoundError, WorkflowRunFileRepository, WorkflowRunView, RetryDelays, WorkflowRun,
   WorkflowRunner, WorkflowRunUpdates,
 } from '../../../../src/workflow';
 import { FakeDefinitions, FakeWorkflowTasks, FakeWorkItems } from '../../../helpers/fake-workflow';
@@ -47,6 +47,14 @@ const AUTO_EXIT: WorkflowDefinition = {
   ],
 };
 
+const AUTO2: WorkflowDefinition = {
+  id: 'auto2', title: 'Auto then human',
+  steps: [
+    { id: 'a', title: 'A', stage: 'plan', gate: 'auto', sessions: [{ name: 'main', prompt: 'Go' }] },
+    { id: 'b', title: 'B', stage: 'review', gate: 'human', requires: ['{{item.title}}/plan.md'], sessions: [{ name: 'b', prompt: 'Next' }] },
+  ],
+};
+
 describe('WorkflowRunner', () => {
   let dir: string;
   let tasks: FakeWorkflowTasks;
@@ -55,8 +63,8 @@ describe('WorkflowRunner', () => {
   let runner: WorkflowRunner;
   let seen: WorkflowRunView[];
 
-  const make = async (): Promise<WorkflowRunner> => {
-    const r = new WorkflowRunner(tasks, items, new FakeDefinitions([PIR, DUO, AUTO_EXIT]), new WorkflowRunFileRepository(dir), updates);
+  const make = async (retry?: RetryDelays): Promise<WorkflowRunner> => {
+    const r = new WorkflowRunner(tasks, items, new FakeDefinitions([PIR, DUO, AUTO_EXIT, AUTO2]), new WorkflowRunFileRepository(dir), updates, retry);
     await r.onModuleInit();
     return r;
   };
@@ -80,6 +88,7 @@ describe('WorkflowRunner', () => {
     runner = await make();
   });
   afterEach(() => {
+    jest.useRealTimers();
     runner.onModuleDestroy();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -120,15 +129,22 @@ describe('WorkflowRunner', () => {
       expect(tasks.starts).toEqual([]);
     });
 
-    it('a failed card move after the task started records the run as failed instead of losing it', async () => {
+    it('a failed card move at start keeps the run running with a warning; the retry timer moves the card later', async () => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+      runner.onModuleDestroy();
+      runner = await make({ initialMs: 1000, maxMs: 4000 });
       items.moveFailure = new Error('gitlab down');
       const run = await runner.start('7', 'pir');
-      expect(run.state).toBe('failed');
-      expect(run.failureReason).toMatch(/could not move the item to "plan": gitlab down/);
-      expect(run.finishedAt).toBeDefined();
-      expect((await runner.get(run.id)).state).toBe('failed');
+      expect(run).toMatchObject({ state: 'running', warning: 'could not move the item to "plan": gitlab down' });
+      expect(run.failureReason).toBeUndefined();
+      await expect(runner.start('7', 'pir')).rejects.toBeInstanceOf(WorkflowConflictError); // still active
       items.moveFailure = undefined;
-      await runner.start('7', 'pir'); // a failed run is not active
+      await jest.advanceTimersByTimeAsync(1000);
+      await runner.settled();
+      expect(items.moves).toEqual([{ itemId: '7', stage: 'plan' }]);
+      const after = await runner.get(run.id);
+      expect(after.warning).toBeUndefined();
+      expect(JSON.stringify(after)).not.toMatch(/pendingStage/);
     });
   });
 
@@ -449,5 +465,87 @@ describe('WorkflowRunner', () => {
     expect(seen).toHaveLength(1);
     expect(JSON.stringify(await runner.get(run.id))).not.toMatch(/sawBusy|baseline/);
     expect(JSON.stringify(seen)).not.toMatch(/sawBusy|baseline/);
+  });
+
+  describe('retry timer', () => {
+    beforeEach(async () => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+      runner.onModuleDestroy();
+      runner = await make({ initialMs: 1000, maxMs: 4000 });
+    });
+
+    it('a transient card move failure in an auto gate step recovers without any task change', async () => {
+      const run = await runner.start('8', 'auto2');
+      tasks.files.add('Eight/plan.md');
+      items.moveFailure = new Error('gitlab down');
+      tasks.finishTurn(run.taskId, 'main');
+      expect(await changed(run.taskId)).toMatchObject({ state: 'running', stepIndex: 0, warning: 'could not move the item to "review": gitlab down' });
+      items.moveFailure = undefined;
+      await jest.advanceTimersByTimeAsync(1000);
+      await runner.settled();
+      const after = await runner.get(run.id);
+      expect(after).toMatchObject({ state: 'running', stepIndex: 1 });
+      expect(after.warning).toBeUndefined();
+      expect(tasks.added.map((a) => a.name)).toEqual(['b']);
+    });
+
+    it('backs off, doubling up to the maximum, and stops retrying when the run is stopped', async () => {
+      const run = await runner.start('8', 'auto2');
+      tasks.files.add('Eight/plan.md');
+      let attempts = 0;
+      items.moveTo = async () => { attempts++; throw new Error('down'); };
+      tasks.finishTurn(run.taskId, 'main');
+      await changed(run.taskId);
+      expect(attempts).toBe(1);
+      const tick = async (ms: number) => { await jest.advanceTimersByTimeAsync(ms); await runner.settled(); };
+      await tick(1000); expect(attempts).toBe(2);
+      await tick(1999); expect(attempts).toBe(2);
+      await tick(1); expect(attempts).toBe(3);
+      await tick(4000); expect(attempts).toBe(4);
+      await tick(4000); expect(attempts).toBe(5); // capped at 4000
+      await runner.stop(run.id);
+      await tick(60_000); expect(attempts).toBe(5);
+    });
+
+    it('no retries after shutdown', async () => {
+      const run = await runner.start('8', 'auto2');
+      tasks.files.add('Eight/plan.md');
+      let attempts = 0;
+      items.moveTo = async () => { attempts++; throw new Error('down'); };
+      tasks.finishTurn(run.taskId, 'main');
+      await changed(run.taskId);
+      runner.onModuleDestroy();
+      await jest.advanceTimersByTimeAsync(60_000);
+      await runner.settled();
+      expect(attempts).toBe(1);
+    });
+  });
+
+  it('a required path that is unsafe after filling in fails the run instead of retrying', async () => {
+    items.items.set('9', { id: '9', title: '..', description: '', url: 'u', stage: 'todo' });
+    const run = await runner.start('9', 'auto2');
+    tasks.finishTurn(run.taskId, 'main');
+    const failed = await changed(run.taskId);
+    expect(failed).toMatchObject({ state: 'failed', failureReason: 'required path "../plan.md" is not a relative path inside the worktree' });
+    expect(tasks.hasFilesCalls).toEqual([]);
+  });
+
+  it('list returns the active runs and the 50 most recently finished ones, oldest first', async () => {
+    const repo = new WorkflowRunFileRepository(dir);
+    const base = await runner.start('7', 'pir'); // active, created now (newest)
+    const template = (await repo.get(base.id))!;
+    const at = (n: number) => new Date(Date.UTC(2026, 0, 1, 0, n)).toISOString();
+    const finished: WorkflowRun[] = Array.from({ length: 52 }, (_, n) => ({
+      ...template, id: `R-20260101-${String(n).padStart(8, '0')}`, itemId: `x${n}`, state: 'done' as const,
+      createdAt: at(n), updatedAt: at(n), finishedAt: at(100 - n), // the first ones created finished last
+    }));
+    for (const r of finished) await repo.save(r);
+    const ids = (await runner.list()).map((r) => r.id);
+    expect(ids).toHaveLength(51);
+    expect(ids.at(-1)).toBe(base.id);
+    // finishedAt: n=0 is the most recent, n=51 and n=50 the oldest two -> dropped.
+    expect(ids.slice(0, 50)).toEqual(finished.slice(0, 50).map((r) => r.id));
+    expect((await runner.list('x51')).map((r) => r.id)).toEqual([finished[51].id]); // the limit applies within the item
+    expect((await runner.list('x3')).map((r) => r.id)).toEqual([finished[3].id]);
   });
 });

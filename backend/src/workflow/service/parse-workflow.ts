@@ -1,4 +1,5 @@
 import { parse } from 'yaml';
+import { isSafeRelativePath } from './requires-path';
 import type { Gate, SessionDef, StepDef, WorkflowDefinition } from './workflow-definition';
 
 export class WorkflowDefinitionError extends Error {}
@@ -30,6 +31,14 @@ function checkPlaceholders(text: string, where: string): void {
   for (const m of text.matchAll(/\{\{([^}]*)\}\}/g)) {
     const name = m[1].trim();
     if (!(PLACEHOLDERS as readonly string[]).includes(name)) fail(`${where}: unknown placeholder {{${name}}}`);
+  }
+}
+
+// The first session's prompt is sent to start the task, so the task's own values cannot be in it.
+function checkNoTaskPlaceholders(text: string, where: string): void {
+  for (const m of text.matchAll(/\{\{([^}]*)\}\}/g)) {
+    const name = m[1].trim();
+    if (name.startsWith('task.')) fail(`${where}: {{${name}}} is not known before the task starts`);
   }
 }
 
@@ -70,6 +79,7 @@ export function parseWorkflowDefinition(id: string, text: string, opts: ParseOpt
       if (earlier.has(name)) fail(`duplicate session name "${name}"`);
       const prompt = str(s.prompt, `${sat}.prompt`);
       checkPlaceholders(prompt, `${sat}.prompt`);
+      if (i === 0 && j === 0) checkNoTaskPlaceholders(prompt, `${sat}.prompt`);
       const fork = optStr(s.fork, `${sat}.fork`);
       if (fork !== undefined && !earlier.has(fork)) fail(`${sat}.fork "${fork}" is not an earlier session`);
       const model = optStr(s.model, `${sat}.model`);
@@ -83,6 +93,7 @@ export function parseWorkflowDefinition(id: string, text: string, opts: ParseOpt
       requires = (raw.requires as unknown[]).map((p, k) => {
         const path = str(p, `${at}.requires[${k}]`);
         checkPlaceholders(path, `${at}.requires[${k}]`);
+        if (!isSafeRelativePath(path)) fail(`${at}.requires[${k}]: "${path}" must be a relative path inside the worktree (no leading /, no ..)`);
         return path;
       });
     }

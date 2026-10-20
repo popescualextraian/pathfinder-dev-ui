@@ -37,6 +37,8 @@ export interface WorkflowRun {
   sessions: Record<string, RunSession>;
   state: RunState;
   warning?: string;
+  /** Internal: the item still has to be moved to this stage (its move at start failed; retried). */
+  pendingStage?: string;
   failureReason?: string;
   createdAt: string;
   updatedAt: string;
@@ -56,9 +58,10 @@ export function newRunId(now = new Date()): string {
 }
 
 /** What the API and the runs stream show: the run without the runner's internal session fields. */
-export type WorkflowRunView = Omit<WorkflowRun, 'sessions'> & { sessions: Record<string, { status: RunSessionStatus }> };
+export type WorkflowRunView = Omit<WorkflowRun, 'sessions' | 'pendingStage'> & { sessions: Record<string, { status: RunSessionStatus }> };
 
 export function toRunView(run: WorkflowRun): WorkflowRunView {
   const sessions = Object.fromEntries(Object.entries(run.sessions).map(([name, s]) => [name, { status: s.status }]));
-  return { ...structuredClone(run), sessions };
+  const { pendingStage: _internal, ...rest } = structuredClone(run); // eslint-disable-line @typescript-eslint/no-unused-vars
+  return { ...rest, sessions };
 }

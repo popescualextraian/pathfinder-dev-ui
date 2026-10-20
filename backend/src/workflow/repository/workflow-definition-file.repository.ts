@@ -19,7 +19,15 @@ export class WorkflowDefinitionFileRepository implements WorkflowDefinitionRepos
       throw e;
     }
     const stages = this.items?.stages ? await this.items.stages() : undefined;
+    const files = new Map<string, string>(); // id -> the file that has it
     for (const file of names) {
+      const id = basename(file, extname(file));
+      const earlier = files.get(id);
+      if (earlier !== undefined) {
+        result.refused.push({ file, error: `${file}: duplicate workflow id "${id}" (also ${earlier})` });
+        continue;
+      }
+      files.set(id, file);
       try {
         const text = await readFile(join(this.dir, file), 'utf8');
         result.definitions.push(parseWorkflowDefinition(basename(file, extname(file)), text, { stages }));

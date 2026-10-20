@@ -95,8 +95,22 @@ describe('parseWorkflowDefinition', () => {
       fails(mutate((d) => (d.steps[0].exitPrompt = '{{foo}}')), /unknown placeholder \{\{foo\}\}/));
     it('rejects unknown ones in requires', () =>
       fails(mutate((d) => (d.steps[1].requires = ['{{task.nope}}'])), /unknown placeholder/));
+    it('refuses {{task.id}} and {{task.branch}} in the first session of the first step (the task does not exist yet)', () => {
+      fails(mutate((d) => (d.steps[0].sessions[0].prompt = 'Plan {{task.id}}')), /steps\[0\]\.sessions\[0\]\.prompt: \{\{task\.id\}\} is not known before the task starts/);
+      fails(mutate((d) => (d.steps[0].sessions[0].prompt = 'On {{ task.branch }}')), /\{\{task\.branch\}\} is not known before the task starts/);
+    });
+    it('allows {{task.*}} in the first step\'s exitPrompt and later sessions', () =>
+      expect(() => parseWorkflowDefinition('wf', mutate((d) => (d.steps[0].exitPrompt = 'Commit on {{task.branch}} of {{task.id}}')))).not.toThrow());
     it('tolerates whitespace inside braces', () =>
       expect(() => parseWorkflowDefinition('wf', mutate((d) => (d.steps[0].sessions[0].prompt = '{{ item.id }}')))).not.toThrow());
+  });
+
+  describe('requires paths', () => {
+    it('refuses an absolute path', () => fails(mutate((d) => (d.steps[1].requires = ['/etc/passwd'])), /requires\[0\].*"\/etc\/passwd".*relative/));
+    it('refuses a path with ..', () => fails(mutate((d) => (d.steps[1].requires = ['plans/../../x.md'])), /requires\[0\].*relative/));
+    it('refuses .. around placeholders', () => fails(mutate((d) => (d.steps[1].requires = ['../{{item.id}}.md'])), /requires\[0\]/));
+    it('accepts relative paths with placeholders and dots in names', () =>
+      expect(() => parseWorkflowDefinition('wf', mutate((d) => (d.steps[1].requires = ['plans/{{item.id}}.md', './a..b/c.md'])))).not.toThrow());
   });
 
   it('names WorkflowDefinitionError', () => {

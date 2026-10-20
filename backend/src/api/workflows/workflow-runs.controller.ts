@@ -32,7 +32,7 @@ export class WorkflowRunsController {
     return merge(changes, pings);
   }
 
-  // All runs, active and finished, oldest first; or those of one item.
+  // Active runs and the 50 most recently finished ones, oldest first; of all items or of one.
   @Get()
   list(@Query() query: RunsQueryDto): Promise<WorkflowRunView[]> {
     return this.runner.list(query.itemId ?? undefined);
