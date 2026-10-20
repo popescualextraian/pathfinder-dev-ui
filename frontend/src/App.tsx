@@ -45,6 +45,8 @@ export function App() {
               error={backlog.error}
               onMove={(id, to) => void backlog.move(id, to)}
               onSaveFileLinks={backlog.saveFileLinks}
+              onCreate={backlog.create}
+              onUpdate={backlog.update}
             />
           ) : undefined
         }

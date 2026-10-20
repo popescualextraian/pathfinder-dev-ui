@@ -1,4 +1,4 @@
-import type { BacklogItem, FileLink, LanesResponse } from './models';
+import type { BacklogItem, FileLink, ItemDraft, ItemPatch, LanesResponse } from './models';
 import { ApiError, postJson, request } from './http';
 
 const itemUrl = (id: string) => `/api/backlog/items/${encodeURIComponent(id)}`;
@@ -14,6 +14,13 @@ export async function getLanes(): Promise<LanesResponse | null> {
 }
 
 export const getItems = () => request<BacklogItem[]>('/api/backlog/items');
+export const createItem = (draft: ItemDraft) => postJson<BacklogItem>('/api/backlog/items', draft);
+export const updateItem = (id: string, patch: ItemPatch) =>
+  request<BacklogItem>(itemUrl(id), {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
 export const moveItem = (id: string, from: string, to: string) =>
   postJson<BacklogItem>(`${itemUrl(id)}/move`, { from, to });
 export const setFileLinks = (id: string, links: FileLink[]) =>

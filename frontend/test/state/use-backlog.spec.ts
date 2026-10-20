@@ -12,6 +12,8 @@ const getItems = api.getItems as jest.Mock;
 const moveItem = api.moveItem as jest.Mock;
 const refreshBacklog = api.refreshBacklog as jest.Mock;
 const setFileLinks = api.setFileLinks as jest.Mock;
+const createItem = api.createItem as jest.Mock;
+const updateItem = api.updateItem as jest.Mock;
 
 const item = (id: string, lane: string, updatedAt: string): BacklogItem => ({
   id,
@@ -37,7 +39,7 @@ const ids = (r: { current: { items: BacklogItem[] } }) => r.current.items.map((i
 describe('useBacklog', () => {
   beforeEach(() => {
     FakeEventSource.install();
-    [getLanes, getItems, moveItem, refreshBacklog, setFileLinks].forEach((m) => m.mockReset());
+    [getLanes, getItems, moveItem, refreshBacklog, setFileLinks, createItem, updateItem].forEach((m) => m.mockReset());
     getLanes.mockResolvedValue(lanes);
     getItems.mockResolvedValue([A, B]);
   });
@@ -171,6 +173,56 @@ describe('useBacklog', () => {
     expect((caught as Error).message).toBe('nope');
     expect(result.current.items.find((i) => i.id === 'a')?.fileLinks).toEqual([]);
     expect(ids(result)).toEqual(['a', 'b']);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('create merges the returned item and returns it', async () => {
+    const created = item('c', 'plan', '2026-10-20T13:00:00Z');
+    createItem.mockResolvedValue(created);
+    const { result } = renderHook(() => useBacklog());
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+    let returned: unknown;
+    await act(async () => {
+      returned = await result.current.create({ title: 'c', lane: 'plan' });
+    });
+    expect(createItem).toHaveBeenCalledWith({ title: 'c', lane: 'plan' });
+    expect(returned).toEqual(created);
+    expect(ids(result)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('a load in flight does not drop a created item', async () => {
+    const created = item('c', 'plan', '2026-10-20T13:00:00Z');
+    createItem.mockResolvedValue(created);
+    let release!: (list: BacklogItem[]) => void;
+    getItems.mockReturnValueOnce(new Promise((r) => (release = r)));
+    const { result } = renderHook(() => useBacklog());
+    await waitFor(() => expect(result.current.enabled).toBe(true));
+    await act(async () => {
+      await result.current.create({ title: 'c' });
+    });
+    await act(async () => release([A, B]));
+    expect(ids(result)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('update merges the returned item; create and update rethrow errors and leave items alone', async () => {
+    updateItem.mockResolvedValueOnce({ ...A, title: 'renamed', updatedAt: '2026-10-20T14:00:00Z' });
+    const { result } = renderHook(() => useBacklog());
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+    await act(async () => {
+      await result.current.update('a', { title: 'renamed' });
+    });
+    expect(updateItem).toHaveBeenCalledWith('a', { title: 'renamed' });
+    expect(result.current.items.find((i) => i.id === 'a')?.title).toBe('renamed');
+    updateItem.mockRejectedValueOnce(new Error('nope'));
+    createItem.mockRejectedValueOnce(new Error('bad'));
+    let caught: string[] = [];
+    await act(async () => {
+      await result.current.update('a', { title: 'x' }).catch((e: Error) => caught.push(e.message));
+      await result.current.create({ title: 'y' }).catch((e: Error) => caught.push(e.message));
+    });
+    expect(caught).toEqual(['nope', 'bad']);
+    expect(result.current.items.find((i) => i.id === 'a')?.title).toBe('renamed');
+    expect(ids(result)).toHaveLength(2);
     expect(result.current.error).toBeNull();
   });
 

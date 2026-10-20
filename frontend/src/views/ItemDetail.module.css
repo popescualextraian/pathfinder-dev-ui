@@ -1,5 +1,6 @@
 .detail { flex: 0 0 320px; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-left: 1px solid var(--line); overflow-y: auto; }
 .head { display: flex; justify-content: space-between; gap: 8px; }
 .title { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.edit { border: 1px solid var(--line); border-radius: 8px; background: none; padding: 2px 10px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; }
 .close { border: 0; background: none; font-size: 20px; line-height: 1; color: var(--ink-soft); cursor: pointer; }
 .description { margin: 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }

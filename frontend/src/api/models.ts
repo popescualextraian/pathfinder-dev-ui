@@ -95,6 +95,19 @@ export interface BacklogItem {
   updatedAt: string;
 }
 
+export interface ItemDraft {
+  title: string;
+  description?: string;
+  lane?: string;
+}
+
+export interface ItemPatch {
+  title?: string;
+  description?: string;
+  /** Usernames; an empty list unassigns everyone. */
+  assignees?: string[];
+}
+
 export interface LanesResponse {
   me: string;
   lanes: Lane[];

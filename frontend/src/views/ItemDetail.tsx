@@ -5,16 +5,20 @@ import styles from './ItemDetail.module.css';
 interface Props {
   item: BacklogItem;
   onSaveFileLinks: (id: string, links: FileLink[]) => void | Promise<void>;
+  onEdit: () => void;
   onClose: () => void;
 }
 
-export function ItemDetail({ item, onSaveFileLinks, onClose }: Props) {
+export function ItemDetail({ item, onSaveFileLinks, onEdit, onClose }: Props) {
   return (
     <aside className={styles.detail} aria-label="Item detail">
       <div className={styles.head}>
         <h2 className={styles.title}>
           #{item.id} {item.title}
         </h2>
+        <button type="button" className={styles.edit} onClick={onEdit}>
+          Edit
+        </button>
         <button type="button" className={styles.close} aria-label="Close detail" onClick={onClose}>
           ×
         </button>

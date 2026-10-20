@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import type { BacklogItem, FileLink, Lane } from '../api/models';
+import type { BacklogItem, FileLink, ItemDraft, ItemPatch, Lane } from '../api/models';
 import { BoardLane } from './BoardLane';
+import { Button } from './Button';
 import { ItemDetail } from './ItemDetail';
+import { ItemDialog } from './ItemDialog';
 import styles from './BoardView.module.css';
 
 interface Props {
@@ -11,13 +13,17 @@ interface Props {
   error?: string | null;
   onMove: (id: string, laneId: string) => void;
   onSaveFileLinks: (id: string, links: FileLink[]) => void | Promise<void>;
+  onCreate: (draft: ItemDraft) => Promise<unknown>;
+  onUpdate: (id: string, patch: ItemPatch) => Promise<unknown>;
   onSelect?: (id: string | null) => void;
 }
 
-export function BoardView({ lanes, items, me, error, onMove, onSaveFileLinks, onSelect }: Props) {
+export function BoardView({ lanes, items, me, error, onMove, onSaveFileLinks, onCreate, onUpdate, onSelect }: Props) {
   const [mineOnly, setMineOnly] = useState(false);
   const [assignee, setAssignee] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // `true` creates; an item edits.
+  const [dialog, setDialog] = useState<true | BacklogItem | null>(null);
 
   const assignees = [...new Set(items.flatMap((i) => i.assignees))].sort();
   const visible = items.filter(
@@ -52,6 +58,9 @@ export function BoardView({ lanes, items, me, error, onMove, onSaveFileLinks, on
             ))}
           </select>
         </label>
+        <Button variant="primary" className={styles.add} onClick={() => setDialog(true)}>
+          New item
+        </Button>
       </div>
       <div className={styles.body}>
         <div className={styles.lanes}>
@@ -68,8 +77,24 @@ export function BoardView({ lanes, items, me, error, onMove, onSaveFileLinks, on
             />
           ))}
         </div>
-        {selected && <ItemDetail item={selected} onSaveFileLinks={onSaveFileLinks} onClose={() => select(null)} />}
+        {selected && (
+          <ItemDetail
+            item={selected}
+            onSaveFileLinks={onSaveFileLinks}
+            onEdit={() => setDialog(selected)}
+            onClose={() => select(null)}
+          />
+        )}
       </div>
+      {dialog && (
+        <ItemDialog
+          lanes={lanes}
+          item={dialog === true ? undefined : dialog}
+          onCreate={onCreate}
+          onUpdate={onUpdate}
+          onClose={() => setDialog(null)}
+        />
+      )}
     </div>
   );
 }

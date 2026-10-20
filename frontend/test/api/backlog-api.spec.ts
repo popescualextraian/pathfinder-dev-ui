@@ -1,4 +1,4 @@
-import { getItems, getLanes, moveItem, refreshBacklog, setFileLinks } from '../../src/api/backlog-api';
+import { createItem, getItems, getLanes, moveItem, updateItem, refreshBacklog, setFileLinks } from '../../src/api/backlog-api';
 import { ApiError } from '../../src/api/http';
 
 const json = (status: number, body: unknown) =>
@@ -48,5 +48,29 @@ describe('backlog-api', () => {
     expect(url).toBe('/api/backlog/items/1/file-links');
     expect(init.method).toBe('PUT');
     expect(JSON.parse(init.body)).toEqual({ links: [{ repo: 'r', path: 'p' }] });
+  });
+
+  it('createItem posts the draft', async () => {
+    fetchMock.mockReturnValue(json(201, { id: '9' }));
+    expect(await createItem({ title: 'T', description: 'D', lane: 'plan' })).toEqual({ id: '9' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/backlog/items');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ title: 'T', description: 'D', lane: 'plan' });
+  });
+
+  it('updateItem patches the encoded id with the patch', async () => {
+    fetchMock.mockReturnValue(json(200, { id: 'a/b' }));
+    await updateItem('a/b', { assignees: [] });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/backlog/items/a%2Fb');
+    expect(init.method).toBe('PATCH');
+    expect(init.headers).toEqual({ 'content-type': 'application/json' });
+    expect(JSON.parse(init.body)).toEqual({ assignees: [] });
+  });
+
+  it('createItem rejects with the API error', async () => {
+    fetchMock.mockReturnValue(json(400, { message: 'bad lane' }));
+    await expect(createItem({ title: 'T' })).rejects.toBeInstanceOf(ApiError);
   });
 });

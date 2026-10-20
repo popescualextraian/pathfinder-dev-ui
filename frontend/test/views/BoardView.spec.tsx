@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { act, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
 import { BoardView } from '../../src/views/BoardView';
 import { Sidebar } from '../../src/views/Sidebar';
@@ -30,8 +31,12 @@ const items = [
 const renderBoard = (props: Partial<Parameters<typeof BoardView>[0]> = {}) => {
   const onMove = jest.fn();
   const onSaveFileLinks = jest.fn();
-  render(<BoardView lanes={lanes} items={items} me="me" onMove={onMove} onSaveFileLinks={onSaveFileLinks} {...props} />);
-  return { onMove, onSaveFileLinks };
+  const onCreate = jest.fn().mockResolvedValue(undefined);
+  const onUpdate = jest.fn().mockResolvedValue(undefined);
+  render(
+    <BoardView lanes={lanes} items={items} me="me" onMove={onMove} onSaveFileLinks={onSaveFileLinks} onCreate={onCreate} onUpdate={onUpdate} {...props} />,
+  );
+  return { onMove, onSaveFileLinks, onCreate, onUpdate };
 };
 
 const dataTransfer = () => {
@@ -127,6 +132,42 @@ describe('BoardView', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     });
     expect(onSaveFileLinks).toHaveBeenCalledWith('1', [{ repo: 'r', path: 'a.ts' }]);
+  });
+});
+
+describe('BoardView create and edit', () => {
+  it('New item opens the dialog; saving creates the item, which then appears in its lane', async () => {
+    const Harness = () => {
+      const [list, setList] = useState(items);
+      const onCreate = async (draft: { title: string; description?: string; lane?: string }) => {
+        setList((l) => [...l, item({ id: '9', title: draft.title, lane: draft.lane ?? 'todo' })]);
+      };
+      return <BoardView lanes={lanes} items={list} me="me" onMove={jest.fn()} onSaveFileLinks={jest.fn()} onCreate={onCreate} onUpdate={jest.fn()} />;
+    };
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'New item' }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Brand new' } });
+    fireEvent.change(screen.getByLabelText('Lane'), { target: { value: 'doing' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(within(screen.getByRole('region', { name: 'Doing' })).getByText('Brand new')).toBeTruthy();
+  });
+
+  it('Edit in the detail opens the dialog with the item and saves only what changed', async () => {
+    const { onUpdate } = renderBoard();
+    fireEvent.click(screen.getByText('Mine'));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Mine');
+    expect((screen.getByLabelText('Assignees') as HTMLInputElement).value).toBe('me, bob');
+    expect(screen.queryByLabelText('Lane')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Renamed' } });
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }));
+    });
+    expect(onUpdate).toHaveBeenCalledWith('1', { title: 'Renamed' });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
 
