@@ -247,6 +247,13 @@ describe('LocalTaskLauncher', () => {
       expect(await l.inspect('T-1')).toMatchObject({ exists: false });
     });
 
+    it('masks secrets and URL credentials in the failure message', async () => {
+      const l = launcher(image(`echo "token $CLAUDE_CODE_OAUTH_TOKEN $AGENTIC_TASK_TOKEN https://u:pw@host/x" >&2\nexit 1`), 'claude');
+      const error = await l.launch({ ...spec, repoUrl: origin }).catch((e: Error) => e);
+      expect((error as Error).message).toContain('start steps failed');
+      for (const secret of [OAUTH, TASK_TOKEN, 'u:pw']) expect((error as Error).message).not.toContain(secret);
+    });
+
     it('stop during the start wait cancels the launch and kills the entrypoint', async () => {
       const l = launcher(image('sleep 300'));
       const outcome = l.launch({ ...spec, repoUrl: origin }).then(() => 'launched', (e: Error) => e.message);

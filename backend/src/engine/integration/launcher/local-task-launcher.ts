@@ -302,7 +302,10 @@ export class LocalTaskLauncher implements TaskLauncher {
     while (Date.now() < deadline) {
       this.throwIfCancelled(task);
       if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) {
-        await task.closed;
+        // A descendant that holds the pipes must not hang the launch: take the group, then wait briefly.
+        signalGroup(child, 'SIGKILL');
+        await Promise.race([task.closed, new Promise((r) => setTimeout(r, 2000))]);
+        if (task.stopping || task.cancelled) throw new Error('The task was stopped or removed while its bridge was starting');
         throw new Error(`The task's start steps failed (${child.signalCode ? `signal ${child.signalCode}` : `exit code ${child.exitCode}`}): ${this.failureLines(task)}`);
       }
       if (await this.answering(task)) return;
@@ -317,14 +320,17 @@ export class LocalTaskLauncher implements TaskLauncher {
       const response = await fetch(`${this.bridgeUrl(task)}/status`, {
         headers: { authorization: `Bearer ${task.env.AGENTIC_TASK_TOKEN}` }, signal: AbortSignal.timeout(START_POLL_MS * 10),
       });
-      return response.status !== 503;
+      return response.status === 200;
     } catch {
       return false;
     }
   }
 
   private failureLines(task: LocalTask): string {
-    const lines = task.log.split('\n').map((l) => l.trim()).filter((l) => l !== '');
+    // Step output can echo the environment: known secret values and URL credentials are masked.
+    const secrets = ['CLAUDE_CODE_OAUTH_TOKEN', 'GH_TOKEN', 'AGENTIC_TASK_TOKEN', 'AGENTIC_AGENT_TOKEN'].map((k) => task.env[k]).filter((v): v is string => !!v);
+    const scrub = (line: string) => secrets.reduce((l, v) => l.split(v).join('***'), line).replace(/\/\/[^/@\s]*@/g, '//').slice(0, 300);
+    const lines = task.log.split('\n').map((l) => scrub(l.trim())).filter((l) => l !== '');
     return lines.slice(-FAILURE_LINES).join(' | ') || 'no output';
   }
 
@@ -393,7 +399,11 @@ export class LocalTaskLauncher implements TaskLauncher {
   // a last SIGKILL takes whatever it left in the group.
   private async kill(task: LocalTask): Promise<void> {
     const child = task.child;
-    if (!child || !this.alive(task)) return;
+    if (!child) return;
+    if (!this.alive(task)) {
+      signalGroup(child, 'SIGKILL'); // what a dead leader left behind
+      return;
+    }
     task.stopping = true;
     const exited = new Promise<void>((done) => {
       child.once('exit', () => done());
