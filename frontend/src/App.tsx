@@ -68,6 +68,8 @@ export function App() {
               route.selectTask(null);
             }}
             onTask={applyTask}
+            session={route.session}
+            onSelectSession={route.selectSession}
           />
         }
         facts={<FactsPanel task={task} />}

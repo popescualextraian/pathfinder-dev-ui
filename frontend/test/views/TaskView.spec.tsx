@@ -4,7 +4,7 @@ import { NewTaskDialog } from '../../src/views/NewTaskDialog';
 import { FactsPanel } from '../../src/views/FactsPanel';
 import * as api from '../../src/api/tasks-api';
 import { ApiError } from '../../src/api/http';
-import { makeTask } from '../fixtures/tasks';
+import { makeSession, makeTask } from '../fixtures/tasks';
 import { FakeEventSource } from '../api/fake-event-source';
 
 jest.mock('../../src/api/tasks-api');
@@ -20,7 +20,8 @@ const question = {
   asked: '2026-10-17T10:00:00Z',
 };
 const waiting = () => makeTask({ state: 'waiting', section: 'needs-you', questions: [question] });
-const idle = (o = {}) => makeTask({ state: 'idle', section: 'in-review', ...o });
+const idle = (o = {}) =>
+  makeTask({ state: 'idle', section: 'in-review', sessions: [makeSession({ state: 'idle' })], ...o });
 const done = () => idle({ closed: true, section: 'done' });
 const view = (t = makeTask(), onDeleted = jest.fn()) => render(<TaskView task={t} onDeleted={onDeleted} />);
 

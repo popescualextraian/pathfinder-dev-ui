@@ -1,9 +1,14 @@
 import { useState } from 'react';
-import type { Task } from '../api/models';
 import { formatAge } from './format-age';
 import styles from './TaskView.module.css';
 
-export function LastResponse({ task }: { task: Task }) {
+interface Source {
+  lastMessage?: string;
+  lastMessageAt?: string;
+  summary?: string;
+}
+
+export function LastResponse({ task }: { task: Source }) {
   const [open, setOpen] = useState(false);
   const text = task.lastMessage ?? task.summary;
   if (!text) return null;

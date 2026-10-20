@@ -1,0 +1,8 @@
+.bar { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.tabs { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+.tab { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 10px; font: inherit; color: var(--ink-soft); cursor: pointer; }
+.tab:hover { color: var(--ink); }
+.tab:focus-visible { outline: 2px solid var(--msg-red); outline-offset: -2px; }
+.selected { color: var(--ink); font-weight: 600; border-bottom-color: var(--msg-red); }
+.name { overflow-wrap: anywhere; }
+.mark { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent-gold); color: var(--ink); font-size: 12px; font-weight: 700; }

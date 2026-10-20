@@ -163,3 +163,9 @@
 .field select {
   font-weight: 400;
 }
+.panelBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}

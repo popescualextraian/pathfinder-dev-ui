@@ -8,3 +8,5 @@
 .meta { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--ink-soft); }
 .branch { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .age { flex: none; }
+.sessions { flex: none; }
+.asking { flex: none; color: var(--state-needs-text); font-weight: 600; }

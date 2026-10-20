@@ -93,8 +93,8 @@ function Line({ item }: { item: RunItem }) {
 }
 
 /** The full run of a task; the event stream is open only while this is mounted. */
-export function FullRun({ taskId, closed = false }: { taskId: string; closed?: boolean }) {
-  const { items, connected, error } = useTaskRun(taskId, 'main', !closed);
+export function FullRun({ taskId, session = 'main', closed = false }: { taskId: string; session?: string; closed?: boolean }) {
+  const { items, connected, error } = useTaskRun(taskId, session, !closed);
   return (
     <section className={styles.run} data-testid="full-run" aria-label="Full run">
       <h3 className={styles.kicker}>Full run</h3>
