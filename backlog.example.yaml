@@ -1,0 +1,32 @@
+# Backlog lanes of one project (optional component). Point BACKLOG_CONFIG at a copy of this file.
+# The token itself is never written here: tokenEnv names the environment variable that holds it.
+connector: gitlab
+gitlab:
+  baseUrl: https://gitlab.zt.msg.team
+  project: moldovaa/vans-factory-rotation
+  tokenEnv: GITLAB_TOKEN        # name of the env var; the value is never in the file
+pollSeconds: 60                 # optional, default 60
+doneDays: 14                    # optional, default 14: closed issues updated within this many days are listed
+lanes:
+  - id: todo
+    title: Todo
+    default: true               # items matching no lane land here
+    gitlab: { label: "status::todo" }
+  - id: plan
+    title: Plan
+    trigger: plan.enter
+    gitlab: { label: "status::plan" }
+  - id: in-progress
+    title: In progress
+    trigger: implement.enter
+    gitlab: { label: "status::in-progress" }
+  - id: test
+    title: Test
+    trigger: test.enter
+    gitlab: { label: "status::test" }
+  - id: review
+    title: Review
+    gitlab: { label: "status::review" }
+  - id: done
+    title: Done
+    gitlab: { state: closed }

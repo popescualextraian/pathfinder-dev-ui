@@ -14,6 +14,8 @@ function redactRepoUrl(value) {
 // Defaults, then the caller's environment, then the fixed launcher settings. With the fake agent
 // (whose SHELL: prompt runs commands as the app's user and can read the app's environment) the
 // app does not get CLAUDE_CODE_OAUTH_TOKEN, nor GH_TOKEN when the repository is a local path.
+// BACKLOG_CONFIG, BACKLOG_DATA_DIR and the backlog token variable (GITLAB_TOKEN, or whatever gitlab.tokenEnv
+// names) pass through unchanged: the backlog is off unless BACKLOG_CONFIG is set.
 function buildAppEnv({ processEnv, root, projectName, port, dataDir }) {
   const given = Object.fromEntries(Object.entries(processEnv).filter(([, v]) => v !== undefined && v !== ''));
   const env = {
