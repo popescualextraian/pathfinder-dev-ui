@@ -30,6 +30,7 @@ export default defineConfig({
     env: {
       PORT: String(PORT), ENGINE_POLL_SECONDS: '2', ENGINE_MAX_RUNNING: '10',
       BACKLOG_CONFIG: 'e2e/fixtures/backlog.yaml', WORKFLOWS_DIR: 'e2e/fixtures/workflows',
+      START_LOCAL_COPY_WORKFLOWS: '1', // the editor spec writes: it gets a copy in .local/<port>/workflows
     },
     url: `http://localhost:${PORT}/api/system/info`,
     reuseExistingServer: !process.env.CI,

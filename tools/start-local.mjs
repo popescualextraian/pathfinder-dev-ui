@@ -5,9 +5,9 @@
 // ENGINE_REPO_URL = this checkout, ENGINE_PROJECT = its folder name, ENGINE_LOCAL_AGENT = fake, ENGINE_GIT_NAME/EMAIL = a dummy identity.
 // ENGINE_DATA_DIR is always <checkout>/.local/<port>/ and is wiped at every start; so are the backlog's and the
 // workflow runs' data (<data>/backlog, <data>/workflow-runs) when BACKLOG_CONFIG / WORKFLOWS_DIR are set and their
-// data dirs are not. The in-memory backlog connector (`connector: memory`) is allowed here only (see local-env.cjs).
+// data dirs are not; START_LOCAL_COPY_WORKFLOWS=1 first copies WORKFLOWS_DIR into <data>/workflows and uses the copy. The in-memory backlog connector (`connector: memory`) is allowed here only (see local-env.cjs).
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +30,17 @@ rmSync(dataDir, { recursive: true, force: true });
 mkdirSync(dataDir, { recursive: true });
 writeFileSync(pidFile, `${process.pid}\n`);
 
-const env = buildAppEnv({ processEnv: process.env, root, projectName: basename(root), port, dataDir });
+// START_LOCAL_COPY_WORKFLOWS=1: the app gets a writable copy of WORKFLOWS_DIR in <data>/workflows (the UI tests edit
+// workflows; the folder in git stays untouched).
+const processEnv = { ...process.env };
+if (processEnv.START_LOCAL_COPY_WORKFLOWS === '1' && processEnv.WORKFLOWS_DIR) {
+  const copy = join(dataDir, 'workflows');
+  cpSync(resolve(root, processEnv.WORKFLOWS_DIR), copy, { recursive: true });
+  processEnv.WORKFLOWS_DIR = copy;
+}
+delete processEnv.START_LOCAL_COPY_WORKFLOWS;
+
+const env = buildAppEnv({ processEnv, root, projectName: basename(root), port, dataDir });
 const extras = [env.BACKLOG_CONFIG && `backlog ${env.BACKLOG_CONFIG}`, env.WORKFLOWS_DIR && `workflows ${env.WORKFLOWS_DIR}`].filter(Boolean);
 console.log(`start:local: port ${port}, data ${dataDir}, repo ${redactRepoUrl(env.ENGINE_REPO_URL)}, agent ${env.ENGINE_LOCAL_AGENT}${extras.map((e) => `, ${e}`).join('')}`);
 
