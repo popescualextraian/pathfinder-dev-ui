@@ -1,6 +1,9 @@
 import type { BacklogItem, Lane } from '../api/models';
 import styles from './BacklogCard.module.css';
 
+/** Private drag type: a lane accepts only drags that started on a card, never dropped text. */
+export const ITEM_MIME = 'application/x-pathfinder-item';
+
 interface Props {
   item: BacklogItem;
   lanes: Lane[];
@@ -15,7 +18,7 @@ export function BacklogCard({ item, lanes, selected, onSelect, onMove }: Props) 
       className={`${styles.card} ${selected ? styles.selected : ''}`}
       draggable
       onDragStart={(e) => {
-        e.dataTransfer.setData('text/plain', item.id);
+        e.dataTransfer.setData(ITEM_MIME, item.id);
         e.dataTransfer.effectAllowed = 'move';
       }}
     >

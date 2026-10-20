@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { BacklogItem, Lane } from '../api/models';
-import { BacklogCard } from './BacklogCard';
+import { BacklogCard, ITEM_MIME } from './BacklogCard';
 import styles from './BoardLane.module.css';
 
 interface Props {
@@ -31,7 +31,7 @@ export function BoardLane({ lane, lanes, items, selectedId, laneOf, onSelect, on
       onDrop={(e) => {
         e.preventDefault();
         setOver(false);
-        const id = e.dataTransfer.getData('text/plain');
+        const id = e.dataTransfer.getData(ITEM_MIME);
         const from = id ? laneOf(id) : null;
         if (id && from !== null && from !== lane.id) onMove(id, lane.id);
       }}

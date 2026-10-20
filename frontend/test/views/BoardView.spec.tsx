@@ -74,6 +74,14 @@ describe('BoardView', () => {
     expect(onMove).not.toHaveBeenCalled();
   });
 
+  it('ignores a drop that carries only plain text', () => {
+    const { onMove } = renderBoard();
+    const dt = dataTransfer();
+    dt.setData('text/plain', '1');
+    fireEvent.drop(screen.getByRole('region', { name: 'Doing' }), { dataTransfer: dt });
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
   it('keeps the drop highlight on dragleave into the lane and clears it when leaving', () => {
     renderBoard();
     const lane = screen.getByRole('region', { name: 'Doing' });

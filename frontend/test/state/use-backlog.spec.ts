@@ -89,6 +89,23 @@ describe('useBacklog', () => {
     expect(result.current.error).toBe('source down');
   });
 
+  it('clears the stream error on the next item or removed event, but not another error', async () => {
+    const { result } = renderHook(() => useBacklog());
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+    act(() => FakeEventSource.last.emit('error', { message: 'source down' }));
+    expect(result.current.error).toBe('source down');
+    act(() => FakeEventSource.last.emit('item', { ...A, title: 'again', updatedAt: '2026-10-20T15:00:00Z' }));
+    expect(result.current.error).toBeNull();
+    act(() => FakeEventSource.last.emit('error', { message: 'source down' }));
+    act(() => FakeEventSource.last.emit('removed', { id: 'b' }));
+    expect(result.current.error).toBeNull();
+    moveItem.mockRejectedValue(new Error('move failed'));
+    await act(async () => { await result.current.move('a', 'doing'); });
+    expect(result.current.error).toBe('move failed');
+    act(() => FakeEventSource.last.emit('item', { ...B, title: 'later', updatedAt: '2026-10-20T16:00:00Z' }));
+    expect(result.current.error).toBe('move failed');
+  });
+
   it('moves optimistically, passing the current lane as from', async () => {
     let resolve!: (i: BacklogItem) => void;
     moveItem.mockReturnValue(new Promise((r) => (resolve = r)));

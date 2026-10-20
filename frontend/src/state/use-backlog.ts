@@ -27,6 +27,8 @@ export function useBacklog() {
   const latestLoad = useRef(0);
   // Changes seen on the stream while a load runs: the (older) GET must not undo them.
   const touched = useRef(new Map<string, BacklogItem | null>());
+  // The error text the stream set: only that one is cleared when the stream shows GitLab answering again.
+  const streamError = useRef<string | null>(null);
   const itemsRef = useRef<BacklogItem[]>([]);
   itemsRef.current = items;
 
@@ -48,7 +50,10 @@ export function useBacklog() {
           }
           return merged.sort(newestFirst);
         });
-        if (!keepError) setError(null);
+        if (!keepError) {
+          streamError.current = null;
+          setError(null);
+        }
       })
       .catch((e: unknown) => {
         if (seq === latestLoad.current) setError(message(e));
@@ -58,15 +63,24 @@ export function useBacklog() {
       });
   }, []);
 
-  const applyItem = useCallback((item: BacklogItem) => {
-    touched.current.set(item.id, item);
-    setItems((list) => upsertItem(list, item));
+  const clearStreamError = useCallback(() => {
+    const mine = streamError.current;
+    if (mine === null) return;
+    streamError.current = null;
+    setError((current) => (current === mine ? null : current));
   }, []);
 
+  const applyItem = useCallback((item: BacklogItem) => {
+    clearStreamError();
+    touched.current.set(item.id, item);
+    setItems((list) => upsertItem(list, item));
+  }, [clearStreamError]);
+
   const removeItem = useCallback((id: string) => {
+    clearStreamError();
     touched.current.set(id, null);
     setItems((list) => list.filter((i) => i.id !== id));
-  }, []);
+  }, [clearStreamError]);
 
   useEffect(() => {
     let stop: (() => void) | undefined;
@@ -86,7 +100,10 @@ export function useBacklog() {
           onOpen: () => void load(),
           onItem: applyItem,
           onRemoved: removeItem,
-          onServerError: setError,
+          onServerError: (text) => {
+            streamError.current = text;
+            setError(text);
+          },
         });
         void load();
       })
@@ -126,6 +143,7 @@ export function useBacklog() {
       latestLoad.current++; // supersede a running load
       touched.current = new Map();
       setItems([...list].sort(newestFirst));
+      streamError.current = null;
       setError(null);
       setLoading(false); // the superseded load no longer clears it
     } catch (e) {
