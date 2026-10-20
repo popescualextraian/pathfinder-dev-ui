@@ -94,6 +94,52 @@ describeWithBridge('BridgeClient against the real bridge', () => {
     await pump;
   });
 
+  describe('sessions', () => {
+    async function sessionState(name: string) {
+      return until(`session ${name} idle`, async () => (await client.sessions()).find((x) => x.name === name && x.state === 'idle'));
+    }
+    const lastMessage = async (name: string, needle: string) =>
+      until(`message ${needle} in ${name}`, async () => (await client.events(0, undefined, 'full', name)).find((e) => e.type === 'message' && JSON.stringify(e.data).includes(needle)));
+
+    it('adds a session that answers on its own', async () => {
+      await idle();
+      const added = await client.addSession({ name: 'second', text: 'hi second' });
+      expect(added.name).toBe('second');
+      await lastMessage('second', 'echo: hi second');
+      await sessionState('second');
+      expect((await client.sessions()).map((x) => x.name)).toEqual(expect.arrayContaining(['main', 'second']));
+    });
+
+    it('forks a session that knows the conversation of its source', async () => {
+      await idle();
+      await client.prompt('HISTORY');
+      const main = await until('main history', async () => (await client.events(0, undefined, 'full', 'main')).filter((e) => JSON.stringify(e.data).includes('history: ')).pop());
+      const mainCount = Number(/history: (\d+)/.exec(JSON.stringify(main.data))![1]);
+      expect(mainCount).toBeGreaterThan(2);
+      await idle();
+      const forked = await client.addSession({ name: 'forked', fork: 'main', text: 'HISTORY' });
+      expect(forked.fork_of).toBe('main');
+      const ev = await lastMessage('forked', 'history: ');
+      // main's history at the time plus its own HISTORY exchange (user + agent) is what the fork starts from
+      expect(Number(/history: (\d+)/.exec(JSON.stringify(ev.data))![1])).toBe(mainCount + 2);
+      await sessionState('forked');
+    });
+
+    it('runs a question in the second session while main stays idle, and answers it independently', async () => {
+      await idle();
+      await client.prompt('ASK:Which branch?', 'second');
+      const q = await until('question in second', async () => (await client.status()).questions.find((x) => x.session === 'second'));
+      expect(q.text).toBe('Which branch?');
+      const status = await client.status();
+      expect(status.sessions?.find((x) => x.name === 'main')?.state).toBe('idle');
+      expect(status.questions.filter((x) => x.session !== 'second')).toEqual([]);
+      await client.answer({ question: q.id, text: 'develop', session: 'second' });
+      await sessionState('second');
+      expect((await client.status()).questions).toEqual([]);
+      expect((await client.sessions()).find((x) => x.name === 'main')?.state).toBe('idle');
+    });
+  });
+
   it('stops: prompts are refused afterwards', async () => {
     await idle();
     await client.stop();

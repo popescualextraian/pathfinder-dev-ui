@@ -9,6 +9,9 @@
 //   HISTORY           replies "history: <number of earlier messages>"
 //   CRASH             exits with code 3
 //   anything else     replies "echo: <prompt>"
+//   Sessions are independent: each has its own state file, turn, cancel flag and questions (ASK: sends its own
+//   session id to /ask). session/fork copies a session's stored state (history, meta, mode) under a new id;
+//   the bridge then loads it, so a fork's HISTORY counts the source's messages.
 //   A first prompt carries a scheduled note after "\n\n[scheduled run]\n"; it is ignored.
 //   FAKE_SUMMARY_SLEEP=<ms> delays the reply to the summary prompt (scheduled-run tests).
 // Sessions live in $FAKE_AGENT_STATE (default /tmp/fake-agent), so session/load works across processes.
@@ -54,7 +57,7 @@ function shell(sid, s, command, n) {
   return `ran: ${command} (exit ${r.status})`;
 }
 
-async function ask(text) {
+async function ask(sid, text) {
   if (process.env.FAKE_ASK === "cli") {
     const r = spawnSync("agentic-ask", [text], { encoding: "utf8" });
     return (r.stdout.match(/Recorded (Q\d+)/) || [])[1] || `failed: ${r.stderr.trim()}`;
@@ -62,7 +65,7 @@ async function ask(text) {
   const res = await fetch(`${process.env.AGENTIC_BRIDGE_URL}/ask`, {
     method: "POST",
     headers: { authorization: `Bearer ${process.env.AGENTIC_AGENT_TOKEN}`, "content-type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, session: sid }),
   });
   return (await res.json()).id;
 }
@@ -75,7 +78,7 @@ async function prompt(sid, text) {
   cancelled.delete(sid);
   let reply = `echo: ${text}`;
   let stopReason = "end_turn";
-  if (text.startsWith("ASK:")) reply = `asked ${await ask(text.slice(4))}`;
+  if (text.startsWith("ASK:")) reply = `asked ${await ask(sid, text.slice(4))}`;
   else if (text.startsWith("SHELL:")) reply = shell(sid, s, text.slice(6), before);
   else if (text.startsWith("Answer to") && s.lastRefused) reply = shell(sid, s, s.lastRefused, before);
   else if (text.startsWith("PERMISSION:")) {
@@ -109,10 +112,18 @@ async function handle(rpc) {
   const p = rpc.params || {};
   const reply = (result) => send({ id: rpc.id, result });
   switch (rpc.method) {
-    case "initialize": return reply({ protocolVersion: 1, agentCapabilities: { loadSession: true }, authMethods: [] });
+    case "initialize": return reply({ protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: { fork: {} } }, authMethods: [] });
     case "session/new": {
       const sid = randomUUID();
       save(sid, { history: [], meta: p._meta ?? null, mode: "default", lastRefused: null });
+      return reply({ sessionId: sid });
+    }
+    case "session/fork": {
+      if (!existsSync(file(p.sessionId))) return send({ id: rpc.id, error: { code: -32002, message: `session ${p.sessionId} not found` } });
+      const sid = randomUUID();
+      const s = load(p.sessionId);
+      s.lastRefused = null;
+      save(sid, s);
       return reply({ sessionId: sid });
     }
     case "session/load": {
