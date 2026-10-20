@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
 import { BoardView } from '../../src/views/BoardView';
 import { Sidebar } from '../../src/views/Sidebar';
 import type { BacklogItem, Lane } from '../../src/api/models';
@@ -67,6 +67,24 @@ describe('BoardView', () => {
     onMove.mockClear();
     fireEvent.drop(screen.getByRole('region', { name: 'To do' }), { dataTransfer: dt });
     expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('keeps the drop highlight on dragleave into the lane and clears it when leaving', () => {
+    renderBoard();
+    const lane = screen.getByRole('region', { name: 'Doing' });
+    const inside = within(lane).getByText('Active');
+    // jsdom drops relatedTarget from the init dict, so set it on the event.
+    const leave = (target: HTMLElement, related: Element) => {
+      const ev = createEvent.dragLeave(target);
+      Object.defineProperty(ev, 'relatedTarget', { value: related });
+      fireEvent(target, ev);
+    };
+    fireEvent.dragOver(lane, { dataTransfer: dataTransfer() });
+    expect(lane.className).toContain('over');
+    leave(lane, inside);
+    expect(lane.className).toContain('over');
+    leave(lane, document.body);
+    expect(lane.className).not.toContain('over');
   });
 
   it('offers a keyboard-accessible Move to select', () => {

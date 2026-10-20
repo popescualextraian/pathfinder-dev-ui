@@ -25,7 +25,9 @@ export function BoardLane({ lane, lanes, items, selectedId, laneOf, onSelect, on
         e.dataTransfer.dropEffect = 'move';
         setOver(true);
       }}
-      onDragLeave={() => setOver(false)}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+      }}
       onDrop={(e) => {
         e.preventDefault();
         setOver(false);

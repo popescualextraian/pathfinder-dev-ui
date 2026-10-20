@@ -11,6 +11,7 @@ const getLanes = api.getLanes as jest.Mock;
 const getItems = api.getItems as jest.Mock;
 const moveItem = api.moveItem as jest.Mock;
 const refreshBacklog = api.refreshBacklog as jest.Mock;
+const setFileLinks = api.setFileLinks as jest.Mock;
 
 const item = (id: string, lane: string, updatedAt: string): BacklogItem => ({
   id,
@@ -36,7 +37,7 @@ const ids = (r: { current: { items: BacklogItem[] } }) => r.current.items.map((i
 describe('useBacklog', () => {
   beforeEach(() => {
     FakeEventSource.install();
-    [getLanes, getItems, moveItem, refreshBacklog].forEach((m) => m.mockReset());
+    [getLanes, getItems, moveItem, refreshBacklog, setFileLinks].forEach((m) => m.mockReset());
     getLanes.mockResolvedValue(lanes);
     getItems.mockResolvedValue([A, B]);
   });
@@ -143,6 +144,34 @@ describe('useBacklog', () => {
     await act(() => result.current.refresh());
     expect(result.current.loading).toBe(false);
     expect(ids(result)).toEqual(['b']);
+  });
+
+  it('saveFileLinks replaces the item links with the API result and sets no error', async () => {
+    const saved = [{ repo: 'r', path: 'p.ts' }];
+    setFileLinks.mockResolvedValue(saved);
+    const { result } = renderHook(() => useBacklog());
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+    await act(async () => {
+      await result.current.saveFileLinks('a', [{ repo: ' r ', path: 'p.ts' }]);
+    });
+    expect(setFileLinks).toHaveBeenCalledWith('a', [{ repo: ' r ', path: 'p.ts' }]);
+    expect(result.current.items.find((i) => i.id === 'a')?.fileLinks).toEqual(saved);
+    expect(result.current.items.find((i) => i.id === 'b')?.fileLinks).toEqual([]);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('saveFileLinks rejects on failure and leaves items and error untouched', async () => {
+    setFileLinks.mockRejectedValue(new Error('nope'));
+    const { result } = renderHook(() => useBacklog());
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+    let caught: unknown;
+    await act(async () => {
+      await result.current.saveFileLinks('a', [{ repo: 'r', path: 'p' }]).catch((e) => (caught = e));
+    });
+    expect((caught as Error).message).toBe('nope');
+    expect(result.current.items.find((i) => i.id === 'a')?.fileLinks).toEqual([]);
+    expect(ids(result)).toEqual(['a', 'b']);
+    expect(result.current.error).toBeNull();
   });
 
   it('closes the stream on unmount', async () => {
