@@ -5,7 +5,6 @@ import styles from './BoardLane.module.css';
 
 interface Props {
   lane: Lane;
-  lanes: Lane[];
   items: BacklogItem[];
   selectedId: string | null;
   /** Current lane of a dragged item; null when unknown. */
@@ -14,7 +13,7 @@ interface Props {
   onMove: (id: string, laneId: string) => void;
 }
 
-export function BoardLane({ lane, lanes, items, selectedId, laneOf, onSelect, onMove }: Props) {
+export function BoardLane({ lane, items, selectedId, laneOf, onSelect, onMove }: Props) {
   const [over, setOver] = useState(false);
   return (
     <section
@@ -44,7 +43,7 @@ export function BoardLane({ lane, lanes, items, selectedId, laneOf, onSelect, on
       </h2>
       <div className={styles.cards}>
         {items.map((item) => (
-          <BacklogCard key={item.id} item={item} lanes={lanes} selected={item.id === selectedId} onSelect={onSelect} onMove={onMove} />
+          <BacklogCard key={item.id} item={item} selected={item.id === selectedId} onSelect={onSelect} />
         ))}
       </div>
     </section>

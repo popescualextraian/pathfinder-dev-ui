@@ -68,7 +68,6 @@ export function BoardView({ lanes, items, me, error, onMove, onSaveFileLinks, on
             <BoardLane
               key={lane.id}
               lane={lane}
-              lanes={lanes}
               items={visible.filter((i) => i.lane === lane.id)}
               selectedId={selectedId}
               laneOf={(id) => items.find((i) => i.id === id)?.lane ?? null}

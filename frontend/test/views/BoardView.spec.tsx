@@ -100,10 +100,21 @@ describe('BoardView', () => {
     expect(lane.className).not.toContain('over');
   });
 
-  it('offers a keyboard-accessible Move to select', () => {
-    const { onMove } = renderBoard();
-    fireEvent.change(screen.getByLabelText('Move #2 to'), { target: { value: 'done' } });
-    expect(onMove).toHaveBeenCalledWith('2', 'done');
+  it('has no Move to control on a card', () => {
+    renderBoard();
+    expect(screen.queryByLabelText(/^Move #/)).toBeNull();
+    expect(screen.queryByText('Move to…')).toBeNull();
+  });
+
+  it('shows the trimmed description on the card', () => {
+    renderBoard({ items: [item({ id: '1', title: 'T', description: '  first line\nsecond  ' })] });
+    const card = screen.getByRole('region', { name: 'To do' });
+    expect(card.querySelector('[class*="description"]')?.textContent).toBe('first line\nsecond');
+  });
+
+  it('shows no description element when it is empty or whitespace', () => {
+    renderBoard({ items: [item({ id: '1', description: '' }), item({ id: '2', description: ' \n ' })] });
+    expect(screen.getByRole('region', { name: 'To do' }).querySelector('[class*="description"]')).toBeNull();
   });
 
   it('My items hides others and lane counts follow the filter', () => {

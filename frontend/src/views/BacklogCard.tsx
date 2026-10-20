@@ -1,4 +1,4 @@
-import type { BacklogItem, Lane } from '../api/models';
+import type { BacklogItem } from '../api/models';
 import styles from './BacklogCard.module.css';
 
 /** Private drag type: a lane accepts only drags that started on a card, never dropped text. */
@@ -6,13 +6,12 @@ export const ITEM_MIME = 'application/x-pathfinder-item';
 
 interface Props {
   item: BacklogItem;
-  lanes: Lane[];
   selected: boolean;
   onSelect: (id: string) => void;
-  onMove: (id: string, laneId: string) => void;
 }
 
-export function BacklogCard({ item, lanes, selected, onSelect, onMove }: Props) {
+export function BacklogCard({ item, selected, onSelect }: Props) {
+  const description = item.description.trim();
   return (
     <div
       className={`${styles.card} ${selected ? styles.selected : ''}`}
@@ -27,23 +26,9 @@ export function BacklogCard({ item, lanes, selected, onSelect, onMove }: Props) 
           <span className={styles.id}>#{item.id}</span>
           <span className={styles.title}>{item.title}</span>
         </span>
+        {description && <span className={styles.description}>{description}</span>}
         {item.assignees.length > 0 && <span className={styles.assignees}>{item.assignees.join(', ')}</span>}
       </button>
-      <select
-        className={styles.move}
-        aria-label={`Move #${item.id} to`}
-        value=""
-        onChange={(e) => e.target.value && onMove(item.id, e.target.value)}
-      >
-        <option value="">Move to…</option>
-        {lanes
-          .filter((l) => l.id !== item.lane)
-          .map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.title}
-            </option>
-          ))}
-      </select>
     </div>
   );
 }
