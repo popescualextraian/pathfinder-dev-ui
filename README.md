@@ -366,7 +366,7 @@ title: Plan, implement, review
 steps:
   - id: plan
     title: Plan
-    stage: plan                  # a lane id of the backlog; the card moves there when the step starts
+    stage: plan                  # optional: a lane id of the backlog; the card moves there when the step starts
     sessions:
       - name: main               # the first session of the first step is the task's main session: it must be named main
         prompt: |
@@ -395,7 +395,7 @@ steps:
 doneStage: done                  # optional: the card goes there when the workflow ends
 ```
 
-- `title` and a non-empty `steps` are required. A step needs a unique `id`, `title`, `stage`, a non-empty `sessions` and a `gate`
+- `title` and a non-empty `steps` are required. A step needs a unique `id`, `title`, a non-empty `sessions` and a `gate`
   (`human` or `auto`); `requires` and `exitPrompt` are optional. A session needs a `name` (`[a-z0-9][a-z0-9_-]{0,31}`, unique in the
   workflow) and a `prompt`; `fork` (the name of an earlier session) and `model` are optional. The sessions of a step run one after another.
 - Placeholders in prompts, `exitPrompt` and `requires`: `{{item.id}}`, `{{item.title}}`, `{{item.description}}`, `{{item.url}}`,
@@ -419,7 +419,13 @@ doneStage: done                  # optional: the card goes there when the workfl
 
 | Route | Does | Success |
 |---|---|---|
-| `GET /api/workflows` | `{definitions: [{id, title, doneStage?, steps: [{id, title, stage, gate, sessions: [name]}]}], refused: [{file, error}]}` | 200 |
+| `GET /api/workflows` | `{definitions: [{id, title, doneStage?, steps: [{id, title, stage?, gate, sessions: [name]}]}], refused: [{file, error, version?}], writable}` | 200 |
+| `GET /api/workflows/:id` | `{definition (with prompts), version}`; `version` is a hash of the file | 200, 404 |
+| `POST /api/workflows/validate` `{definition}` | `{errors: []}` or the first error `{message, stepId?, session?, field?}`; writes nothing | 200 |
+| `POST /api/workflows` `{id, definition}` | Creates `<id>.yaml` (id `[a-z0-9][a-z0-9-]{0,63}`); id exists 409; broken rule 400 with `location` | 201 `{definition, version}` |
+| `PUT /api/workflows/:id` `{definition, version}` | Replaces the file (a `<id>.yml` is replaced by `<id>.yaml`); changed since `version` 409 | 200 |
+| `DELETE /api/workflows/:id?version=` | Deletes the file (active runs keep their snapshot); changed 409 | 204 |
+| `DELETE /api/workflows/refused/:file?version=` | Deletes a refused file by name (must be in the folder listing) | 204 |
 | `GET /api/workflow-runs[?itemId=]` | Active runs and the 50 most recently finished ones (of the item, if given), oldest first | 200 |
 | `GET /api/workflow-runs/:id` | One run | 200 |
 | `POST /api/workflow-runs` `{itemId, workflowId}` | Starts a run (creates the task, moves the card to the first stage). Unknown workflow or item 404; the item already has an active run 409; engine errors (cap 409, bridge 502) pass through | 201 run |
@@ -429,6 +435,16 @@ doneStage: done                  # optional: the card goes there when the workfl
 
 A run: `{id, workflowId, definition (snapshot taken at start), itemId, item (snapshot), taskId, stepIndex, phase, sessions: {<name>: {status: pending|running|done}},
 state, warning?, failureReason?, createdAt, updatedAt, finishedAt?}`. It never contains tokens. Errors have the usual `{statusCode, message, path}` body.
+
+Write routes answer 403 when the folder is not writable (a read-only mount); they have no login, like the rest of the API.
+A save through the editor rewrites the file as YAML: comments of a hand-written file are not kept.
+
+**Editor** (`#/workflows`, `#/workflows/<id>`, `#/workflows/new`): the list (Edit, Duplicate, Delete, refused files with Delete only) and
+an editor showing the workflow as a flow of steps with the gate on the arrow between them (click toggles), an inspector for the selected step
+(lane to move to or none, required files, exit prompt, sessions with placeholder chips) and the first error marked on its step and field.
+Read-only folders open the editor read-only. Docker: the compose mount of `WORKFLOWS_DIR_HOST` is read-only today, so the deployed UI shows
+the workflows read-only until the mount is made writable. `start:local` copies nothing by default: its folder is written in place
+(Playwright's server uses a copy under `.local/<port>/workflows`).
 
 In the UI (board, `#/backlog`): a card without a run has a **Workflow** button (a picker when there are several definitions, then a confirmation).
 A card with a run shows a line with the workflow title, the step (`Plan · 1/3`) and the state (marked for `needs-you`, `awaiting-approval`,
