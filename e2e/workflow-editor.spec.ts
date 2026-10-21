@@ -26,7 +26,7 @@ test.afterEach(async ({ request }) => {
 
 test('create a workflow in the editor, run it on a card, edit it', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Workflows' }).click();
+  await page.getByRole('button', { name: 'Workflows', exact: true }).click();
   await page.getByRole('button', { name: 'New workflow' }).click();
 
   // Step 1: no lane, a prompt.
@@ -76,7 +76,7 @@ test('create a workflow in the editor, run it on a card, edit it', async ({ page
 
   // Edit: a new title shows in the list.
   await page.goto('/');
-  await page.getByRole('button', { name: 'Workflows' }).click();
+  await page.getByRole('button', { name: 'Workflows', exact: true }).click();
   await page.getByRole('button', { name: `Edit ${title}` }).click();
   await expect(page.getByLabel('Workflow id')).toBeDisabled();
   await page.getByLabel('Workflow title').fill(`${title} v2`);
