@@ -74,6 +74,11 @@ export interface Task {
   closed: boolean;
   closedAt?: string;
   cost?: TaskCost;
+  /** Set when a schedule started the task. */
+  scheduleId?: string;
+  scheduleTitle?: string;
+  /** A scheduled run that ended: the first line of its result.md. */
+  summaryLine?: string;
 }
 
 export type TaskKind = 'workflow-generator';
@@ -290,3 +295,48 @@ export interface WorkflowGenerationView {
 }
 
 export type WorkflowGenerationSummary = Omit<WorkflowGenerationView, 'draft'> & { hasDraft: boolean };
+
+export type ScheduleWhen = { cron: string } | { at: string };
+export type ScheduleOutcome = 'running' | 'done' | 'timeout' | 'failed' | 'skipped' | 'missed' | 'refused';
+
+export interface ScheduleResult {
+  firedAt: string;
+  trigger: 'time' | 'manual';
+  outcome: ScheduleOutcome;
+  reason?: string;
+  taskId?: string;
+  branch?: string;
+  summary?: string;
+  endedAt?: string;
+}
+
+/** The writable part of a schedule (create and replace). */
+export interface ScheduleInput {
+  title: string;
+  prompt: string;
+  repository: string;
+  ref?: string;
+  model?: string;
+  when: ScheduleWhen;
+  timeoutMinutes?: number;
+  enabled?: boolean;
+}
+
+export interface Schedule extends Omit<ScheduleInput, 'timeoutMinutes' | 'enabled'> {
+  id: string;
+  timeoutMinutes: number;
+  enabled: boolean;
+  nextRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One list entry: no results, only the latest. */
+export type ScheduleSummary = Schedule & { lastResult?: ScheduleResult };
+/** Detail: results newest first. */
+export type ScheduleRecord = Schedule & { results: ScheduleResult[] };
+
+export interface SchedulePreview {
+  zone: string;
+  next: string[];
+}

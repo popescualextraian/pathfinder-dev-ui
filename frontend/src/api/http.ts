@@ -12,9 +12,13 @@ export class ApiError extends Error {
 
 async function errorInfo(response: Response): Promise<{ message: string; location?: ApiError['location'] }> {
   try {
-    const body = (await response.json()) as { message?: string | string[]; location?: unknown };
+    const body = (await response.json()) as { message?: string | string[]; location?: unknown; field?: unknown };
     const location =
-      body.location && typeof body.location === 'object' ? (body.location as ApiError['location']) : undefined;
+      body.location && typeof body.location === 'object'
+        ? (body.location as ApiError['location'])
+        : typeof body.field === 'string'
+          ? { field: body.field }
+          : undefined;
     if (Array.isArray(body.message)) return { message: body.message.join(', '), location };
     if (typeof body.message === 'string' && body.message) return { message: body.message, location };
   } catch {
