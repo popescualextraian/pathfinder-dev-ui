@@ -79,7 +79,7 @@ describe('workflows API (e2e)', () => {
       expect(res.body).toEqual({
         definition: expect.objectContaining({ id: 'do-it', title: 'Do and finish', doneStage: 'done' }), version: expect.stringMatching(/^[0-9a-f]{64}$/),
       });
-      expect(res.body.definition.steps[0].sessions[0].prompt).toContain('{{item.title}}');
+      expect(res.body.definition.steps[0].prompt).toContain('{{item.title}}');
       await api().get('/api/workflows/nope').expect(404);
       await api().get('/api/workflows/bad').expect(404);
     });

@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promise
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { RUN_ID, WorkflowRun } from '../service/workflow-run';
+import { upgradeRunDefinition } from '../service/upgrade-run';
 import type { WorkflowRunRepository } from '../service/workflow-run.repository';
 
 /** One mode-600 JSON file `<id>.json` per run in a directory (WORKFLOWS_DATA_DIR). */
@@ -37,7 +38,8 @@ export class WorkflowRunFileRepository implements WorkflowRunRepository {
   async get(id: string): Promise<WorkflowRun | undefined> {
     if (!RUN_ID.test(id)) return undefined;
     try {
-      return JSON.parse(await readFile(this.file(id), 'utf8')) as WorkflowRun;
+      // A run saved before one-session steps is converted here, so everything above sees the new format.
+      return upgradeRunDefinition(JSON.parse(await readFile(this.file(id), 'utf8')) as WorkflowRun);
     } catch (error) {
       if (isNotFound(error)) return undefined;
       throw error;
