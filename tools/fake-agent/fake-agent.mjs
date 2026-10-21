@@ -8,7 +8,19 @@
 //   META              replies with the session's _meta and mode as JSON
 //   HISTORY           replies "history: <number of earlier messages>"
 //   CRASH             exits with code 3
+//   FAKE_WRITE:<path> a line directly followed by a fenced block (``` with an optional language tag, up to a line
+//                     that is exactly ```) writes the block's lines (fences left out, each line ending in \n) to
+//                     <path> in the agent's working folder (the task worktree), creating folders. An absolute path,
+//                     a ".." segment, an empty path or an unclosed block writes nothing and replies "FAKE_WRITE refused: ...".
+//                     A block ends the marker only if the fence is on the very next line. Several are all written;
+//                     the turn then goes on as below (echo unless another marker applies).
 //   anything else     replies "echo: <prompt>"
+//   Where markers are looked for: a single-line prompt, or one that starts with ASK:, SHELL:, PERMISSION:, SLEEP:,
+//   CRASH, META, HISTORY or "Answer to", behaves exactly as listed above (the marker is the prompt's start; ASK:/SLEEP:
+//   take the rest of the whole prompt). Any other multi-line prompt (a skill-wrapped description, or one starting with
+//   FAKE_WRITE:) is scanned line by line, outside FAKE_WRITE blocks: the first line starting with ASK: or SLEEP:, or
+//   being exactly CRASH (trailing \r ignored), acts as that marker with the rest of that line only. Other markers
+//   (SHELL:, PERMISSION:, META, HISTORY) are not looked for inside a prompt.
 //   Sessions are independent: each has its own state file, turn, cancel flag and questions (ASK: sends its own
 //   session id to /ask). session/fork copies a session's stored state (history, meta, mode) under a new id;
 //   the bridge then loads it, so a fork's HISTORY counts the source's messages.
@@ -17,7 +29,7 @@
 // Sessions live in $FAKE_AGENT_STATE (default /tmp/fake-agent), so session/load works across processes.
 import { createInterface } from "node:readline";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
@@ -70,6 +82,45 @@ async function ask(sid, text) {
   return (await res.json()).id;
 }
 
+// FAKE_WRITE:<path> followed at once by a fenced block. Returns what to write and the lines that are not part of
+// a block (the others are searched for markers).
+function fakeWrites(text) {
+  const lines = text.split("\n");
+  const writes = [];
+  const rest = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].replace(/\r$/, "");
+    if (!line.startsWith("FAKE_WRITE:")) { rest.push(line); continue; }
+    const path = line.slice(11).trim();
+    if (!/^```/.test((lines[i + 1] ?? "").replace(/\r$/, ""))) continue; // no block: an ordinary line
+    let end = i + 2;
+    while (end < lines.length && lines[end].replace(/\r$/, "").trimEnd() !== "```") end++;
+    if (end >= lines.length) { writes.push({ path, error: "block is not closed" }); break; }
+    writes.push({ path, content: lines.slice(i + 2, end).map((l) => l.replace(/\r$/, "") + "\n").join("") });
+    i = end;
+  }
+  return { writes, rest };
+}
+
+function writeFake({ path, content, error }) {
+  const bad = error
+    || (!path ? "empty path" : null)
+    || (/^([/\\]|[A-Za-z]:)/.test(path) ? `absolute path ${path}` : null)
+    || (path.split(/[/\\]/).includes("..") ? `path ${path} leaves the working folder` : null);
+  if (bad) return `FAKE_WRITE refused: ${bad}`;
+  const target = join(process.cwd(), path);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, content);
+  return null;
+}
+
+const STARTS = /^(ASK:|SHELL:|PERMISSION:|SLEEP:|CRASH|META|HISTORY|Answer to)/;
+// The prompt, or for other multi-line prompts the marker line found inside (see the top of this file).
+function markerLine(text, rest) {
+  if (!text.includes("\n") || STARTS.test(text)) return text;
+  return rest.find((l) => /^(ASK:|SLEEP:)/.test(l) || l === "CRASH") ?? text;
+}
+
 async function prompt(sid, text) {
   if (process.env.FAKE_SUMMARY_SLEEP && text.includes("The run ends now")) await sleep(Number(process.env.FAKE_SUMMARY_SLEEP));
   const s = load(sid);
@@ -78,7 +129,11 @@ async function prompt(sid, text) {
   cancelled.delete(sid);
   let reply = `echo: ${text}`;
   let stopReason = "end_turn";
-  if (text.startsWith("ASK:")) reply = `asked ${await ask(sid, text.slice(4))}`;
+  const { writes, rest } = text.includes("FAKE_WRITE:") ? fakeWrites(text) : { writes: [], rest: text.split("\n").map((l) => l.replace(/\r$/, "")) };
+  const refusals = writes.map(writeFake).filter(Boolean);
+  if (refusals.length) reply = refusals.join("; ");
+  const cmd = markerLine(text, rest);
+  if (cmd.startsWith("ASK:")) reply = `asked ${await ask(sid, cmd.slice(4))}`;
   else if (text.startsWith("SHELL:")) reply = shell(sid, s, text.slice(6), before);
   else if (text.startsWith("Answer to") && s.lastRefused) reply = shell(sid, s, s.lastRefused, before);
   else if (text.startsWith("PERMISSION:")) {
@@ -93,15 +148,15 @@ async function prompt(sid, text) {
       ],
     });
     reply = `permission: ${r.outcome.outcome === "selected" ? r.outcome.optionId : "cancelled"}`;
-  } else if (text.startsWith("SLEEP:")) {
+  } else if (cmd.startsWith("SLEEP:")) {
     update(sid, { sessionUpdate: "tool_call", toolCallId: `sleep-${before}`, title: "sleep", kind: "execute", status: "in_progress" });
-    const end = Date.now() + Number(text.slice(6));
+    const end = Date.now() + Number(cmd.slice(6));
     while (Date.now() < end && !cancelled.has(sid)) await sleep(50);
     if (cancelled.has(sid)) { stopReason = "cancelled"; reply = ""; }
     else reply = "slept";
   } else if (text === "META") reply = JSON.stringify({ meta: s.meta, mode: s.mode });
   else if (text === "HISTORY") reply = `history: ${before}`;
-  else if (text === "CRASH") process.exit(3);
+  else if (cmd === "CRASH") process.exit(3);
   if (reply) { say(sid, reply); s.history.push({ role: "agent", text: reply }); }
   save(sid, s);
   return { stopReason };
