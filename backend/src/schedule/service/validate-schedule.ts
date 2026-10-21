@@ -55,7 +55,8 @@ export function validateSchedule(input: unknown, options: ValidateOptions): Vali
   return { value };
 }
 
-function validateWhen(raw: unknown, options: ValidateOptions): { value: When } | { error: ScheduleValidationError } {
+/** Checks `when` alone (as in a schedule): field `when`, `when.cron` or `when.at`. */
+export function validateWhen(raw: unknown, options: Pick<ValidateOptions, 'zone' | 'now'>): { value: When } | { error: ScheduleValidationError } {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return fail('when', 'when is required: { cron } or { at }');
   const { cron, at } = raw as Record<string, unknown>;
   if ((cron === undefined) === (at === undefined)) return fail('when', 'when must have exactly one of cron and at');
