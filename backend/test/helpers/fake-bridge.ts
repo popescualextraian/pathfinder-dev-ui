@@ -158,8 +158,15 @@ export class FakeBridge {
           const app = this.apps.find((a) => a.name === (action ?? logs)?.[1]);
           if (req.method === 'POST' && action) {
             if (!app) return fail(404, 'not_found', `No app ${action[1]}`);
-            if (action[2] === 'start' && app.state === 'running') return fail(409, 'conflict', 'App is already running');
+            // like agentic-app: a start of a running app is a no-op; an app whose prepare runs refuses with 409
+            if (app.state === 'preparing') {
+              const then = action[2] === 'start' ? 'start it again when that ends' : 'stop it when that ends';
+              return fail(409, 'conflict', `agentic-app: app ${app.name} is preparing; ${then}`);
+            }
+            if (action[2] === 'start' && app.state === 'running') return send(202, app);
             app.state = action[2] === 'stop' ? 'stopped' : 'running';
+            if (action[2] !== 'stop') app.exit_code = null;
+            app.since = Math.floor(Date.now() / 1000);
             return send(202, app);
           }
           if (req.method === 'GET' && logs) {

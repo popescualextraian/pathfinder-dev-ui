@@ -300,13 +300,17 @@ bridge in the container runs them. The UI only relays.
 
 | Route | Does | Success |
 |---|---|---|
-| `GET /api/tasks/:id/apps` | The apps: `{name, state, ports, url, since, exit_code?, link}`; `link` is the host URL, `null` without a published port | 200 |
+| `GET /api/tasks/:id/apps` | The apps: `{name, state, ports, url, since, exit_code?, link}`; `state` is `running`, `preparing`, `stopped`, `exited` or `failed`, `since` unix seconds or `null`; `link` is the host URL, `null` without a published port | 200 |
 | `POST /api/tasks/:id/apps/:name/start` | Starts the app (wakes a suspended task first) | 202 app |
 | `POST /api/tasks/:id/apps/:name/stop` | Stops the app | 202 app |
 | `POST /api/tasks/:id/apps/:name/restart` | Restarts the app (wakes a suspended task first) | 202 app |
 | `GET /api/tasks/:id/apps/:name/logs?lines=N` | The last lines of the app's log: `{lines: []}` | 200 |
 
 - Docker launcher only: with `ENGINE_LAUNCHER=local` the routes answer 409. A stopped or closed task is 409 too.
+- On these routes a failed `agentic-app` run (bridge 502 `app_failed`, e.g. a failed prepare) and its timeout
+  (504 `app_timeout`) keep their status and the bridge's message (the last output lines, tokens masked).
+- A suspended task's apps cannot be listed (409); the task view then shows the app names of the task record
+  (`appNames` in the task view) with Start, which wakes the task.
 - Links point at `http://localhost:<port>` (published on 127.0.0.1 only). The host ports are random and
   are read again on every start of the task container, so a link from before a restart of the task is stale.
 - In the compose setup the task containers are siblings of `ui`, created by the Docker engine: their ports are

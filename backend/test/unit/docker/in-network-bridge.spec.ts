@@ -218,7 +218,7 @@ describe('HelperContainer.exec', () => {
 });
 
 describe('InNetworkBridgeClient apps', () => {
-  const app = { name: 'web', state: 'running', ports: [8080], url: '/', since: '2026-10-20T10:00:00Z' };
+  const app = { name: 'web', state: 'running', ports: [8080], url: '/', since: 1792490400 };
 
   it('lists apps, relays an action with a generous helper timeout and reads logs', async () => {
     const seen: HelperRequest[] = [];

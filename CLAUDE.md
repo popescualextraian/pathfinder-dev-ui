@@ -54,7 +54,7 @@ Backlog (`backend/src/backlog`, its own package like the engine; optional: on on
 - The task container clones the repo itself (start step `05-workspace`) before the bridge starts; with `AGENTIC_WORKTREE=1` the bridge exits if `/work` isn't a git checkout with a commit. Git push credentials are injected via `GIT_CONFIG_*` env referencing `GH_TOKEN` (`git-credential-env.ts`), never a token value or file.
 - `ENGINE_MAX_RUNNING` caps running containers (409 beyond it). Prompt/answer wake a non-running container, except a task that was stopped via `/stop` (final; 409 immediately).
 - Sessions: a task holds several bridge sessions (`main` by default); the record and view carry `sessions`, questions carry `session`, the poller keeps the last message per session. `session` is optional on prompt/cancel and events (the engine filters the bridge's unfiltered WS by event `name`; events without `name` show in every session); `POST /tasks/:id/sessions` adds one (README, Sessions).
-- Bridge events are relayed to clients as SSE (`task-events.service.ts`). Bridge errors map to HTTP via `bridge-error.filter.ts` (400/404/409/503 pass through, anything else is 502).
+- Bridge events are relayed to clients as SSE (`task-events.service.ts`). Bridge errors map to HTTP via `bridge-error.filter.ts` (400/404/409/503 pass through, on the apps routes also 502 `app_failed` and 504 `app_timeout`; anything else is 502).
 - `engine-config.ts` validates env at startup and names the bad variable without printing values.
 
 Test helpers (`backend/test/helpers`; the fake agent is `tools/fake-agent/fake-agent.mjs`) provide a fake bridge, fake launcher, local-process launcher and fake agent used by the e2e/bridge/docker suites.

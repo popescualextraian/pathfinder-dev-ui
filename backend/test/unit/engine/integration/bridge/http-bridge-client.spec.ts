@@ -249,7 +249,7 @@ describe('HttpBridgeClient', () => {
   });
 
   describe('apps', () => {
-    const app = { name: 'web', state: 'running', ports: [3000], url: '/', since: '2026-10-20T10:00:00Z' };
+    const app = { name: 'web', state: 'running', ports: [3000], url: '/', since: 1792490400 };
 
     it('lists the apps', async () => {
       reply = () => ({ status: 200, body: [app] });
@@ -272,7 +272,7 @@ describe('HttpBridgeClient', () => {
       expect(seen[0]).toMatchObject({ method: 'GET', url: '/apps/web/logs?lines=50' });
     });
 
-    it('waits above the bridge limits: start 670 s, restart 850 s, stop 190 s, the reads as configured', async () => {
+    it('waits above the bridge limits: start 690 s, restart 870 s, stop 210 s, the reads as configured', async () => {
       reply = () => ({ status: 202, body: app });
       const spy = jest.spyOn(global, 'setTimeout');
       try {
@@ -281,9 +281,9 @@ describe('HttpBridgeClient', () => {
           await call();
           return spy.mock.calls.map((c) => c[1]);
         };
-        expect(await delays(() => client({ timeoutMs: 50 }).appAction('web', 'start'))).toContain(670_000);
-        expect(await delays(() => client({ timeoutMs: 50 }).appAction('web', 'restart'))).toContain(850_000);
-        expect(await delays(() => client({ timeoutMs: 50 }).appAction('web', 'stop'))).toContain(190_000);
+        expect(await delays(() => client({ timeoutMs: 50 }).appAction('web', 'start'))).toContain(690_000);
+        expect(await delays(() => client({ timeoutMs: 50 }).appAction('web', 'restart'))).toContain(870_000);
+        expect(await delays(() => client({ timeoutMs: 50 }).appAction('web', 'stop'))).toContain(210_000);
         reply = () => ({ status: 200, body: [app] });
         expect(await delays(() => client({ timeoutMs: 50 }).apps())).toContain(50);
       } finally {

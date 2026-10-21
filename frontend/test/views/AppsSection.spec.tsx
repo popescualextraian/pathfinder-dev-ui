@@ -144,3 +144,87 @@ describe('AppsSection', () => {
     expect(await screen.findByText('web')).toBeTruthy();
   });
 });
+
+describe('AppsSection: preparing, exited, errors that stay, a suspended task', () => {
+  const pill = (text: string) => screen.getByText(text).closest('[data-section]')?.getAttribute('data-section');
+
+  it('an exited app shows like a failed one: needs-you, its exit code, Start', async () => {
+    m(api.listApps).mockResolvedValue([app({ state: 'exited', exit_code: 3, since: 1792490400 })]);
+    render(<AppsSection taskId="T-1" taskState="running" />);
+    expect(await screen.findByText('exited')).toBeTruthy();
+    expect(pill('exited')).toBe('needs-you');
+    expect(screen.getByText(/exit code 3/)).toBeTruthy();
+    expect(screen.getByText('Start')).toBeTruthy();
+    expect(screen.queryByText('Stop')).toBeNull();
+  });
+
+  it('a failed app shows needs-you; a null exit code shows none', async () => {
+    m(api.listApps).mockResolvedValue([app({ state: 'failed', exit_code: null })]);
+    render(<AppsSection taskId="T-1" taskState="running" />);
+    expect(await screen.findByText('failed')).toBeTruthy();
+    expect(pill('failed')).toBe('needs-you');
+    expect(screen.queryByText(/exit code/)).toBeNull();
+  });
+
+  it('a preparing app shows working, "preparing…" and Logs, but no Start, Restart or Stop', async () => {
+    m(api.listApps).mockResolvedValue([app({ state: 'preparing', link: null })]);
+    render(<AppsSection taskId="T-1" taskState="running" />);
+    expect(await screen.findByText('preparing')).toBeTruthy();
+    expect(pill('preparing')).toBe('working');
+    expect(screen.getByText('preparing…')).toBeTruthy();
+    expect(screen.getByText('Logs')).toBeTruthy();
+    for (const label of ['Start', 'Restart', 'Stop']) expect(screen.queryByText(label)).toBeNull();
+  });
+
+  it('a failed action keeps its message through a refresh, until the next action', async () => {
+    m(api.listApps).mockResolvedValue([app({ state: 'stopped', link: null })]);
+    m(api.startApp).mockRejectedValueOnce(new ApiError(502, 'agentic-app: prepare of web failed (exit 1)'));
+    render(<AppsSection taskId="T-1" taskState="running" />);
+    fireEvent.click(await screen.findByText('Start'));
+    expect((await screen.findByRole('alert')).textContent).toBe('agentic-app: prepare of web failed (exit 1)');
+    act(() => {
+      FakeEventSource.last.emit('message', { seq: 1, type: 'app', data: { name: 'web', action: 'failed' } });
+    });
+    await waitFor(() => expect(api.listApps).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(screen.getByRole('alert').textContent).toBe('agentic-app: prepare of web failed (exit 1)');
+    m(api.startApp).mockResolvedValue(app());
+    fireEvent.click(screen.getByText('Start'));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
+
+  it('a suspended task (409 not running) shows its app names from the record with Start, which wakes it', async () => {
+    m(api.listApps).mockRejectedValue(new ApiError(409, 'Task T-1 is not running; its apps are not available'));
+    m(api.startApp).mockResolvedValue(app());
+    render(<AppsSection taskId="T-1" taskState="suspended" appNames={['web', 'api']} />);
+    expect(await screen.findByText('Task is suspended — Start wakes it')).toBeTruthy();
+    expect(screen.getByText('web')).toBeTruthy();
+    expect(screen.getByText('api')).toBeTruthy();
+    const starts = screen.getAllByText('Start');
+    expect(starts).toHaveLength(2);
+    expect(screen.queryByText('Logs')).toBeNull();
+    fireEvent.click(starts[0]);
+    await waitFor(() => expect(api.startApp).toHaveBeenCalledWith('T-1', 'web'));
+    expect(await screen.findByText('Stop')).toBeTruthy();
+  });
+
+  it('a suspended task without app names in its record shows nothing; a stopped task shows nothing', async () => {
+    m(api.listApps).mockRejectedValue(new ApiError(409, 'Task T-1 is not running; its apps are not available'));
+    const none = render(<AppsSection taskId="T-1" taskState="suspended" appNames={[]} />);
+    await waitFor(() => expect(api.listApps).toHaveBeenCalledTimes(1));
+    expect(none.container.textContent).toBe('');
+    none.unmount();
+    m(api.listApps).mockRejectedValue(new ApiError(409, 'Task T-1 is stopped; its apps are not available'));
+    const stopped = render(<AppsSection taskId="T-1" taskState="stopped" appNames={['web']} />);
+    await waitFor(() => expect(api.listApps).toHaveBeenCalledTimes(2));
+    expect(stopped.container.textContent).toBe('');
+  });
+
+  it('TaskView passes the app names of the task', async () => {
+    m(api.listApps).mockRejectedValue(new ApiError(409, 'Task T-1 is not running; its apps are not available'));
+    render(<TaskView task={makeTask({ state: 'suspended', appNames: ['web'] })} onDeleted={jest.fn()} />);
+    expect(await screen.findByText('Task is suspended — Start wakes it')).toBeTruthy();
+  });
+});

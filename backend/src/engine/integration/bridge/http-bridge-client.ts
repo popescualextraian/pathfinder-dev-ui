@@ -19,12 +19,12 @@ export interface BridgeClientOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-// The bridge's own limits are start 660 s, restart 840 s, stop 180 s: wait a little longer, so the
-// bridge answers (or fails) first.
+// The bridge lists the apps around each action (10 s each) and its own limits are start 660 s, restart 840 s,
+// stop 180 s: wait above list + action + list (680, 860, 200 s), so the bridge answers (or fails) first.
 export const APP_ACTION_TIMEOUT_MS: Record<AppAction, number> = {
-  start: 670_000,
-  restart: 850_000,
-  stop: 190_000,
+  start: 690_000,
+  restart: 870_000,
+  stop: 210_000,
 };
 
 export class HttpBridgeClient implements BridgeClient {

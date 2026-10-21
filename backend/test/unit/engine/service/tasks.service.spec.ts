@@ -816,7 +816,7 @@ describe('TasksService.readTaskFile', () => {
 });
 
 describe('TasksService apps', () => {
-  const web = { name: 'web', state: 'running', ports: [3000], url: '/ui', since: 'x' };
+  const web = { name: 'web', state: 'running', ports: [3000], url: '/ui', since: 1 };
   const withApps = (over: Partial<ReturnType<typeof record>> = {}, bridgeOver: Record<string, unknown> = {}) =>
     setup({ records: [record({ appPorts: { web: { '3000': 49153 } }, ...over })], bridge: { apps: jest.fn(async () => [web]), ...bridgeOver } });
 
@@ -867,7 +867,7 @@ describe('TasksService apps', () => {
 });
 
 describe('TasksService apps: links and waking', () => {
-  const base = { name: 'web', state: 'running', ports: [3000], since: 'x' };
+  const base = { name: 'web', state: 'running', ports: [3000], since: 1 };
   const linkOf = async (url: string) => {
     const { service } = setup({
       records: [record({ appPorts: { web: { '3000': 49153 } } })], bridge: { apps: jest.fn(async () => [{ ...base, url }]) },

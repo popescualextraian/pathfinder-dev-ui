@@ -219,7 +219,7 @@ function SessionPanel({ task, sessions, name, done, onTask }: PanelProps) {
           }}
         />
       ))}
-      <AppsSection taskId={task.id} taskState={task.state} />
+      <AppsSection taskId={task.id} taskState={task.state} appNames={task.appNames} />
       <button type="button" className={styles.runLink} onClick={() => setShowRun(!showRun)} aria-expanded={showRun}>
         {showRun ? 'Hide full run ▾' : 'View full run ▸'}
       </button>

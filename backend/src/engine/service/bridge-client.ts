@@ -51,7 +51,7 @@ export interface BridgeStatus {
   [key: string]: unknown;
 }
 
-export type BridgeEventType = 'state' | 'message' | 'tool' | 'plan' | 'question' | 'answer' | 'gate' | 'error';
+export type BridgeEventType = 'state' | 'message' | 'tool' | 'plan' | 'question' | 'answer' | 'gate' | 'error' | 'app';
 
 export interface BridgeEvent {
   seq: number;
@@ -72,17 +72,18 @@ export interface AnswerInput {
   session?: string;
 }
 
-export type BridgeAppState = 'starting' | 'running' | 'stopped' | 'failed';
+// `preparing`: its prepare step runs; `exited`: the app ended on its own (exit_code set).
+export type BridgeAppState = 'running' | 'preparing' | 'stopped' | 'exited' | 'failed';
 export type AppAction = 'start' | 'stop' | 'restart';
 
-// An app of the task container as the bridge reports it; `ports` are container ports.
+// An app of the task container as the bridge reports it; `ports` are container ports, `since` unix seconds.
 export interface BridgeApp {
   name: string;
   state: BridgeAppState;
   ports: number[];
   url: string;
-  since: string;
-  exit_code?: number;
+  since: number | null;
+  exit_code?: number | null;
 }
 
 export class BridgeError extends Error {

@@ -28,8 +28,8 @@ describe('task apps REST API (e2e)', () => {
   beforeEach(async () => {
     bridge = new FakeBridge();
     bridge.apps = [
-      { name: 'web', state: 'running', ports: [3000], url: '/ui', since: '2026-10-20T10:00:00Z' },
-      { name: 'worker', state: 'stopped', ports: [], url: '/', since: '2026-10-20T10:00:00Z', exit_code: 1 },
+      { name: 'web', state: 'running', ports: [3000], url: '/ui', since: 1792490400 },
+      { name: 'worker', state: 'stopped', ports: [], url: '/', since: 1792490400, exit_code: 1 },
     ];
     bridge.appLogLines = ['one', 'two', 'three'];
     await bridge.start();
@@ -102,14 +102,51 @@ describe('task apps REST API (e2e)', () => {
     expect(bridge.requests).toHaveLength(before);
   });
 
-  it('passes bridge 404 and 409 through', async () => {
+  it('passes bridge 404 and 409 through; start of a running app is a 202 no-op like the real bridge', async () => {
     const id = await startTask();
     const missing = await call('post', `/api/tasks/${id}/apps/nope/start`);
     expect(missing.status).toBe(404);
     expect(missing.body.message).toMatch(/No app nope/);
     const running = await call('post', `/api/tasks/${id}/apps/web/start`);
-    expect(running.status).toBe(409);
-    expect(running.body.message).toBe('App is already running');
+    expect(running.status).toBe(202);
+    expect(running.body).toMatchObject({ name: 'web', state: 'running', since: 1792490400 });
+    bridge.apps[1].state = 'preparing';
+    for (const action of ['start', 'restart']) {
+      const preparing = await call('post', `/api/tasks/${id}/apps/worker/${action}`);
+      expect(preparing.status).toBe(409);
+      expect(preparing.body.message).toMatch(/^agentic-app: app worker is preparing; /);
+    }
+  });
+
+  it('lists preparing and exited apps with since in unix seconds and an app event for the exit', async () => {
+    bridge.apps[0] = { ...bridge.apps[0], state: 'exited', exit_code: 3 };
+    bridge.apps[1] = { ...bridge.apps[1], state: 'preparing', exit_code: null };
+    const id = await startTask();
+    const res = await call('get', `/api/tasks/${id}/apps`);
+    expect(res.body).toMatchObject([
+      { name: 'web', state: 'exited', exit_code: 3, since: 1792490400 },
+      { name: 'worker', state: 'preparing', exit_code: null, since: 1792490400 },
+    ]);
+    bridge.emit('app', { name: 'web', action: 'exited', exit_code: 3 });
+    const events = await call('get', `/api/tasks/${id}/events`);
+    expect(events.status).toBe(200);
+    expect(JSON.stringify(events.body)).toContain('"exit_code":3');
+  });
+
+  it.each([
+    [502, 'app_failed', 'agentic-app: prepare of web failed (exit 1); its last lines:\nnpm ERR! missing script: build'],
+    [504, 'app_timeout', 'agentic-app start timed out'],
+  ])('passes a bridge %i %s with its message through for an app action', async (status, code, message) => {
+    const id = await startTask();
+    bridge.failNext = { status, code, message, route: 'POST /apps/worker/start' };
+    const res = await call('post', `/api/tasks/${id}/apps/worker/start`);
+    expect(res.status).toBe(status);
+    expect(res.body.message).toBe(message);
+  });
+
+  it('shows the app names of the record in the task', async () => {
+    const id = await startTask();
+    expect((await api().get(`/api/tasks/${id}`)).body.appNames).toEqual(['web']);
   });
 
   it('is 404 for an unknown task', async () => {
