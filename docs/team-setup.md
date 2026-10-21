@@ -201,8 +201,9 @@ With apps declared, the task view lists them with **Start**, **Open**, **Logs** 
 
 ## 7. Optional: the GitLab backlog board
 
-A board of the project's GitLab issues in lanes, at `#/backlog`. It needs a token with the `api` scope and a
-lanes file:
+A board of the project's GitLab issues in lanes, at `#/backlog`. It needs its own token (a project access token,
+role Developer, scope `api`; see [Tokens](#tokens)) and a lanes file. The first sync creates the lanes' `status::...`
+labels in the project; issues without one land in the default lane.
 
 ```bash
 cp ~/pathfinder/pathfinder-dev-ui/backlog.example.yaml ~/pathfinder/backlog.yaml   # edit baseUrl, project, lanes
@@ -221,7 +222,7 @@ Fill in `GITLAB_TOKEN`, then `tools/deploy.sh ~/pathfinder/pathfinder.env`. Work
 |---|---|---|---|
 | Claude | `claude setup-token` (your subscription) | | `CLAUDE_CODE_OAUTH_TOKEN` |
 | GitLab, for the repository | GitLab, Preferences, Access tokens, Add new token | `read_repository`, `write_repository` (fine-grained: Code: Download and Push, on the project) | `GH_TOKEN`, and your git credentials in step 1 |
-| GitLab, for the board (optional) | the same page | `api` | `GITLAB_TOKEN` |
+| GitLab, for the board (optional) | the project, Settings, Access tokens (a project access token: works on this project only) | role Developer, scope `api` (`read_api` cannot move cards; code rights or a fine-grained token get 403) | `GITLAB_TOKEN` |
 
 Give tokens an expiry date and only the projects they need. Every task container gets `CLAUDE_CODE_OAUTH_TOKEN`
 and `GH_TOKEN` in its environment; the UI has no login, so it listens on 127.0.0.1 only: do not expose it.
