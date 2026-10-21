@@ -27,12 +27,9 @@ export function RepositoryList({ repositories, tasks, selected, onSelect }: Prop
     </li>
   );
   return (
-    <div>
-      <h2 className={styles.kicker}>Repositories</h2>
-      <ul className={styles.list}>
-        {item('All repositories', open.length, null)}
-        {repositories.map((r) => item(r.name, countFor(r.name), r.name))}
-      </ul>
-    </div>
+    <ul className={styles.list} aria-label="Repositories">
+      {item('All repositories', open.length, null)}
+      {repositories.map((r) => item(r.name, countFor(r.name), r.name))}
+    </ul>
   );
 }
