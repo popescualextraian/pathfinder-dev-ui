@@ -42,6 +42,7 @@ Ask first which project they want (the GitLab https URL) unless they said it, an
 | 6 | `~/pathfinder/pathfinder.env` exists, mode 600, with `ENGINE_IMAGE`, `ENGINE_REPO_URL`, `ENGINE_PROJECT`, `ENGINE_GIT_NAME`, `ENGINE_GIT_EMAIL`, `DOCKER_GID`, and both tokens set (count check) | write the file without the tokens (guide step 5; fill name and email from `git config`), then ask the user to add `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) and `GH_TOKEN` (GitLab token, see the guide's Tokens table) with `nano`, and wait |
 | 7 | `docker compose ps` in `pathfinder-dev-ui` shows `ui` and `docker-filter` healthy; `curl -fsS localhost:<UI_PORT>/api/health` | `tools/deploy.sh ~/pathfinder/pathfinder.env` (it needs the checkout on a clean `main`) |
 | 8 | the user started a task in the UI and it reached idle or answered | read `docker compose logs ui --tail 100` and the task's state; fix from the guide's Troubleshooting table |
+| 9 (optional, ask) | `GET /api/backlog/lanes` answers 200 and `GET /api/workflows` lists definitions | guide step 7: lanes file, workflows folder, `BACKLOG_CONFIG_FILE`, `WORKFLOWS_DIR_HOST`, an empty `GITLAB_TOKEN=` for the user to fill (a project access token, Developer, `api`); check it with the guide's curl lines (scopes and status code only, never the value); 403 means the wrong kind of token; then deploy again |
 
 Finish with: the URL, where the settings file is, how to update (guide step 6 table), and anything left undone.
 
