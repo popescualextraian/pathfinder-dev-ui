@@ -1,5 +1,5 @@
 import type { WorkflowRunStep } from '../../src/api/models';
-import { currentSession, openStepHref } from '../../src/views/workflow-run-view';
+import { currentSession, kickoffPrompt, openStepHref } from '../../src/views/workflow-run-view';
 import { makeRun } from '../fixtures/workflows';
 
 const step = (id: string, over: Partial<WorkflowRunStep> = {}): WorkflowRunStep => ({
@@ -33,5 +33,19 @@ describe('currentSession', () => {
 
   it('Open step links that session', () => {
     expect(openStepHref(runAt([step('plan'), step('build a')], 1))).toBe('#/tasks/T-1?session=build%20a');
+  });
+});
+
+describe('kickoffPrompt', () => {
+  const item = { id: '7', title: 'Fix it', description: '  Details\nmore  ', url: 'https://x/7' };
+  const end = 'Read it and get familiar with it, then wait for my instructions. Do not change anything yet.';
+  it('names the item, its description and link, then asks to wait', () => {
+    expect(kickoffPrompt(item)).toBe(
+      `We plan to work on backlog item #7: Fix it\n\nDetails\nmore\n\nhttps://x/7\n\n${end}`,
+    );
+  });
+  it('omits a missing description or link', () => {
+    expect(kickoffPrompt({ ...item, description: ' ', url: '' })).toBe(`We plan to work on backlog item #7: Fix it\n\n${end}`);
+    expect(kickoffPrompt({ ...item, description: '' })).toBe(`We plan to work on backlog item #7: Fix it\n\nhttps://x/7\n\n${end}`);
   });
 });

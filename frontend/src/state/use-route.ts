@@ -149,6 +149,11 @@ export function useRoute() {
     (taskId: string | null) => navigate({ ...parseHash(window.location.hash), taskId, session: null }),
     [navigate],
   );
+  /** The task screen of a task, from any view (no repository filter). */
+  const openTask = useCallback(
+    (taskId: string) => navigate({ repository: null, taskId, session: null, view: 'tasks' }),
+    [navigate],
+  );
   const selectSession = useCallback(
     (session: string | null) => navigate({ ...parseHash(window.location.hash), session }),
     [navigate],
@@ -199,6 +204,7 @@ export function useRoute() {
     /** Requested session name (main by default); resolve against the task's sessions with resolveSession. */
     session: route.session ?? MAIN_SESSION,
     selectTask,
+    openTask,
     selectSession,
     selectRepository,
     selectView,

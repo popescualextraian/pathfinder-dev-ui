@@ -6,12 +6,14 @@ import {
   awaitingApproval,
   isActiveRun,
   isBlocked,
+  isTaskRun,
   needsAttention,
   nextStep,
   openStepHref,
   STATE_LABEL,
   stepLabel,
 } from './workflow-run-view';
+import { taskHref } from '../state/use-route';
 import styles from './Workflow.module.css';
 
 interface Props {
@@ -21,9 +23,13 @@ interface Props {
   onStop: (runId: string) => Promise<unknown>;
 }
 
-/** One run on a card or in the detail: workflow, step, state, and the actions an active run offers. */
+/**
+ * One run on a card or in the detail: workflow, step, state, and the actions an active run offers. A plain task run
+ * (kind `task`) shows "Task", its state, Open task and ■ Stop only.
+ */
 export function WorkflowRunLine({ run, pending, onAdvance, onStop }: Props) {
   const [stopping, setStopping] = useState(false);
+  const plain = isTaskRun(run);
   const active = isActiveRun(run);
   const attention = needsAttention(run);
   const label = STATE_LABEL[run.state];
@@ -36,14 +42,18 @@ export function WorkflowRunLine({ run, pending, onAdvance, onStop }: Props) {
       data-testid="workflow-run-line"
       data-state={run.state}
       data-attention={attention ? 'true' : undefined}
-      aria-label={`Workflow ${run.definition.title}: ${label}`}
+      aria-label={plain ? `Task: ${label}` : `Workflow ${run.definition.title}: ${label}`}
       role="group"
     >
       <div className={styles.summary}>
-        <span className={styles.workflow}>{run.definition.title}</span>
-        <span className={styles.step} data-testid="workflow-step">
-          {stepLabel(run)}
+        <span className={styles.workflow} data-testid="workflow-title">
+          {plain ? 'Task' : run.definition.title}
         </span>
+        {!plain && (
+          <span className={styles.step} data-testid="workflow-step">
+            {stepLabel(run)}
+          </span>
+        )}
         <span className={`${styles.state} ${styles[run.state] ?? ''}`} data-testid="workflow-state">
           {label}
         </span>
@@ -53,7 +63,17 @@ export function WorkflowRunLine({ run, pending, onAdvance, onStop }: Props) {
           {note}
         </p>
       )}
-      {active && (
+      {active && plain && (
+        <div className={styles.buttons}>
+          <a className={styles.link} href={taskHref(run.taskId)}>
+            Open task
+          </a>
+          <Button className={styles.small} disabled={pending} onClick={() => setStopping(true)}>
+            ■ Stop
+          </Button>
+        </div>
+      )}
+      {active && !plain && (
         <div className={styles.buttons}>
           <a className={styles.link} href={openStepHref(run)}>
             Open step
@@ -75,8 +95,12 @@ export function WorkflowRunLine({ run, pending, onAdvance, onStop }: Props) {
       )}
       {stopping && (
         <ConfirmDialog
-          title={`Stop ${run.definition.title} on #${run.itemId}?`}
-          message="The task is left as it is; the workflow does not go on."
+          title={plain ? `Stop the task link on #${run.itemId}?` : `Stop ${run.definition.title} on #${run.itemId}?`}
+          message={
+            plain
+              ? 'The task is left as it is; the item is no longer linked to it.'
+              : 'The task is left as it is; the workflow does not go on.'
+          }
           confirmLabel="Yes, stop"
           cancelLabel="Keep running"
           danger

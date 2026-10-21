@@ -38,6 +38,9 @@ export function App() {
         start: runs.start,
         advance: runs.advance,
         stop: runs.stop,
+        repositories,
+        startTask: runs.startTask,
+        onTaskStarted: route.openTask,
       }
     : undefined;
   const [creating, setCreating] = useState(false);
@@ -157,9 +160,9 @@ export function App() {
           repositories={repositories}
           defaultRepository={route.repository}
           onClose={() => setCreating(false)}
-          onStarted={(t) => {
+          onStarted={(taskId) => {
             setCreating(false);
-            route.selectTask(t.id);
+            route.selectTask(taskId);
           }}
         />
       )}

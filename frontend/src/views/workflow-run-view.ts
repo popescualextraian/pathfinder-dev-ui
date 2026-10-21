@@ -1,4 +1,6 @@
-import type { WorkflowRun, WorkflowRunState, WorkflowRunStep, WorkflowSummary } from '../api/models';
+import type {
+  BacklogItem, Repository, TaskRunInput, WorkflowRun, WorkflowRunState, WorkflowRunStep, WorkflowSummary,
+} from '../api/models';
 import { isActiveRun } from '../state/use-workflow-runs';
 
 /** What the board needs from useWorkflows/useWorkflowRuns; absent when workflows are off. */
@@ -11,6 +13,24 @@ export interface WorkflowBoard {
   start: (itemId: string, workflowId: string) => Promise<unknown>;
   advance: (runId: string, force?: boolean) => Promise<unknown>;
   stop: (runId: string) => Promise<unknown>;
+  /** For the New task dialog of "▶ Task". */
+  repositories: Repository[];
+  /** Starts a plain task on the item (a run of kind `task`); a failure is the item's action error. */
+  startTask: (itemId: string, input: TaskRunInput) => Promise<{ ok: true; value: WorkflowRun } | { ok: false }>;
+  /** Opens the task screen of a task just started. */
+  onTaskStarted: (taskId: string) => void;
+}
+
+/** A plain task linked to the item: no workflow, no steps. */
+export const isTaskRun = (run: WorkflowRun) => run.kind === 'task';
+
+const KICKOFF_END = 'Read it and get familiar with it, then wait for my instructions. Do not change anything yet.';
+
+/** The default prompt of "▶ Task": the item, its description and link (each left out when empty), then wait. */
+export function kickoffPrompt(item: Pick<BacklogItem, 'id' | 'title' | 'description' | 'url'>): string {
+  return [`We plan to work on backlog item #${item.id}: ${item.title}`, item.description.trim(), item.url.trim(), KICKOFF_END]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export { isActiveRun };

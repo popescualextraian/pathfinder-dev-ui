@@ -9,13 +9,14 @@ const listRuns = api.listRuns as jest.Mock;
 const startRun = api.startRun as jest.Mock;
 const advanceRun = api.advanceRun as jest.Mock;
 const stopRun = api.stopRun as jest.Mock;
+const startTask = api.startTask as jest.Mock;
 
 const run1 = makeRun({ id: 'R-1', itemId: '7', taskId: 'T-1', createdAt: '2026-10-20T10:00:00Z' });
 
 describe('useWorkflowRuns', () => {
   beforeEach(() => {
     FakeEventSource.install();
-    [listRuns, startRun, advanceRun, stopRun].forEach((m) => m.mockReset());
+    [listRuns, startRun, advanceRun, stopRun, startTask].forEach((m) => m.mockReset());
     listRuns.mockResolvedValue([run1]);
   });
 
@@ -128,6 +129,34 @@ describe('useWorkflowRuns', () => {
       await result.current.advance('R-1');
     });
     expect(result.current.actionState('7').error).toBeNull();
+  });
+
+  it('startTask starts a plain task on the item and applies its run', async () => {
+    listRuns.mockResolvedValue([]);
+    const taskRun = makeRun({ id: 'R-9', kind: 'task', taskId: 'T-9', workflowId: 'task', definition: { id: 'task', title: 'Task', steps: [] } });
+    startTask.mockResolvedValue(taskRun);
+    const { result } = renderHook(() => useWorkflowRuns(true));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    let out: unknown;
+    await act(async () => {
+      out = await result.current.startTask('7', { prompt: 'go', model: 'opus' });
+    });
+    expect(startTask).toHaveBeenCalledWith('7', { prompt: 'go', model: 'opus' });
+    expect(out).toEqual({ ok: true, value: taskRun });
+    expect(result.current.runsByItem.get('7')?.id).toBe('R-9');
+    expect(result.current.runByTask('T-9')?.id).toBe('R-9');
+  });
+
+  it('startTask keeps a failure as the item error', async () => {
+    const { result } = renderHook(() => useWorkflowRuns(true));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    startTask.mockRejectedValue(new Error('Item 7 already has an active run'));
+    let out: unknown;
+    await act(async () => {
+      out = await result.current.startTask('7', { prompt: 'go' });
+    });
+    expect(out).toEqual({ ok: false });
+    expect(result.current.actionState('7').error).toBe('Item 7 already has an active run');
   });
 
   it('stop applies the stopped run', async () => {

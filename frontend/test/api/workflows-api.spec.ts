@@ -1,5 +1,5 @@
 import {
-  advanceRun, createWorkflow, deleteRefusedWorkflow, deleteWorkflow, listRuns, listWorkflows, readWorkflow, startRun,
+  advanceRun, createWorkflow, deleteRefusedWorkflow, deleteWorkflow, listRuns, listWorkflows, readWorkflow, startRun, startTask,
   stopRun, updateWorkflow, validateWorkflow, startGeneration, listGenerations, getGeneration, requestGenerationChanges,
   discardGeneration, markGenerationSaved,
 } from '../../src/api/workflows-api';
@@ -41,6 +41,19 @@ describe('workflows-api', () => {
     expect(url).toBe('/api/workflow-runs');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({ itemId: '7', workflowId: 'wf' });
+  });
+
+  it('startTask posts the item and the prompt, omitting empty optional fields', async () => {
+    fetchMock.mockReturnValue(json(201, { id: 'R-2', kind: 'task' }));
+    expect(await startTask('7', { prompt: 'go', title: '', model: '', repository: '' })).toEqual({ id: 'R-2', kind: 'task' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/workflow-runs/task');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ itemId: '7', prompt: 'go' });
+    await startTask('7', { prompt: 'go', title: '#7 Fix it', model: 'opus', repository: 'a' });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      itemId: '7', prompt: 'go', title: '#7 Fix it', model: 'opus', repository: 'a',
+    });
   });
 
   it('advanceRun posts force only when asked; stopRun posts', async () => {

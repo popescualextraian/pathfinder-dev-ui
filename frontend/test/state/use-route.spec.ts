@@ -135,6 +135,18 @@ describe('useRoute', () => {
     expect(window.location.hash).toBe('#/');
   });
 
+  it('openTask goes to the task screen of a task from any view', () => {
+    window.location.hash = '#/backlog?item=7';
+    const { result } = renderHook(() => useRoute());
+    act(() => result.current.openTask('T-9'));
+    act(() => {
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect(window.location.hash).toBe('#/tasks/T-9');
+    expect(result.current.view).toBe('tasks');
+    expect(result.current.taskId).toBe('T-9');
+  });
+
   it('selects a session, defaulting to main, and resets it with the task', () => {
     window.location.hash = '#/tasks/T-1?session=second';
     const { result } = renderHook(() => useRoute());

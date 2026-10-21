@@ -243,8 +243,20 @@ export interface WorkflowRunStep extends WorkflowStepDef {
   session?: string;
 }
 
+/** `task`: a plain task linked to the item (no workflow; `definition` has no steps). Absent: a workflow run. */
+export type WorkflowRunKind = 'task';
+
+/** Body of `POST /api/workflow-runs/task` besides the item. */
+export interface TaskRunInput {
+  prompt: string;
+  title?: string;
+  model?: string;
+  repository?: string;
+}
+
 export interface WorkflowRun {
   id: string;
+  kind?: WorkflowRunKind;
   workflowId: string;
   definition: { id: string; title: string; steps: WorkflowRunStep[]; doneStage?: string };
   itemId: string;

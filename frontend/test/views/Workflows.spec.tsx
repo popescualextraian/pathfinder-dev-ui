@@ -32,6 +32,17 @@ three.steps = [
 const run3 = (over: Partial<WorkflowRun> = {}) =>
   makeRun({ definition: three, sessions: { main: { status: 'running' }, implement: { status: 'pending' }, review: { status: 'pending' } }, ...over });
 
+const taskRun = (over: Partial<WorkflowRun> = {}) =>
+  makeRun({
+    id: 'R-task',
+    kind: 'task',
+    workflowId: 'task',
+    definition: { id: 'task', title: 'Task', steps: [] },
+    taskId: 'T-9',
+    sessions: {},
+    ...over,
+  });
+
 const board = (over: Partial<WorkflowBoard> = {}, runs: WorkflowRun[] = []): WorkflowBoard => ({
   definitions: [makeWorkflow()],
   ready: true,
@@ -40,6 +51,12 @@ const board = (over: Partial<WorkflowBoard> = {}, runs: WorkflowRun[] = []): Wor
   start: jest.fn().mockResolvedValue({ ok: true }),
   advance: jest.fn().mockResolvedValue({ ok: true }),
   stop: jest.fn().mockResolvedValue({ ok: true }),
+  repositories: [
+    { name: 'a', url: 'u', default: false },
+    { name: 'b', url: 'u', default: true },
+  ],
+  startTask: jest.fn().mockResolvedValue({ ok: true, value: taskRun() }),
+  onTaskStarted: jest.fn(),
   ...over,
 });
 
@@ -412,5 +429,131 @@ describe('action errors on the board', () => {
     renderBoard(board({ actionState: (id) => ({ pending: false, error: id === '7' ? 'stop failed' : null }) }, [run3()]));
     const alerts = screen.getAllByRole('alert').map((a) => a.textContent);
     expect(alerts.filter((t) => t === 'stop failed')).toHaveLength(2);
+  });
+});
+
+describe('plain task on an item', () => {
+  const KICKOFF =
+    'We plan to work on backlog item #7: Fix it\n\nDetails\n\nhttps://x/7\n\n' +
+    'Read it and get familiar with it, then wait for my instructions. Do not change anything yet.';
+  const field = (name: string) => screen.getByLabelText(name) as HTMLInputElement;
+
+  it('shows ▶ Task without workflow definitions, on the card and in the detail', () => {
+    renderBoard(board({ definitions: [] }), [item()], { selectedId: '7' });
+    const onCard = within(card()).getByRole('button', { name: 'Start task on #7' });
+    expect(onCard.textContent).toBe('▶ Task');
+    const detail = screen.getByRole('complementary', { name: 'Item detail' });
+    expect(within(detail).getByRole('button', { name: 'Start task on #7' })).toBeTruthy();
+  });
+
+  it.each([
+    ['a workflow run', run3()],
+    ['a plain task run', taskRun()],
+    ['a task run that needs you', taskRun({ state: 'needs-you' })],
+  ])('is hidden while %s is active', (_, run) => {
+    renderBoard(board({}, [run]));
+    expect(screen.queryByRole('button', { name: 'Start task on #7' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start workflow on #7' })).toBeNull();
+  });
+
+  it('shows again (with ▶ Workflow) once the run is stopped', () => {
+    renderBoard(board({}, [taskRun({ state: 'stopped' })]));
+    expect(screen.getByRole('button', { name: 'Start task on #7' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Start workflow on #7' })).toBeTruthy();
+  });
+
+  it('opens the New task dialog prefilled for the item', () => {
+    renderBoard(board());
+    fireEvent.click(within(card()).getByRole('button', { name: 'Start task on #7' }));
+    const dialog = screen.getByRole('dialog', { name: 'New task on #7' });
+    expect(within(dialog).getByRole('heading').textContent).toBe('New task on #7');
+    expect(field('Title').value).toBe('#7 Fix it');
+    expect(field('Prompt').value).toBe(KICKOFF);
+    expect(field('Model (optional)').value).toBe('');
+    expect((screen.getByLabelText('Repository') as HTMLSelectElement).value).toBe('b');
+  });
+
+  it('builds the prompt without the empty description', () => {
+    renderBoard(board(), [item({ description: '' })]);
+    fireEvent.click(within(card()).getByRole('button', { name: 'Start task on #7' }));
+    expect(field('Prompt').value).toBe(
+      'We plan to work on backlog item #7: Fix it\n\nhttps://x/7\n\n' +
+        'Read it and get familiar with it, then wait for my instructions. Do not change anything yet.',
+    );
+  });
+
+  it('sends the edited values, then opens the new task', async () => {
+    const wf = board();
+    renderBoard(wf);
+    fireEvent.click(within(card()).getByRole('button', { name: 'Start task on #7' }));
+    fireEvent.change(field('Title'), { target: { value: 'Look at #7' } });
+    fireEvent.change(field('Prompt'), { target: { value: 'Just read it' } });
+    fireEvent.change(field('Model (optional)'), { target: { value: 'opus' } });
+    fireEvent.change(screen.getByLabelText('Repository'), { target: { value: 'a' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start task' }));
+    });
+    expect(wf.startTask).toHaveBeenCalledWith('7', { title: 'Look at #7', prompt: 'Just read it', model: 'opus', repository: 'a' });
+    expect(wf.onTaskStarted).toHaveBeenCalledWith('T-9');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('leaves out an emptied title and model', async () => {
+    const wf = board();
+    renderBoard(wf);
+    fireEvent.click(within(card()).getByRole('button', { name: 'Start task on #7' }));
+    fireEvent.change(field('Title'), { target: { value: '  ' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start task' }));
+    });
+    expect(wf.startTask).toHaveBeenCalledWith('7', { prompt: KICKOFF, repository: 'b' });
+  });
+
+  it('stays open with the error when the start fails; Cancel closes', async () => {
+    const wf = board({
+      startTask: jest.fn().mockResolvedValue({ ok: false }),
+      actionState: () => ({ pending: false, error: 'Item 7 already has an active run' }),
+    });
+    renderBoard(wf);
+    fireEvent.click(within(card()).getByRole('button', { name: 'Start task on #7' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start task' }));
+    });
+    const dialog = screen.getByRole('dialog', { name: 'New task on #7' });
+    expect(within(dialog).getByRole('alert').textContent).toBe('Item 7 already has an active run');
+    expect(wf.onTaskStarted).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('run line: Task, its state, Open task and ■ Stop; no step, no Continue, no step list', () => {
+    renderBoard(board({}, [taskRun({ state: 'needs-you' })]), [item()], { selectedId: '7' });
+    const line = within(card()).getByTestId('workflow-run-line');
+    expect(line.getAttribute('aria-label')).toBe('Task: needs you');
+    expect(within(line).getByTestId('workflow-title').textContent).toBe('Task');
+    expect(within(line).getByTestId('workflow-state').textContent).toBe('needs you');
+    expect(within(line).queryByTestId('workflow-step')).toBeNull();
+    expect(within(line).getByRole('button', { name: '■ Stop' })).toBeTruthy();
+    expect(within(line).getByRole('link', { name: 'Open task' }).getAttribute('href')).toBe('#/tasks/T-9');
+    expect(within(line).queryByRole('link', { name: 'Open step' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Continue|Finish|Start anyway/ })).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Workflow steps' })).toBeNull();
+  });
+
+  it('■ Stop asks first and stops the run', async () => {
+    const wf = board({}, [taskRun()]);
+    renderBoard(wf);
+    fireEvent.click(within(card()).getByRole('button', { name: '■ Stop' }));
+    const dialog = screen.getByRole('dialog', { name: 'Stop the task link on #7?' });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Yes, stop' }));
+    });
+    expect(wf.stop).toHaveBeenCalledWith('R-task');
+  });
+
+  it('a card with an active plain task still moves by hand', () => {
+    const { onMove } = renderBoard(board({}, [taskRun()]));
+    drag('Plan');
+    expect(onMove).toHaveBeenCalledWith('7', 'plan');
   });
 });

@@ -1,28 +1,35 @@
 import { useState } from 'react';
-import type { WorkflowSummary } from '../api/models';
+import { createPortal } from 'react-dom';
+import type { BacklogItem, WorkflowSummary } from '../api/models';
 import { Button } from './Button';
 import { ConfirmDialog, Dialog, dialogStyles } from './Dialog';
+import { NewTaskDialog } from './NewTaskDialog';
 import { WorkflowRunLine } from './WorkflowRunLine';
-import { isActiveRun, stepStates, type WorkflowBoard } from './workflow-run-view';
+import { isActiveRun, isTaskRun, kickoffPrompt, stepStates, type WorkflowBoard } from './workflow-run-view';
 import styles from './Workflow.module.css';
 
 interface Props {
-  itemId: string;
+  item: BacklogItem;
   workflows: WorkflowBoard;
   /** The detail panel also lists the run's steps. */
   showSteps?: boolean;
 }
 
-/** A work item's workflow: its run (if any), the steps (detail), and starting a new one when none is active. */
-export function WorkflowControls({ itemId, workflows, showSteps }: Props) {
+/**
+ * A work item's run (workflow or plain task, if any), the steps (detail), and, when none is active, starting a plain
+ * task (always) or a workflow (when there are definitions).
+ */
+export function WorkflowControls({ item, workflows, showSteps }: Props) {
+  const itemId = item.id;
   const run = workflows.runsByItem.get(itemId);
   const { pending, error } = workflows.actionState(itemId);
-  const canStart = (!run || !isActiveRun(run)) && workflows.definitions.length > 0;
+  const free = !run || !isActiveRun(run);
+  const canStart = free && workflows.definitions.length > 0;
 
   return (
     <div className={styles.controls} data-testid="workflow-controls">
       {run && <WorkflowRunLine run={run} pending={pending} onAdvance={workflows.advance} onStop={workflows.stop} />}
-      {run && showSteps && (
+      {run && showSteps && !isTaskRun(run) && (
         <ol className={styles.steps} aria-label="Workflow steps">
           {stepStates(run).map(({ step, state }) => (
             <li key={step.id} data-state={state} className={styles[`step-${state}`]}>
@@ -31,6 +38,7 @@ export function WorkflowControls({ itemId, workflows, showSteps }: Props) {
           ))}
         </ol>
       )}
+      {free && <TaskStart item={item} workflows={workflows} pending={pending} />}
       {canStart && (
         <WorkflowStart itemId={itemId} definitions={workflows.definitions} pending={pending} onStart={workflows.start} />
       )}
@@ -40,6 +48,38 @@ export function WorkflowControls({ itemId, workflows, showSteps }: Props) {
         </p>
       )}
     </div>
+  );
+}
+
+/** "▶ Task" → the New task dialog, prefilled for the item → a plain task linked to it, then its task screen. */
+function TaskStart({ item, workflows, pending }: { item: BacklogItem; workflows: WorkflowBoard; pending: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button className={styles.small} aria-label={`Start task on #${item.id}`} disabled={pending} onClick={() => setOpen(true)}>
+        ▶ Task
+      </Button>
+      {/* Portal: not inside the draggable card (text selection in the fields) or a scrolling panel. */}
+      {open &&
+        createPortal(
+        <NewTaskDialog
+          heading={`New task on #${item.id}`}
+          initial={{ title: `#${item.id} ${item.title}`, prompt: kickoffPrompt(item) }}
+          repositories={workflows.repositories}
+          submit={async (input) => {
+            const result = await workflows.startTask(item.id, input);
+            return result.ok ? result.value.taskId : null;
+          }}
+          submitState={workflows.actionState(item.id)}
+          onClose={() => setOpen(false)}
+          onStarted={(taskId) => {
+            setOpen(false);
+            workflows.onTaskStarted(taskId);
+          }}
+        />,
+        document.body,
+      )}
+    </>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Repository, Task } from '../api/models';
+import type { Repository, TaskRunInput } from '../api/models';
 import { useStartTask } from '../state/use-task-actions';
 import { Button } from './Button';
 import styles from './TaskView.module.css';
@@ -9,14 +9,27 @@ interface Props {
   /** Active repository filter; preselected when it names a known repository. */
   defaultRepository?: string | null;
   onClose: () => void;
-  onStarted: (task: Task) => void;
+  /** Receives the id of the started task. */
+  onStarted: (taskId: string) => void;
+  /** Default "New task". */
+  heading?: string;
+  /** Prefilled (editable) fields. */
+  initial?: { title?: string; prompt?: string };
+  /**
+   * Starts the task in place of a plain `POST /api/tasks` (e.g. linked to a work item); resolves to the task id,
+   * or null when it failed (its error then comes in `submitState`).
+   */
+  submit?: (input: TaskRunInput) => Promise<string | null>;
+  submitState?: { pending: boolean; error: string | null };
 }
 
-export function NewTaskDialog({ repositories, defaultRepository, onClose, onStarted }: Props) {
+export function NewTaskDialog({
+  repositories, defaultRepository, onClose, onStarted, heading = 'New task', initial, submit: submitOther, submitState,
+}: Props) {
   const start = useStartTask();
   const first = useRef<HTMLInputElement>(null);
-  const [title, setTitle] = useState('');
-  const [prompt, setPrompt] = useState('');
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [prompt, setPrompt] = useState(initial?.prompt ?? '');
   const [repository, setRepository] = useState('');
   const [model, setModel] = useState('');
   const filtered = repositories.find((r) => r.name === defaultRepository)?.name;
@@ -37,15 +50,27 @@ export function NewTaskDialog({ repositories, defaultRepository, onClose, onStar
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  // An earlier action's error on the same item is not this dialog's: show the error only after a submit here.
+  const [submitted, setSubmitted] = useState(false);
+  const pending = submitOther ? (submitState?.pending ?? false) : start.pending;
+  const error = submitOther ? submitted ? (submitState?.error ?? null) : null : start.error;
+
   const submit = async () => {
-    if (!prompt.trim() || start.pending) return;
-    const result = await start.run({
+    if (!prompt.trim() || pending) return;
+    const input: TaskRunInput = {
       prompt: prompt.trim(),
       ...(title.trim() && { title: title.trim() }),
       ...(effectiveRepository && { repository: effectiveRepository }),
       ...(model.trim() && { model: model.trim() }),
-    });
-    if (result.ok && result.value) onStarted(result.value);
+    };
+    if (submitOther) {
+      setSubmitted(true);
+      const taskId = await submitOther(input);
+      if (taskId) onStarted(taskId);
+      return;
+    }
+    const result = await start.run(input);
+    if (result.ok && result.value) onStarted(result.value.id);
   };
 
   return (
@@ -60,7 +85,7 @@ export function NewTaskDialog({ repositories, defaultRepository, onClose, onStar
           void submit();
         }}
       >
-        <h2 id="new-task-heading">New task</h2>
+        <h2 id="new-task-heading">{heading}</h2>
         <label className={styles.field}>
           Title
           <input ref={first} value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -83,14 +108,14 @@ export function NewTaskDialog({ repositories, defaultRepository, onClose, onStar
           Model (optional)
           <input value={model} onChange={(e) => setModel(e.target.value)} />
         </label>
-        {start.error && (
+        {error && (
           <p role="alert" className={styles.error}>
-            {start.error}
+            {error}
           </p>
         )}
         <div className={styles.actions}>
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={start.pending || !prompt.trim()}>
+          <Button type="submit" variant="primary" disabled={pending || !prompt.trim()}>
             Start task
           </Button>
         </div>
