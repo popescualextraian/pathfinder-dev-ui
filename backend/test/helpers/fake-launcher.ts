@@ -1,5 +1,5 @@
-import { LaunchResult, LaunchSpec, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../src/engine/service/task-launcher';
-import { assertWorktreePaths } from '../../src/engine/service/worktree-paths';
+import { LaunchResult, LaunchSpec, TaskInspection, TASK_FILE_MAX_BYTES, TaskFileName, TaskLauncher, WorktreeFileTooLargeError } from '../../src/engine/service/task-launcher';
+import { assertTaskFileName, assertWorktreePaths } from '../../src/engine/service/worktree-paths';
 
 // In-memory TaskLauncher: "containers" are map entries; every task's bridge is at `bridgeUrl`.
 export class FakeLauncher implements TaskLauncher {
@@ -45,6 +45,19 @@ export class FakeLauncher implements TaskLauncher {
     const text = this.fileContents.get(taskId)?.get(path);
     if (text === undefined) return null;
     if (Buffer.byteLength(text) > maxBytes) throw new WorktreeFileTooLargeError(path, taskId, maxBytes);
+    return text;
+  }
+  // Contents of /task files (result.md, state.json), per task; tests set them here (readTaskFile answers null for any not listed).
+  taskFiles = new Map<string, Map<string, string>>();
+  setTaskFile(taskId: string, name: TaskFileName, text: string): void {
+    if (!this.taskFiles.has(taskId)) this.taskFiles.set(taskId, new Map());
+    this.taskFiles.get(taskId)!.set(name, text);
+  }
+  async readTaskFile(taskId: string, name: TaskFileName): Promise<string | null> {
+    assertTaskFileName(name);
+    const text = this.taskFiles.get(taskId)?.get(name);
+    if (text === undefined) return null;
+    if (Buffer.byteLength(text) > TASK_FILE_MAX_BYTES) throw new WorktreeFileTooLargeError(name, taskId, TASK_FILE_MAX_BYTES);
     return text;
   }
   async readLedger(): Promise<string | undefined> {

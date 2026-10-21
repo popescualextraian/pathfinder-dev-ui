@@ -5,8 +5,8 @@ import { lstat, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { EngineConfig } from '../../../commons/engine-config';
-import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
-import { assertWorktreePaths } from '../../service/worktree-paths';
+import { LEDGER_MAX_BYTES, TASK_FILE_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
+import { TaskFileName, assertTaskFileName, assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from './git-credential-env';
 
 type LauncherConfig = Pick<
@@ -68,6 +68,7 @@ export function bridgeEnv({ config, spec, taskDir, workDir, port, path, fakeAgen
     // On whatever the entrypoint's default is: a local task never runs unguarded.
     AGENTIC_GATE: '1',
   };
+  if (spec.scheduled) Object.assign(env, { AGENTIC_SCHEDULED: '1', AGENTIC_RUN_TIMEOUT: String(spec.scheduled.runTimeoutSeconds) });
   if (spec.model) env.AGENTIC_MODEL = spec.model;
   if (config.localAgent === 'fake') {
     env.AGENTIC_ACP_CMD = JSON.stringify(['node', fakeAgent]);
@@ -251,6 +252,21 @@ export class LocalTaskLauncher implements TaskLauncher {
       return await readFile(file, 'utf8');
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    }
+  }
+
+  async readTaskFile(taskId: string, name: TaskFileName): Promise<string | null> {
+    assertTaskFileName(name);
+    const file = join(this.root, taskId, 'task', name);
+    try {
+      const info = await lstat(file);
+      if (!info.isFile()) throw new Error(`${name} is not a regular file`);
+      if (info.size > TASK_FILE_MAX_BYTES) throw new WorktreeFileTooLargeError(name, taskId, TASK_FILE_MAX_BYTES);
+      return await readFile(file, 'utf8');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return null;
       throw error;
     }
   }

@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, sy
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { bridgeEnv, cloneEnv, findFakeAgent, LocalTaskLauncher } from '../../../../../src/engine/integration/launcher/local-task-launcher';
-import { LEDGER_MAX_BYTES, LaunchSpec, WorktreeFileTooLargeError } from '../../../../../src/engine/service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchSpec, TASK_FILE_MAX_BYTES, WorktreeFileTooLargeError } from '../../../../../src/engine/service/task-launcher';
 
 const OAUTH = 'made-up-oauth-token-111';
 const GH = 'made-up-gh-token-222';
@@ -400,5 +400,43 @@ describe('LocalTaskLauncher.hasFiles', () => {
   it('refuses .. and absolute paths itself', async () => {
     await expect(launcher().hasFiles('T-1', ['../secret.txt'])).rejects.toThrow(BadRequestException);
     await expect(launcher().hasFiles('T-1', [join(dataDir, 'local-tasks', 'T-1', 'secret.txt')])).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('bridgeEnv scheduled', () => {
+  it('sets AGENTIC_SCHEDULED=1 and AGENTIC_RUN_TIMEOUT only for a scheduled task', () => {
+    const env = bridgeEnv(input({}, { ...spec, scheduled: { runTimeoutSeconds: 900 } }));
+    expect(env.AGENTIC_SCHEDULED).toBe('1');
+    expect(env.AGENTIC_RUN_TIMEOUT).toBe('900');
+    const plain = bridgeEnv(input({}));
+    expect(plain.AGENTIC_SCHEDULED).toBeUndefined();
+    expect(plain.AGENTIC_RUN_TIMEOUT).toBeUndefined();
+  });
+});
+
+describe('LocalTaskLauncher.readTaskFile', () => {
+  let tmp: string;
+  beforeEach(() => { tmp = mkdtempSync(join(tmpdir(), 'ltf-')); mkdirSync(join(tmp, 'local-tasks', 'T-1', 'task'), { recursive: true }); });
+  afterEach(() => rmSync(tmp, { recursive: true, force: true }));
+  const launcher = () => new LocalTaskLauncher({ ...base, dataDir: tmp, localAgent: 'fake' });
+  const put = (name: string, text: string) => writeFileSync(join(tmp, 'local-tasks', 'T-1', 'task', name), text);
+
+  it.each(['result.md', 'state.json'] as const)('reads %s from the task dir', async (name) => {
+    put(name, 'hello');
+    await expect(launcher().readTaskFile('T-1', name)).resolves.toBe('hello');
+  });
+
+  it('returns null when the file or the task folder is absent', async () => {
+    await expect(launcher().readTaskFile('T-1', 'result.md')).resolves.toBeNull();
+    await expect(launcher().readTaskFile('T-9', 'state.json')).resolves.toBeNull();
+  });
+
+  it('throws over 64 KB and refuses other names and symlinks', async () => {
+    put('result.md', 'x'.repeat(TASK_FILE_MAX_BYTES + 1));
+    await expect(launcher().readTaskFile('T-1', 'result.md')).rejects.toBeInstanceOf(WorktreeFileTooLargeError);
+    await expect(launcher().readTaskFile('T-1', 'ledger.jsonl' as 'result.md')).rejects.toThrow(BadRequestException);
+    writeFileSync(join(tmp, 'secret'), 's');
+    symlinkSync(join(tmp, 'secret'), join(tmp, 'local-tasks', 'T-1', 'task', 'state.json'));
+    await expect(launcher().readTaskFile('T-1', 'state.json')).rejects.toThrow('not a regular file');
   });
 });

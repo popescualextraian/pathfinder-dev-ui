@@ -1,3 +1,4 @@
+import type { TaskFileName } from './worktree-paths';
 // Injection token of the TaskLauncher in use (picked from config by the factory).
 export const TASK_LAUNCHER = Symbol('TASK_LAUNCHER');
 
@@ -15,6 +16,8 @@ export interface LaunchSpec {
   repoRef?: string;
   model?: string;
   branch: string;
+  // A scheduled run: the bridge ends the task itself after its summary or at the timeout (AGENTIC_SCHEDULED, AGENTIC_RUN_TIMEOUT).
+  scheduled?: { runTimeoutSeconds: number };
 }
 
 export interface LaunchResult {
@@ -32,6 +35,10 @@ export const LEDGER_MAX_BYTES = 8 * 1024 * 1024;
 
 // Cap for readFile of a worktree file (the UI only reads small text files such as workflow-draft.yaml).
 export const WORKTREE_FILE_MAX_BYTES = 64 * 1024;
+
+// Cap for readTaskFile (result.md, state.json).
+export const TASK_FILE_MAX_BYTES = 64 * 1024;
+export type { TaskFileName } from './worktree-paths';
 
 /** readFile of a worktree file larger than its cap (the message names the path, the task and the cap). */
 export class WorktreeFileTooLargeError extends Error {
@@ -55,6 +62,9 @@ export interface TaskLauncher {
   // Raw text of the task's cost ledger (ledger.jsonl in the task dir); works on a stopped task.
   // undefined when it is missing or larger than LEDGER_MAX_BYTES.
   readLedger(taskId: string): Promise<string | undefined>;
+  // Text of result.md or state.json in the task's own /task folder, or null when missing (also when the container or folder is gone).
+  // Works on a stopped task. Refuses any other name (BadRequestException); throws WorktreeFileTooLargeError over TASK_FILE_MAX_BYTES.
+  readTaskFile(taskId: string, name: TaskFileName): Promise<string | null>;
   // Whether each path (relative to the task's worktree, where the agent works: /work/.worktrees/<task id>) exists, file or directory.
   // Works on a stopped task. Refuses bad paths itself (BadRequestException, see assertWorktreePaths).
   hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>>;
