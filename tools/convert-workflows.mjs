@@ -5,7 +5,7 @@
 // that file is left unchanged and the exit code is 1.
 //
 //   npx nest build && node tools/convert-workflows.mjs <dir>
-import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -32,6 +32,7 @@ for (const file of files) {
   if (result.kind === 'converted') {
     const temp = `${path}.${process.pid}.tmp`;
     await writeFile(temp, result.text);
+    await chmod(temp, (await stat(path)).mode & 0o7777); // keep the original file's mode
     await rename(temp, path);
     console.log(`converted ${file}`);
   } else if (result.kind === 'refused') {

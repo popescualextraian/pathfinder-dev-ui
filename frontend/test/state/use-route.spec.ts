@@ -248,6 +248,17 @@ describe('useLeaveGuard', () => {
     expect(guard.result.current.pending).toBeNull();
   });
 
+  it('rearm after a release holds changes again while still active', () => {
+    const route = renderHook(() => useRoute());
+    const guard = renderHook(({ active }) => useLeaveGuard(active), { initialProps: { active: true } });
+    act(() => guard.result.current.release());
+    act(() => guard.result.current.rearm());
+    act(() => route.result.current.selectView('backlog'));
+    fire();
+    expect(guard.result.current.pending).toBe('#/backlog');
+    expect(route.result.current.view).toBe('workflows');
+  });
+
   it('asks the browser before unloading the page while active', () => {
     const guard = renderHook(({ active }) => useLeaveGuard(active), { initialProps: { active: true } });
     const event = new Event('beforeunload', { cancelable: true });

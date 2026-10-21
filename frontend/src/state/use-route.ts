@@ -165,6 +165,8 @@ export interface LeaveGuard {
   proceed: () => void;
   /** Lets the next change through without asking (a leave that was already confirmed, or a save). */
   release: () => void;
+  /** Holds changes again after a `release` that did not lead to a route change (a save that stays on the page). */
+  rearm: () => void;
 }
 
 /**
@@ -174,6 +176,7 @@ export interface LeaveGuard {
 export function useLeaveGuard(active: boolean): LeaveGuard {
   const [pending, setPending] = useState<string | null>(null);
   const mine = useRef<Blocker | null>(null);
+  const [epoch, setEpoch] = useState(0);
 
   useEffect(() => {
     if (!active) return;
@@ -196,11 +199,12 @@ export function useLeaveGuard(active: boolean): LeaveGuard {
       mine.current = null;
       window.removeEventListener('beforeunload', onUnload);
     };
-  }, [active]);
+  }, [active, epoch]);
 
   const release = useCallback(() => {
     if (mine.current && blocker === mine.current) blocker = null;
   }, []);
+  const rearm = useCallback(() => setEpoch((n) => n + 1), []);
   const stay = useCallback(() => setPending(null), []);
   const proceed = useCallback(() => {
     release();
@@ -208,5 +212,5 @@ export function useLeaveGuard(active: boolean): LeaveGuard {
     if (pending !== null) window.location.hash = pending;
   }, [pending, release]);
 
-  return { pending, stay, proceed, release };
+  return { pending, stay, proceed, release, rearm };
 }

@@ -399,8 +399,8 @@ doneStage: done                  # optional: the card goes there when the workfl
   step), `title`, `prompt` and `gate` (`human` or `auto`); `stage`, `requires`, `exitPrompt`, `model`, `continue` and `fork` are optional.
   The editor generates ids from the titles, so nobody has to type one.
 - Conversations: a step runs in the task's `main` session if it is the first, in the session of the step it `continue`s (chains
-  are followed; the prompt is sent into the running conversation), or in a new session named after its step id; with `fork` that new session
-  starts as a copy of the named step's conversation. `continue` and `fork` name an earlier step, not the first step's own, and not both.
+  are followed; the prompt is sent into that conversation once the earlier step's turn is done), or in a new session named after its step id; with `fork` that new session
+  starts as a copy of the named step's conversation. `continue` and `fork` name an earlier step (never the step itself) and not both; the first step has neither.
   `model` applies to a new conversation and is refused with `continue`. The exit prompt goes to the step's own session.
 - Old format: a file whose steps have `sessions:` is refused with "the file uses the old format (sessions:); since task 015 a step has one
   prompt: see README". Convert a folder with `node tools/convert-workflows.mjs <dir>` (run `npx nest build` first: it uses `dist/`). It rewrites
@@ -424,11 +424,11 @@ doneStage: done                  # optional: the card goes there when the workfl
   (the task is left as it is), `failed` (the task failed, vanished or was stopped; the run gives the reason). A card has at most one active run.
 - When an action of the run fails (moving the card, starting a session, sending the exit prompt, checking files), the run keeps its state,
   shows the error as `warning` and retries on the next change of the task and on a timer (5 s, doubling up to 60 s). From **Continue**
-  the error is returned instead and the run stays as it was.
+  the error is returned instead and the run stays as it was. A crash between sending a continued step's prompt and saving the run can send that prompt twice on restart (the same limit as the exit prompt).
 
 | Route | Does | Success |
 |---|---|---|
-| `GET /api/workflows` | `{definitions: [{id, title, doneStage?, version, steps: [{id, title, stage?, gate}]}], refused: [{file, error, version?}], writable}` | 200 |
+| `GET /api/workflows` | `{definitions: [{id, title, doneStage?, version?, steps: [{id, title, stage?, gate}]}], refused: [{file, error, version?}], writable}` | 200; `version` is absent when the file could not be read |
 | `GET /api/workflows/:id` | `{definition (with prompts), version}`; `version` is a hash of the file | 200, 404 |
 | `POST /api/workflows/validate` `{definition}` | `{errors: []}` or the first error `{message, stepId?, stepIndex?, field?}`; writes nothing | 200 |
 | `POST /api/workflows` `{id, definition}` | Creates `<id>.yaml` (id `[a-z0-9][a-z0-9-]{0,63}`); id exists 409; broken rule 400 with `location` | 201 `{definition, version}` |

@@ -32,8 +32,11 @@ export function WorkflowEditorPage({ workflow, from, lanes, writable, onClose, o
         onClose();
       }}
       onSaved={(id) => {
+        const before = window.location.hash;
         guard.release();
         onSaved(id);
+        // Saving an existing workflow stays on this address; the draft may have changed meanwhile, so hold again.
+        if (window.location.hash === before) guard.rearm();
       }}
       leaving={guard.pending !== null}
       onLeave={guard.proceed}
