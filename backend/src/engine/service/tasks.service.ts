@@ -6,7 +6,7 @@ import {
   BRIDGE_CLIENT_FACTORY, BridgeClient, AddSessionInput as BridgeAddSessionInput, AnswerInput, BridgeClientFactory, BridgeError, BridgeEvent, BridgeStatus,
   BridgeUnreachableError, waitForStatus,
 } from './bridge-client';
-import { TASK_LAUNCHER, TaskFileName, TaskInspection, TaskLauncher, WORKTREE_FILE_MAX_BYTES } from './task-launcher';
+import { AppPorts, TASK_LAUNCHER, TaskFileName, TaskInspection, TaskLauncher, WORKTREE_FILE_MAX_BYTES } from './task-launcher';
 import { assertTaskFileName } from './worktree-paths';
 import { needsSummaryLine, readSummaryLine, recordedLive, recordGoneEnd, scheduledRunEnded } from './task-end';
 import { RecordPatch, TaskKind, TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
@@ -343,7 +343,7 @@ export class TasksService {
   // `docker stop` while the task was idle or suspended) is started and its bridge awaited.
   // "Stopped" is the recorded last state, or what a reachable bridge says.
   private async wake(id: string): Promise<TaskRecord> {
-    const record = await this.require(id);
+    let record = await this.require(id);
     if (record.closed) throw closedConflict(id);
     if (scheduledRunEnded(record)) throw scheduledConflict(id);
     if (record.lastState === 'stopped') throw stoppedConflict(id);
@@ -370,12 +370,15 @@ export class TasksService {
       }
       return record;
     }
+    let appPorts: AppPorts | undefined;
     await this.exclusive(async () => {
       if ((await this.launcher.countRunning()) >= this.config.maxRunning) {
         throw new ConflictException(`At most ${this.config.maxRunning} tasks can run at once; stop one first`);
       }
-      await this.launcher.start(id);
+      appPorts = await this.launcher.start(id);
     });
+    // The links must point at the current host ports.
+    if (appPorts) record = await this.records.update(id, { appPorts });
     const woken = await this.waitFor(record, `Task ${id} was started but its bridge did not become ready`);
     if (woken.state === 'stopped') {
       // The bridge had stopped although the record did not know: put the container back down.

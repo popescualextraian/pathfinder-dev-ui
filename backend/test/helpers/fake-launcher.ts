@@ -15,8 +15,9 @@ export class FakeLauncher implements TaskLauncher {
     this.containers.set(spec.taskId, { running: true });
     return { bridgeUrl: this.bridgeUrl };
   }
-  async start(taskId: string): Promise<void> {
+  async start(taskId: string): Promise<undefined> {
     this.containers.get(taskId)!.running = true;
+    return undefined;
   }
   async stop(taskId: string): Promise<void> {
     const c = this.containers.get(taskId);

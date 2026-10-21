@@ -114,12 +114,16 @@ export class DockerTaskLauncher implements TaskLauncher {
     return { bridgeUrl: this.bridgeUrl(spec.taskId), ...(appPorts ? { appPorts } : {}) };
   }
 
-  async start(taskId: string): Promise<void> {
+  async start(taskId: string): Promise<AppPorts | undefined> {
+    const container = this.docker.getContainer(this.name(taskId));
     try {
-      await this.docker.getContainer(this.name(taskId)).start();
+      await container.start();
     } catch (error) {
       if (!hasStatus(error, 304)) throw error;
     }
+    // Docker may assign new dynamic host ports on a restart: read the current ones back.
+    const apps = await this.apps();
+    return Object.keys(apps).length ? this.hostPorts(container, apps) : undefined;
   }
 
   async stop(taskId: string): Promise<void> {

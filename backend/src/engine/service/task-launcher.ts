@@ -56,8 +56,9 @@ export class WorktreeFileTooLargeError extends Error {
 export interface TaskLauncher {
   // Creates and starts the task's container (and volume).
   launch(spec: LaunchSpec): Promise<LaunchResult>;
-  // Starts an existing, stopped container.
-  start(taskId: string): Promise<void>;
+  // Starts an existing, stopped container. Docker may give the apps new host ports on a start: returns the current
+  // ones, or undefined when the task has no published app ports.
+  start(taskId: string): Promise<AppPorts | undefined>;
   stop(taskId: string): Promise<void>;
   // Removes container and volume; does nothing when they are gone.
   remove(taskId: string): Promise<void>;

@@ -530,10 +530,26 @@ describe('DockerTaskLauncher app ports', () => {
     expect(result.appPorts).toEqual({ web: {}, api: {} });
   });
 
-  it('does not touch the ports on start (a resumed task keeps its record)', async () => {
-    const { launcher, docker, container } = setup();
-    await launcher.start('T-20261016-ab12');
+  it('reads the current host ports back on start, when Docker assigned new ones', async () => {
+    const { launcher, docker, container, image } = setup();
+    image.inspect.mockResolvedValue({ Config: { Labels: { 'agentic.apps': labelOf(apps) } } });
+    container.inspect.mockResolvedValue({
+      NetworkSettings: { Ports: {
+        '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: '50001' }],
+        '9229/tcp': [{ HostIp: '127.0.0.1', HostPort: '50002' }],
+        '8080/tcp': [{ HostIp: '127.0.0.1', HostPort: '50003' }],
+      } },
+    });
+    const result = await launcher.start('T-20261016-ab12');
     expect(container.start).toHaveBeenCalled();
     expect(docker.createContainer).not.toHaveBeenCalled();
+    expect(result).toEqual({ web: { 3000: 50001, 9229: 50002 }, api: { 8080: 50003 } });
+  });
+
+  it('returns no ports on start for a task without apps, and still tolerates 304', async () => {
+    const { launcher, container } = setup();
+    container.start.mockRejectedValue(dockerError(304));
+    await expect(launcher.start('T-20261016-ab12')).resolves.toBeUndefined();
+    expect(container.inspect).not.toHaveBeenCalled();
   });
 });

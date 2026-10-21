@@ -139,6 +139,16 @@ describe('TasksService.start', () => {
     expect(without.records.map.get(view2.id)).not.toHaveProperty('appPorts');
   });
 
+  it('updates the record with the new host ports when a stopped task is woken, and leaves it alone without apps', async () => {
+    const moved = { web: { 3000: 50001 } };
+    const a = setup({ records: [record({ appPorts: { web: { 3000: 49153 } } })], launcher: { ...notRunning, start: jest.fn(async () => moved) } });
+    await a.service.prompt(ID, 'more');
+    expect(a.records.map.get(ID)!.appPorts).toEqual(moved);
+    const b = setup({ launcher: notRunning });
+    await b.service.prompt(ID, 'more');
+    expect(b.records.map.get(ID)).not.toHaveProperty('appPorts');
+  });
+
   it('refuses a repoUrl whose host is not allowed, before anything happens', async () => {
     const { service, launcher, records } = setup({ records: [] });
     for (const url of ['https://attacker.example/r.git', 'https://github.com.evil.example/r.git', 'https://GITHUB.com:444@evil.example/r.git']) {
