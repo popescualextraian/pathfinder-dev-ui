@@ -95,4 +95,8 @@ export class EngineWorkflowTasks implements WorkflowTasks {
   hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>> {
     return this.tasks.hasFiles(taskId, paths);
   }
+
+  readFile(taskId: string, path: string): Promise<string | null> {
+    return this.tasks.readFile(taskId, path);
+  }
 }

@@ -6,7 +6,7 @@ import {
   BRIDGE_CLIENT_FACTORY, BridgeClient, AddSessionInput as BridgeAddSessionInput, AnswerInput, BridgeClientFactory, BridgeError, BridgeEvent, BridgeStatus,
   BridgeUnreachableError, waitForStatus,
 } from './bridge-client';
-import { TASK_LAUNCHER, TaskLauncher } from './task-launcher';
+import { TASK_LAUNCHER, TaskLauncher, WORKTREE_FILE_MAX_BYTES } from './task-launcher';
 import { RecordPatch, TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
 import { repoNameOf } from '../../commons/repo-name';
 import { TaskCostService } from './cost/task-cost.service';
@@ -383,6 +383,13 @@ export class TasksService {
     assertWorktreePaths(paths);
     const record = await this.require(id);
     return this.launcher.hasFiles(record.id, paths);
+  }
+
+  // Text of one worktree file or null when missing; larger than maxBytes (default 64 KB) is an error. Works on a stopped task.
+  async readFile(id: string, path: string, maxBytes: number = WORKTREE_FILE_MAX_BYTES): Promise<string | null> {
+    assertWorktreePaths([path]);
+    const record = await this.require(id);
+    return this.launcher.readFile(record.id, path, maxBytes);
   }
 
   private async require(id: string): Promise<TaskRecord> {

@@ -274,6 +274,19 @@ export class LocalTaskLauncher implements TaskLauncher {
     return result;
   }
 
+  async readFile(taskId: string, path: string, maxBytes: number): Promise<string | null> {
+    assertWorktreePaths([path]);
+    const file = join(this.root, taskId, 'work', '.worktrees', taskId, path);
+    try {
+      if ((await stat(file)).size > maxBytes) throw new Error(`File ${JSON.stringify(path)} of task ${taskId} is over ${maxBytes} bytes`);
+      return await readFile(file, 'utf8');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return null;
+      throw error;
+    }
+  }
+
   // Bridge stdout/stderr so far (the last 64 KiB), for diagnostics.
   output(taskId: string): string {
     return this.tasks.get(taskId)?.log ?? '';

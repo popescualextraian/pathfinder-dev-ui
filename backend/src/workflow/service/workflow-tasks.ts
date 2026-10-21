@@ -47,6 +47,8 @@ export interface WorkflowTasks {
   get(taskId: string): Promise<WorkflowTaskSnapshot | undefined | null>;
   /** Path (relative to the task's worktree) -> whether it exists. */
   hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>>;
+  /** Text of a file in the task's worktree, null when missing; throws when over 64 KB. */
+  readFile(taskId: string, path: string): Promise<string | null>;
   readonly changes: TaskChanges;
 }
 

@@ -45,6 +45,14 @@ export class FakeWorkflowTasks implements WorkflowTasks {
     return Object.fromEntries(paths.map((p) => [p, this.files.has(p)]));
   }
 
+  /** Contents by path, for readFile (missing: null). */
+  readonly fileContents = new Map<string, string>();
+  readonly readFileCalls: string[] = [];
+  async readFile(_taskId: string, path: string): Promise<string | null> {
+    this.readFileCalls.push(path);
+    return this.fileContents.get(path) ?? null;
+  }
+
   task(taskId: string): WorkflowTaskSnapshot {
     const t = this.tasks.get(taskId);
     if (!t) throw new Error(`no task ${taskId}`);

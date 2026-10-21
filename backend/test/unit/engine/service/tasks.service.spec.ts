@@ -606,6 +606,32 @@ describe('TasksService announces changes', () => {
 beforeEach(() => { jest.spyOn(Logger.prototype, 'warn').mockImplementation(); });
 afterEach(() => jest.restoreAllMocks());
 
+describe('TasksService.readFile', () => {
+  it('reads through the launcher with the 64 KB cap by default', async () => {
+    const readFile = jest.fn(async () => 'text');
+    const { service } = setup({ launcher: { readFile } });
+    await expect(service.readFile(ID, 'workflow-draft.yaml')).resolves.toBe('text');
+    expect(readFile).toHaveBeenCalledWith(ID, 'workflow-draft.yaml', 64 * 1024);
+  });
+  it('passes null for a missing file and a given cap', async () => {
+    const readFile = jest.fn(async () => null);
+    const { service } = setup({ launcher: { readFile } });
+    await expect(service.readFile(ID, 'a', 10)).resolves.toBeNull();
+    expect(readFile).toHaveBeenCalledWith(ID, 'a', 10);
+  });
+  it('refuses bad paths before the launcher', async () => {
+    const readFile = jest.fn(async () => null);
+    const { service } = setup({ launcher: { readFile } });
+    await expect(service.readFile(ID, '../x')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.readFile(ID, '/x')).rejects.toBeInstanceOf(BadRequestException);
+    expect(readFile).not.toHaveBeenCalled();
+  });
+  it('is 404 for an unknown task', async () => {
+    const { service } = setup();
+    await expect(service.readFile('T-nope', 'a')).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
 describe('TasksService.hasFiles', () => {
   it('delegates to the launcher with the task id', async () => {
     const hasFiles = jest.fn(async () => ({ 'a.md': true }));

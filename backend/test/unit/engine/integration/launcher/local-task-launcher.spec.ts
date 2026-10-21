@@ -328,6 +328,40 @@ describe('LocalTaskLauncher.readLedger', () => {
   });
 });
 
+describe('LocalTaskLauncher.readFile', () => {
+  let dataDir: string;
+  beforeEach(() => {
+    dataDir = mkdtempSync(join(tmpdir(), 'readfile-'));
+    const tree = join(dataDir, 'local-tasks', 'T-1', 'work', '.worktrees', 'T-1');
+    mkdirSync(join(tree, 'plans'), { recursive: true });
+    writeFileSync(join(tree, 'workflow-draft.yaml'), 'name: x\n');
+    writeFileSync(join(tree, 'plans', 'big.md'), Buffer.alloc(101, 'x'));
+    writeFileSync(join(dataDir, 'local-tasks', 'T-1', 'work', 'only-in-clone.md'), 'x');
+  });
+  afterEach(() => rmSync(dataDir, { recursive: true, force: true }));
+  const launcher = () => new LocalTaskLauncher({ ...base, dataDir, localAgent: 'fake' });
+
+  it('reads a file of the task worktree', async () => {
+    await expect(launcher().readFile('T-1', 'workflow-draft.yaml', 100)).resolves.toBe('name: x\n');
+  });
+
+  it('returns null for a missing file, a file only in the clone, a missing task, and a path through a file', async () => {
+    await expect(launcher().readFile('T-1', 'nope.yaml', 100)).resolves.toBeNull();
+    await expect(launcher().readFile('T-1', 'only-in-clone.md', 100)).resolves.toBeNull();
+    await expect(launcher().readFile('T-9', 'a', 100)).resolves.toBeNull();
+    await expect(launcher().readFile('T-1', 'workflow-draft.yaml/x', 100)).resolves.toBeNull();
+  });
+
+  it('throws when the file is over maxBytes', async () => {
+    await expect(launcher().readFile('T-1', 'plans/big.md', 100)).rejects.toThrow(/over 100 bytes/);
+  });
+
+  it('refuses .. and absolute paths itself', async () => {
+    await expect(launcher().readFile('T-1', '../secret.txt', 100)).rejects.toThrow(BadRequestException);
+    await expect(launcher().readFile('T-1', '/etc/passwd', 100)).rejects.toThrow(BadRequestException);
+  });
+});
+
 describe('LocalTaskLauncher.hasFiles', () => {
   let dataDir: string;
   beforeEach(() => {

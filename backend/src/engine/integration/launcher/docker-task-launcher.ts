@@ -156,6 +156,20 @@ export class DockerTaskLauncher implements TaskLauncher {
     return result;
   }
 
+  async readFile(taskId: string, path: string, maxBytes: number): Promise<string | null> {
+    assertWorktreePaths([path]);
+    let file: Buffer | 'too-large';
+    try {
+      const stream = (await this.docker.getContainer(this.name(taskId)).getArchive({ path: `/work/.worktrees/${taskId}/${path}` })) as unknown as Readable;
+      file = await firstTarFile(stream, maxBytes);
+    } catch (error) {
+      if (hasStatus(error, 404)) return null;
+      throw error;
+    }
+    if (file === 'too-large') throw new Error(`File ${JSON.stringify(path)} of task ${taskId} is over ${maxBytes} bytes`);
+    return file.toString('utf8');
+  }
+
   private name(taskId: string): string {
     return `agentic-ui-task-${taskId}`;
   }

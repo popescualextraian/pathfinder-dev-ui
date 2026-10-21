@@ -38,6 +38,15 @@ export class FakeLauncher implements TaskLauncher {
     assertWorktreePaths(paths);
     return Object.fromEntries(paths.map((p) => [p, this.files.get(taskId)?.has(p) ?? false]));
   }
+  // Contents of worktree files, per task (readFile answers null for any path not listed).
+  fileContents = new Map<string, Map<string, string>>();
+  async readFile(taskId: string, path: string, maxBytes: number): Promise<string | null> {
+    assertWorktreePaths([path]);
+    const text = this.fileContents.get(taskId)?.get(path);
+    if (text === undefined) return null;
+    if (Buffer.byteLength(text) > maxBytes) throw new Error(`File ${JSON.stringify(path)} is over ${maxBytes} bytes`);
+    return text;
+  }
   async readLedger(): Promise<string | undefined> {
     return this.ledger;
   }

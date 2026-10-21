@@ -322,6 +322,42 @@ describe('DockerTaskLauncher.readLedger', () => {
   });
 });
 
+describe('DockerTaskLauncher.readFile', () => {
+  const archive = (buffer: Buffer) => Readable.from([buffer.subarray(0, 700), buffer.subarray(700)]);
+
+  it('reads the file from the task worktree /work/.worktrees/<id>', async () => {
+    const { launcher, docker, container } = setup();
+    const text = 'name: x\n'.repeat(100);
+    container.getArchive.mockResolvedValue(archive(tarOf('workflow-draft.yaml', Buffer.from(text))));
+    await expect(launcher.readFile('T-1', 'workflow-draft.yaml', 65536)).resolves.toBe(text);
+    expect(docker.getContainer).toHaveBeenCalledWith('agentic-ui-task-T-1');
+    expect(container.getArchive).toHaveBeenCalledWith({ path: '/work/.worktrees/T-1/workflow-draft.yaml' });
+  });
+
+  it('returns null on 404 and rethrows other docker errors', async () => {
+    const { launcher, container } = setup();
+    container.getArchive.mockRejectedValue(dockerError(404));
+    await expect(launcher.readFile('T-1', 'a.yaml', 100)).resolves.toBeNull();
+    container.getArchive.mockRejectedValue(dockerError(500));
+    await expect(launcher.readFile('T-1', 'a.yaml', 100)).rejects.toThrow('docker 500');
+  });
+
+  it('throws when the file is over maxBytes, without reading it', async () => {
+    const { launcher, container } = setup();
+    const stream = archive(tarOf('a.yaml', Buffer.alloc(10), 101));
+    container.getArchive.mockResolvedValue(stream);
+    await expect(launcher.readFile('T-1', 'a.yaml', 100)).rejects.toThrow(/over 100 bytes/);
+    expect(stream.destroyed).toBe(true);
+  });
+
+  it('refuses .. and absolute paths before calling docker', async () => {
+    const { launcher, container } = setup();
+    await expect(launcher.readFile('T-1', '../etc/passwd', 100)).rejects.toThrow(BadRequestException);
+    await expect(launcher.readFile('T-1', '/etc/passwd', 100)).rejects.toThrow(BadRequestException);
+    expect(container.getArchive).not.toHaveBeenCalled();
+  });
+});
+
 describe('DockerTaskLauncher.hasFiles', () => {
   it('asks the container archive for each path in the task worktree /work/.worktrees/<id> (true when it answers, false on 404)', async () => {
     const { launcher, docker, container } = setup();

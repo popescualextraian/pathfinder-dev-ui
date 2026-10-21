@@ -243,6 +243,20 @@ describeWithDocker('TasksService against real Docker', () => {
     expect(await launcher!.readLedger(task.id)).toBe(ledger);
   });
 
+  it('reads a worktree file: null when missing, the text when present, an error over the cap', async () => {
+    expect(await launcher!.readFile(task.id, 'workflow-draft.yaml', 65536)).toBeNull();
+    const dir = `/work/.worktrees/${task.id}`;
+    const exec = await docker.getContainer(`agentic-ui-task-${task.id}`).exec({
+      Cmd: ['sh', '-c', `mkdir -p ${dir} && printf 'name: x\\n' > ${dir}/workflow-draft.yaml && head -c 70000 /dev/zero > ${dir}/big.bin`],
+      AttachStdout: true, AttachStderr: true,
+    });
+    const stream = await exec.start({ Detach: false, Tty: false });
+    await new Promise((done) => { stream.on('end', done); stream.on('close', done); stream.resume(); });
+    expect((await exec.inspect()).ExitCode).toBe(0);
+    expect(await launcher!.readFile(task.id, 'workflow-draft.yaml', 65536)).toBe('name: x\n');
+    await expect(launcher!.readFile(task.id, 'big.bin', 65536)).rejects.toThrow(/over 65536 bytes/);
+  });
+
   it('wakes a container stopped with docker stop when prompted', async () => {
     await docker.getContainer(`agentic-ui-task-${task.id}`).stop({ t: 10 });
     expect((await tasks.get(task.id)).state).toBe('suspended');

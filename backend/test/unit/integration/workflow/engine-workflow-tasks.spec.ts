@@ -21,6 +21,7 @@ function make() {
     prompt: jest.fn().mockResolvedValue(view()),
     get: jest.fn().mockResolvedValue(view()),
     hasFiles: jest.fn().mockResolvedValue({ 'a.md': true }),
+    readFile: jest.fn().mockResolvedValue('text'),
   };
   const updates = new TaskUpdates();
   return { tasks, updates, adapter: new EngineWorkflowTasks(tasks as never, updates) };
@@ -102,6 +103,12 @@ describe('EngineWorkflowTasks', () => {
     const { tasks, adapter } = make();
     expect(await adapter.hasFiles('T-1', ['a.md'])).toEqual({ 'a.md': true });
     expect(tasks.hasFiles).toHaveBeenCalledWith('T-1', ['a.md']);
+  });
+
+  it('passes readFile through', async () => {
+    const { tasks, adapter } = make();
+    expect(await adapter.readFile('T-1', 'a.yaml')).toBe('text');
+    expect(tasks.readFile).toHaveBeenCalledWith('T-1', 'a.yaml');
   });
 
   it('turns task changes and removals into task ids', () => {
