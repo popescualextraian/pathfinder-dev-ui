@@ -8,7 +8,7 @@ import { WorkflowErrorFilter } from './workflow-error.filter';
 export interface WorkflowSummary {
   id: string;
   title: string;
-  steps: Array<{ id: string; title: string; stage?: string; gate: Gate; sessions: string[] }>;
+  steps: Array<{ id: string; title: string; stage?: string; gate: Gate }>;
   doneStage?: string;
 }
 
@@ -75,7 +75,7 @@ function summary(def: WorkflowDefinition): WorkflowSummary {
     id: def.id,
     title: def.title,
     steps: def.steps.map((s) => ({
-      id: s.id, title: s.title, ...(s.stage !== undefined && { stage: s.stage }), gate: s.gate, sessions: s.sessions.map((x) => x.name),
+      id: s.id, title: s.title, ...(s.stage !== undefined && { stage: s.stage }), gate: s.gate,
     })),
   };
   if (def.doneStage !== undefined) out.doneStage = def.doneStage;

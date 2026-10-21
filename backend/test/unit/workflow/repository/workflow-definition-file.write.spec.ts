@@ -7,9 +7,9 @@ import type { WorkflowDefinition } from '../../../../src/workflow/service/workfl
 import { WorkflowConflictError, WorkflowInvalidError, WorkflowNotFoundError, WorkflowReadOnlyError } from '../../../../src/workflow/service/workflow-errors';
 
 const def = (title = 'One', o: Partial<WorkflowDefinition> = {}): WorkflowDefinition => ({
-  id: 'one', title, steps: [{ id: 'a', title: 'A', gate: 'auto', sessions: [{ name: 'main', prompt: 'hi {{item.id}}' }] }], ...o,
+  id: 'one', title, steps: [{ id: 'a', title: 'A', gate: 'auto', prompt: 'hi {{item.id}}' }], ...o,
 });
-const OLD = 'title: Old\nsteps:\n  - id: a\n    title: A\n    gate: auto\n    sessions: [{ name: main, prompt: hi }]\n';
+const OLD = 'title: Old\nsteps:\n  - id: a\n    title: A\n    gate: auto\n    prompt: hi\n';
 
 describe('WorkflowDefinitionFileRepository write side', () => {
   let dir: string;
@@ -60,8 +60,8 @@ describe('WorkflowDefinitionFileRepository write side', () => {
   });
 
   it('validates before writing: first error with its location, nothing written', async () => {
-    const bad = def('T', { steps: [{ id: 'a', title: 'A', gate: 'auto', sessions: [{ name: 'main', prompt: 'p', fork: 'zz' }] }] });
-    await expect(repo.save('one', bad)).rejects.toMatchObject({ location: { stepId: 'a', session: 'main', field: 'fork' } });
+    const bad = def('T', { steps: [{ id: 'a', title: 'A', gate: 'auto', prompt: 'p', fork: 'zz' }] });
+    await expect(repo.save('one', bad)).rejects.toMatchObject({ location: { stepId: 'a', field: 'fork' } });
     await expect(repo.save('one', bad)).rejects.toBeInstanceOf(WorkflowDefinitionError);
     expect(readdirSync(dir)).toEqual([]);
   });

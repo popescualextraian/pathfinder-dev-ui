@@ -14,25 +14,21 @@ const LANES = `lanes:
 `;
 
 // Step 1 answers with an echo; its exit prompt makes the fake agent write the file step 2 requires (SHELL: runs in the
-// task's worktree). Step 2 is a fork of main: the fake agent's HISTORY counts the messages it inherited.
+// task's worktree). Step 2 is a fork of step 1: the fake agent's HISTORY counts the messages it inherited.
 const PLAN_REVIEW = `title: Plan and review
 steps:
   - id: plan
     title: Plan
     stage: plan
-    sessions:
-      - name: main
-        prompt: "Plan #{{item.id}}: {{item.title}}"
+    prompt: "Plan #{{item.id}}: {{item.title}}"
     gate: human
     exitPrompt: "SHELL:mkdir -p plans && echo plan > plans/{{item.id}}.md"
   - id: review
     title: Review
     stage: review
     requires: ["plans/{{item.id}}.md"]
-    sessions:
-      - name: review
-        fork: main
-        prompt: HISTORY
+    fork: plan
+    prompt: HISTORY
     gate: human
 doneStage: done
 `;

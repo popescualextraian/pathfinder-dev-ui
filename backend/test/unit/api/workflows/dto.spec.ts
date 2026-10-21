@@ -49,12 +49,12 @@ describe('RunsQueryDto', () => {
 });
 
 describe('workflow definition DTOs', () => {
-  const step = { id: 's', title: 'S', gate: 'auto', sessions: [{ name: 'main', prompt: 'p' }] };
+  const step = { id: 's', title: 'S', gate: 'auto', prompt: 'p' };
   const definition = { title: 'T', steps: [step] };
 
   it('accepts a definition, optional fields included', async () => {
     expect(await errorsOf(CreateWorkflowDto, { id: 'a-1', definition })).toEqual([]);
-    const full = { title: 'T', doneStage: 'done', steps: [{ ...step, stage: 'x', requires: ['a.md'], exitPrompt: 'e', sessions: [{ name: 'main', prompt: 'p', fork: 'f', model: 'm' }] }] };
+    const full = { title: 'T', doneStage: 'done', steps: [{ ...step, stage: 'x', requires: ['a.md'], exitPrompt: 'e', prompt: 'p', fork: 'f', model: 'm', continue: 'c' }] };
     expect(await errorsOf(ValidateWorkflowDto, { definition: full })).toEqual([]);
     expect(await errorsOf(UpdateWorkflowDto, { definition, version: 'v' })).toEqual([]);
   });
@@ -65,7 +65,8 @@ describe('workflow definition DTOs', () => {
 
   it.each([
     [{ title: 5, steps: [step] }], [{ title: 'T' }], [{ title: 'T', steps: 'x' }], [{ title: 'T', steps: [{ ...step, gate: 'maybe' }] }],
-    [{ title: 'T', steps: [{ ...step, sessions: 'x' }] }], [{ title: 'T', steps: [{ ...step, sessions: [{ name: 1, prompt: 'p' }] }] }],
+    [{ title: 'T', steps: [{ ...step, prompt: 1 }] }], [{ title: 'T', steps: [{ ...step, continue: 1 }] }], [{ title: 'T', steps: [{ ...step, fork: 1 }] }],
+    [{ title: 'T', steps: [{ ...step, model: 1 }] }],
     [{ title: 'T', steps: [{ ...step, requires: [1] }] }], [{ title: 'T', steps: [{ ...step, stage: 1 }] }], [{ title: 'T', steps: ['x'] }],
   ])('rejects the malformed definition %j', async (bad) => {
     expect(await errorsOf(ValidateWorkflowDto, { definition: bad })).toContain('definition');

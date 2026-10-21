@@ -4,19 +4,15 @@ import { WORKFLOW_ID, WORKFLOW_ID_MESSAGE } from '../../../workflow';
 
 // Shape only (types, presence of the lists); the rules (non-empty, names, placeholders, stages) are the service's,
 // so the editor gets them as located errors.
-export class SessionDefDto {
-  @IsString() name!: string;
-  @IsString() prompt!: string;
-  @IsOptional() @IsString() fork?: string;
-  @IsOptional() @IsString() model?: string;
-}
-
 export class StepDefDto {
   @IsString() id!: string;
   @IsString() title!: string;
   @IsOptional() @IsString() stage?: string;
   @IsIn(['human', 'auto']) gate!: 'human' | 'auto';
-  @IsArray() @ValidateNested({ each: true }) @Type(() => SessionDefDto) sessions!: SessionDefDto[];
+  @IsString() prompt!: string;
+  @IsOptional() @IsString() model?: string;
+  @IsOptional() @IsString() continue?: string;
+  @IsOptional() @IsString() fork?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) requires?: string[];
   @IsOptional() @IsString() exitPrompt?: string;
 }

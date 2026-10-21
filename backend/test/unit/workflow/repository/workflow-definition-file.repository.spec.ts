@@ -9,7 +9,7 @@ steps:
   - id: a
     title: A
     stage: ${stage}
-    sessions: [{ name: main, prompt: hi }]
+    prompt: hi
     gate: auto
 `;
 
