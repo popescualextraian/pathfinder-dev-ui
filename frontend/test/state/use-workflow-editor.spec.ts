@@ -3,7 +3,7 @@ import { ApiError } from '../../src/api/http';
 import type { WorkflowDefinition } from '../../src/api/models';
 import * as api from '../../src/api/workflows-api';
 import { useWorkflowEditor, VALIDATE_DELAY_MS } from '../../src/state/use-workflow-editor';
-import { addStep, updateStep } from '../../src/state/workflow-draft';
+import { addStep, setConversation, updateStep } from '../../src/state/workflow-draft';
 
 jest.mock('../../src/api/workflows-api');
 const m = (f: unknown) => f as jest.Mock;
@@ -12,7 +12,7 @@ const stored = (over: Partial<WorkflowDefinition> = {}) => ({
   definition: {
     id: 'wf',
     title: 'WF',
-    steps: [{ id: 'plan', title: 'Plan', gate: 'human', sessions: [{ name: 'main', prompt: 'go' }] }],
+    steps: [{ id: 'plan', title: 'Plan', gate: 'human', prompt: 'go' }],
     ...over,
   },
   version: 'v1',
@@ -37,6 +37,23 @@ describe('useWorkflowEditor', () => {
     expect(result.current).toMatchObject({ id: 'wf', isNew: false, dirty: false, version: 'v1', canSave: false });
     expect(result.current.draft.title).toBe('WF');
     expect('id' in result.current.draft).toBe(false);
+  });
+
+  it('edits steps without sessions: the id follows the title and the continuing step follows the id', async () => {
+    const { result } = await edit();
+    act(() => result.current.setDraft((d) => updateStep(addStep(d), 1, { title: 'Build', prompt: 'build', model: 'opus' })));
+    act(() => result.current.setDraft((d) => setConversation(d, 1, { kind: 'continue', step: 'plan' })));
+    expect(result.current.draft.steps[1]).toEqual({ id: 'build', title: 'Build', gate: 'human', prompt: 'build', continue: 'plan' });
+    act(() => result.current.setDraft((d) => updateStep(d, 0, { title: 'Design' })));
+    expect(result.current.draft.steps.map((s) => [s.id, s.continue])).toEqual([['design', undefined], ['build', 'design']]);
+    m(api.updateWorkflow).mockImplementation((id, definition) => Promise.resolve({ definition: { id, ...definition }, version: 'v2' }));
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(m(api.updateWorkflow).mock.calls[0][1].steps).toEqual([
+      { id: 'design', title: 'Design', gate: 'human', prompt: 'go' },
+      { id: 'build', title: 'Build', gate: 'human', prompt: 'build', continue: 'design' },
+    ]);
   });
 
   it('shows a load failure', async () => {
@@ -78,7 +95,7 @@ describe('useWorkflowEditor', () => {
     jest.useFakeTimers();
     try {
       const { result } = await edit();
-      m(api.validateWorkflow).mockResolvedValue([{ message: 'empty prompt', stepId: 'plan', session: 'main', field: 'prompt' }]);
+      m(api.validateWorkflow).mockResolvedValue([{ message: 'empty prompt', stepId: 'plan', field: 'prompt' }]);
       act(() => result.current.setDraft((d) => addStep(d)));
       act(() => result.current.setDraft((d) => updateStep(d, 0, { title: 'P' })));
       expect(api.validateWorkflow).not.toHaveBeenCalled();
@@ -86,7 +103,7 @@ describe('useWorkflowEditor', () => {
         jest.advanceTimersByTime(VALIDATE_DELAY_MS);
       });
       expect(api.validateWorkflow).toHaveBeenCalledTimes(1);
-      expect(result.current.validationError).toEqual({ message: 'empty prompt', stepId: 'plan', session: 'main', field: 'prompt' });
+      expect(result.current.validationError).toEqual({ message: 'empty prompt', stepId: 'plan', field: 'prompt' });
       expect(result.current.canSave).toBe(false);
       m(api.validateWorkflow).mockResolvedValue([]);
       act(() => result.current.setDraft((d) => updateStep(d, 0, { title: 'Q' })));

@@ -9,7 +9,7 @@ steps:
   - id: a
     title: A
     stage: ${stage}
-    sessions: [{ name: main, prompt: hi }]
+    prompt: hi
     gate: auto
 `;
 
@@ -25,6 +25,13 @@ describe('WorkflowDefinitionFileRepository', () => {
     const r = await new WorkflowDefinitionFileRepository(dir).list();
     expect(r.definitions.map((d) => [d.id, d.title])).toEqual([['one', 'One'], ['two', 'Two']]);
     expect(r.refused).toEqual([]);
+  });
+
+  it('gives the version of each listed definition, the one read and delete expect', async () => {
+    writeFileSync(join(dir, 'one.yaml'), GOOD('One'));
+    const repo = new WorkflowDefinitionFileRepository(dir);
+    const r = await repo.list();
+    expect(r.versions).toEqual({ one: (await repo.read('one')).version });
   });
 
   it('refuses a bad file by name and still loads the others', async () => {
@@ -71,6 +78,6 @@ describe('WorkflowDefinitionFileRepository', () => {
 
   it('a missing directory lists nothing', async () => {
     const r = await new WorkflowDefinitionFileRepository(join(dir, 'nope')).list();
-    expect(r).toEqual({ definitions: [], refused: [] });
+    expect(r).toEqual({ definitions: [], refused: [], versions: {} });
   });
 });

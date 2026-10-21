@@ -90,7 +90,7 @@ describe('AppModule', () => {
       const moduleRef = await compile();
       const runner = moduleRef.get(WorkflowRunner);
       // the folder does not exist here, so it is not writable
-      expect(await moduleRef.get(WorkflowDefinitionsService).list()).toEqual({ definitions: [], refused: [], writable: false });
+      expect(await moduleRef.get(WorkflowDefinitionsService).list()).toEqual({ definitions: [], refused: [], versions: {}, writable: false });
       expect(await runner.list()).toEqual([]);
     });
 

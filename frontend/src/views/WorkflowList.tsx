@@ -12,12 +12,12 @@ interface Props {
   onNew: () => void;
   onEdit: (id: string) => void;
   onDuplicate: (id: string) => void;
-  /** Resolves with null when deleted, else the error message. */
-  onDelete: (id: string) => Promise<string | null>;
+  /** With the version the list loaded; resolves with null when deleted, else the error message. */
+  onDelete: (id: string, version?: string) => Promise<string | null>;
   onDeleteRefused: (file: string, version: string) => Promise<string | null>;
 }
 
-type Pending = { kind: 'workflow'; id: string; title: string } | { kind: 'file'; file: string; version: string };
+type Pending = { kind: 'workflow'; id: string; title: string; version?: string } | { kind: 'file'; file: string; version: string };
 
 export function WorkflowList({ definitions, refused, writable, onNew, onEdit, onDuplicate, onDelete, onDeleteRefused }: Props) {
   const [pending, setPending] = useState<Pending | null>(null);
@@ -27,7 +27,7 @@ export function WorkflowList({ definitions, refused, writable, onNew, onEdit, on
     const what = pending;
     setPending(null);
     if (!what) return;
-    const result = what.kind === 'workflow' ? await onDelete(what.id) : await onDeleteRefused(what.file, what.version);
+    const result = what.kind === 'workflow' ? await onDelete(what.id, what.version) : await onDeleteRefused(what.file, what.version);
     setError(result);
   };
 
@@ -71,7 +71,7 @@ export function WorkflowList({ definitions, refused, writable, onNew, onEdit, on
                   </Button>
                   <Button
                     variant="danger"
-                    onClick={() => setPending({ kind: 'workflow', id: d.id, title: d.title })}
+                    onClick={() => setPending({ kind: 'workflow', id: d.id, title: d.title, version: d.version })}
                     aria-label={`Delete ${d.title}`}
                   >
                     Delete

@@ -1,7 +1,8 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { fillPlaceholders } from './placeholders';
 import { isSafeRelativePath } from './requires-path';
-import type { SessionDef, StepDef } from './workflow-definition';
+import { forkSourceOf, sessionNames, sessionOfStep } from './step-session';
+import type { StepDef } from './workflow-definition';
 import { WORKFLOW_DEFINITION_REPOSITORY, WorkflowDefinitionRepository } from './workflow-definition.repository';
 import { WorkflowConflictError, WorkflowNotFoundError } from './workflow-errors';
 import { isActive, newRunId, RunPhase, RunState, toRunView, WorkflowRun, WorkflowRunView } from './workflow-run';
@@ -120,16 +121,15 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
       const item = await this.items.get(itemId);
       if (!item) throw new WorkflowNotFoundError(`Work item ${itemId} not found`);
       const step = def.steps[0];
-      const first = step.sessions[0];
       // The task does not exist yet: the parser refuses {{task.*}} in this prompt.
-      const prompt = fillPlaceholders(first.prompt, { item, step });
-      const taskId = await this.tasks.start({ title: `#${item.id} ${item.title}`, prompt, ...(first.model !== undefined && { model: first.model }) });
+      const prompt = fillPlaceholders(step.prompt, { item, step });
+      const taskId = await this.tasks.start({ title: `#${item.id} ${item.title}`, prompt, ...(step.model !== undefined && { model: step.model }) });
 
       const now = new Date().toISOString();
-      const sessions = Object.fromEntries(def.steps.flatMap((s) => s.sessions).map((s) => [s.name, { status: 'pending' as const }]));
+      const sessions = Object.fromEntries(sessionNames(def).map((name) => [name, { status: 'pending' as const }]));
       const run: WorkflowRun = {
         id: newRunId(), workflowId, definition: structuredClone(def), itemId, item: { ...item }, taskId, stepIndex: 0, phase: 'sessions',
-        sessions: { ...sessions, [first.name]: { status: 'running' } }, state: 'running', pendingStage: step.stage,
+        sessions: { ...sessions, [sessionOfStep(def, 0)]: { status: 'running' } }, state: 'running', pendingStage: step.stage,
         createdAt: now, updatedAt: now,
       };
       // Hold the run's queue so change events of the new task wait until it is recorded.
@@ -252,11 +252,11 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     }
     const step = r.definition.steps[r.stepIndex];
     if (r.phase === 'sessions') {
-      const next = step.sessions.find((s) => r.sessions[s.name].status !== 'done');
-      if (!next) await this.stepFinished(r, step, snap);
-      else if (r.sessions[next.name].status === 'pending') await this.startSession(r, step, next, snap);
+      const mine = r.sessions[sessionOfStep(r.definition, r.stepIndex)] ?? { status: 'pending' };
+      if (mine.status === 'done') await this.stepFinished(r, step, snap);
+      else if (mine.status === 'pending') await this.startStep(r, snap);
     } else if (r.phase === 'exit') {
-      if (r.sessions[step.sessions[step.sessions.length - 1].name].status === 'done') await this.moveOn(r, snap, false);
+      if (r.sessions[sessionOfStep(r.definition, r.stepIndex)].status === 'done') await this.moveOn(r, snap, false);
     }
   }
 
@@ -266,9 +266,9 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     else await this.moveOn(r, snap, false);
   }
 
-  // Exit prompt to the step's last session; the run continues when that session is done again.
+  // Exit prompt to the step's session; the run continues when that session is done again.
   private async sendExit(r: WorkflowRun, step: StepDef, snap: Snapshot): Promise<void> {
-    const last = step.sessions[step.sessions.length - 1].name;
+    const last = sessionOfStep(r.definition, r.stepIndex);
     const text = fillPlaceholders(step.exitPrompt ?? '', this.context(r, step, snap));
     await this.attempt(`could not send the exit prompt to session "${last}"`, () => this.tasks.prompt(r.taskId, last, text));
     // Baseline read after sending: the engine's last message may lag behind and only show the previous turn now.
@@ -276,7 +276,7 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     r.phase = 'exit';
   }
 
-  // The current step is over: check the next step's files, move the card, start its first session; or finish.
+  // The current step is over: check the next step's files, move the card, start its session; or finish.
   private async moveOn(r: WorkflowRun, snap: Snapshot, force: boolean): Promise<void> {
     const steps = r.definition.steps;
     const index = r.stepIndex + 1;
@@ -311,22 +311,34 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     if (stage !== undefined) await this.attempt(`could not move the item to "${stage}"`, () => this.items.moveTo(r.itemId, stage));
     r.stepIndex = index;
     r.phase = 'sessions';
-    await this.startSession(r, next, next.sessions[0], snap);
+    await this.startStep(r, snap);
   }
 
-  private async startSession(r: WorkflowRun, step: StepDef, session: SessionDef, snap: Snapshot): Promise<void> {
-    // Already there (we crashed after adding it, before saving): it is started, do not add it again.
-    if (snap.sessions.some((s) => s.name === session.name)) {
-      r.sessions[session.name] = { status: 'running' };
+  // Starts the current step in its session: a new session (or a fork) is added; a continued one gets the prompt.
+  private async startStep(r: WorkflowRun, snap: Snapshot): Promise<void> {
+    const index = r.stepIndex;
+    const step = r.definition.steps[index];
+    const name = sessionOfStep(r.definition, index);
+    const prompt = fillPlaceholders(step.prompt, this.context(r, step, snap));
+    if (step.continue !== undefined) {
+      // The session exists and was done: it gets this prompt and runs again, with a new baseline as for the exit
+      // prompt. A crash between sending and saving sends the prompt twice (the same limit as the exit prompt).
+      await this.attempt(`could not send the prompt of step "${step.id}" to session "${name}"`, () => this.tasks.prompt(r.taskId, name, prompt));
+      r.sessions[name] = { status: 'running', ...await this.baselineOf(r.taskId, name) };
       return;
     }
-    const prompt = fillPlaceholders(session.prompt, this.context(r, step, snap));
-    await this.attempt(`could not start session "${session.name}"`, () => this.tasks.addSession(r.taskId, {
-      name: session.name, prompt,
-      ...(session.fork !== undefined && { fork: session.fork }),
-      ...(session.model !== undefined && { model: session.model }),
+    // Already there (we crashed after adding it, before saving): it is started, do not add it again.
+    if (snap.sessions.some((s) => s.name === name)) {
+      r.sessions[name] = { status: 'running' };
+      return;
+    }
+    const fork = forkSourceOf(r.definition, index);
+    await this.attempt(`could not start session "${name}"`, () => this.tasks.addSession(r.taskId, {
+      name, prompt,
+      ...(fork !== undefined && { fork }),
+      ...(step.model !== undefined && { model: step.model }),
     }));
-    r.sessions[session.name] = { status: 'running', ...await this.baselineOf(r.taskId, session.name) };
+    r.sessions[name] = { status: 'running', ...await this.baselineOf(r.taskId, name) };
   }
 
   private async baselineOf(taskId: string, session: string): Promise<{ baseline?: string }> {

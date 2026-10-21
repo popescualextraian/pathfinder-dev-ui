@@ -8,8 +8,10 @@ import { WorkflowErrorFilter } from './workflow-error.filter';
 export interface WorkflowSummary {
   id: string;
   title: string;
-  steps: Array<{ id: string; title: string; stage?: string; gate: Gate; sessions: string[] }>;
+  steps: Array<{ id: string; title: string; stage?: string; gate: Gate }>;
   doneStage?: string;
+  /** Of the file as listed: a delete with it fails (409) when the file changed since. */
+  version?: string;
 }
 
 export interface WorkflowList {
@@ -27,9 +29,9 @@ export class WorkflowsController {
 
   @Get()
   async list(): Promise<WorkflowList> {
-    const { definitions, refused, writable } = await this.definitions.list();
+    const { definitions, refused, writable, versions } = await this.definitions.list();
     return {
-      definitions: definitions.map(summary),
+      definitions: definitions.map((d) => summary(d, versions?.[d.id])),
       refused: refused.map((r) => ({ file: r.file, error: r.error, ...(r.version !== undefined && { version: r.version }) })),
       writable,
     };
@@ -70,14 +72,15 @@ export class WorkflowsController {
   }
 }
 
-function summary(def: WorkflowDefinition): WorkflowSummary {
+function summary(def: WorkflowDefinition, version: string | undefined): WorkflowSummary {
   const out: WorkflowSummary = {
     id: def.id,
     title: def.title,
     steps: def.steps.map((s) => ({
-      id: s.id, title: s.title, ...(s.stage !== undefined && { stage: s.stage }), gate: s.gate, sessions: s.sessions.map((x) => x.name),
+      id: s.id, title: s.title, ...(s.stage !== undefined && { stage: s.stage }), gate: s.gate,
     })),
   };
   if (def.doneStage !== undefined) out.doneStage = def.doneStage;
+  if (version !== undefined) out.version = version;
   return out;
 }

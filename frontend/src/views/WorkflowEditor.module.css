@@ -16,7 +16,7 @@
 .flowPane { flex: 1; min-width: 0; padding: 24px; display: flex; flex-direction: column; gap: 16px; overflow-x: auto; }
 .flow { list-style: none; margin: 0; padding: 0; display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
 .item { display: flex; align-items: center; gap: 6px; }
-.box { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; width: 170px; padding: 10px 12px; text-align: left; font: inherit; font-size: 12px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-card); cursor: pointer; }
+.box { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; width: 190px; padding: 10px 12px; text-align: left; font: inherit; font-size: 12px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-card); cursor: pointer; }
 .box:hover { border-color: var(--msg-red-light); }
 .selected { border-color: var(--msg-red); box-shadow: 0 0 0 1px var(--msg-red); }
 .bad { border-color: var(--msg-red); background: var(--paper-soft); }
@@ -25,9 +25,9 @@
 .boxTitle { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
 .lane { color: var(--state-review-text); }
 .noLane { color: var(--ink-soft); font-style: italic; }
-.session { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
-.fork { color: var(--state-review-text); }
-.model { color: var(--ink-soft); }
+.prompt { font-size: 11px; color: var(--ink-soft); overflow-wrap: anywhere; }
+.conversation { font-size: 11px; color: var(--state-review-text); overflow-wrap: anywhere; }
+.model { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
 .requires { font-size: 11px; color: var(--state-needs-text); }
 .gate { width: 34px; height: 34px; border-radius: var(--radius-pill); border: 1px solid var(--line); background: var(--paper-soft); cursor: pointer; font-size: 15px; }
 .gate[data-gate='auto'] { background: var(--state-needs-bg); border-color: var(--state-needs-dot); }

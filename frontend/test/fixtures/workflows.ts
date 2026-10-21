@@ -6,8 +6,8 @@ export function makeWorkflow(over: Partial<WorkflowSummary> = {}): WorkflowSumma
     title: 'Plan, implement, review',
     doneStage: 'done',
     steps: [
-      { id: 'plan', title: 'Plan', stage: 'plan', gate: 'human', sessions: ['main'] },
-      { id: 'implement', title: 'Implement', stage: 'in-progress', gate: 'auto', sessions: ['impl'] },
+      { id: 'plan', title: 'Plan', stage: 'plan', gate: 'human' },
+      { id: 'implement', title: 'Implement', stage: 'in-progress', gate: 'auto' },
     ],
     ...over,
   };
@@ -22,8 +22,8 @@ export function makeRun(over: Partial<WorkflowRun> = {}): WorkflowRun {
       title: 'Plan, implement, review',
       doneStage: 'done',
       steps: [
-        { id: 'plan', title: 'Plan', stage: 'plan', gate: 'human', sessions: [{ name: 'main', prompt: 'plan it' }] },
-        { id: 'implement', title: 'Implement', stage: 'in-progress', gate: 'auto', sessions: [{ name: 'impl', prompt: 'do it' }] },
+        { id: 'plan', title: 'Plan', stage: 'plan', gate: 'human', prompt: 'plan it' },
+        { id: 'implement', title: 'Implement', stage: 'in-progress', gate: 'auto', prompt: 'do it' },
       ],
     },
     itemId: '7',
@@ -31,7 +31,7 @@ export function makeRun(over: Partial<WorkflowRun> = {}): WorkflowRun {
     taskId: 'T-1',
     stepIndex: 0,
     phase: 'sessions',
-    sessions: { main: { status: 'running' }, impl: { status: 'pending' } },
+    sessions: { main: { status: 'running' }, implement: { status: 'pending' } },
     state: 'running',
     createdAt: '2026-10-20T10:00:00Z',
     updatedAt: '2026-10-20T10:00:00Z',

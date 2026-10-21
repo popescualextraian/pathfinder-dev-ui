@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const MAIN_SESSION = 'main';
 
@@ -92,11 +92,18 @@ export function resolveSession(name: string | null | undefined, sessions: { name
   return name && sessions?.some((s) => s.name === name) ? name : MAIN_SESSION;
 }
 
+/** Decides on a route change before it is applied: true holds it (the guard puts the old address back). */
+type Blocker = (nextHash: string) => boolean;
+let blocker: Blocker | null = null;
+
 export function useRoute() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
 
   useEffect(() => {
-    const onChange = () => setRoute(parseHash(window.location.hash));
+    const onChange = () => {
+      if (blocker?.(window.location.hash)) return;
+      setRoute(parseHash(window.location.hash));
+    };
     window.addEventListener('hashchange', onChange);
     return () => window.removeEventListener('hashchange', onChange);
   }, []);
@@ -147,4 +154,63 @@ export function useRoute() {
     workflow: route.workflow ?? null,
     from: route.from ?? null,
   };
+}
+
+export interface LeaveGuard {
+  /** The address a held route change goes to; null when none is held. */
+  pending: string | null;
+  /** Drops the held change: the page stays. */
+  stay: () => void;
+  /** Lets the held change through. */
+  proceed: () => void;
+  /** Lets the next change through without asking (a leave that was already confirmed, or a save). */
+  release: () => void;
+  /** Holds changes again after a `release` that did not lead to a route change (a save that stays on the page). */
+  rearm: () => void;
+}
+
+/**
+ * While `active`, every route change away from the current address (a link, the sidebar, the browser's back) is held
+ * and the address put back, until `proceed`; closing or reloading the page asks the browser's question.
+ */
+export function useLeaveGuard(active: boolean): LeaveGuard {
+  const [pending, setPending] = useState<string | null>(null);
+  const mine = useRef<Blocker | null>(null);
+  const [epoch, setEpoch] = useState(0);
+
+  useEffect(() => {
+    if (!active) return;
+    const here = window.location.hash;
+    const block: Blocker = (next) => {
+      if (next === here) return false;
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}${here}`);
+      setPending(next);
+      return true;
+    };
+    blocker = block;
+    mine.current = block;
+    const onUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onUnload);
+    return () => {
+      if (blocker === block) blocker = null;
+      mine.current = null;
+      window.removeEventListener('beforeunload', onUnload);
+    };
+  }, [active, epoch]);
+
+  const release = useCallback(() => {
+    if (mine.current && blocker === mine.current) blocker = null;
+  }, []);
+  const rearm = useCallback(() => setEpoch((n) => n + 1), []);
+  const stay = useCallback(() => setPending(null), []);
+  const proceed = useCallback(() => {
+    release();
+    setPending(null);
+    if (pending !== null) window.location.hash = pending;
+  }, [pending, release]);
+
+  return { pending, stay, proceed, release, rearm };
 }

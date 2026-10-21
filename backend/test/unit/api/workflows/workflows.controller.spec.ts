@@ -11,20 +11,21 @@ const definitions: WorkflowDefinitions = {
     steps: [
       {
         id: 'plan', title: 'Plan', stage: 'plan', gate: 'human', exitPrompt: 'Commit the plan.',
-        sessions: [{ name: 'main', prompt: 'Plan {{item.id}}' }],
+        prompt: 'Plan {{item.id}}',
       },
       {
         id: 'review', title: 'Review', stage: 'review', gate: 'auto', requires: ['plans/{{item.id}}.md'],
-        sessions: [{ name: 'impl', prompt: 'Do it' }, { name: 'review', prompt: 'Review', fork: 'impl', model: 'sonnet' }],
+        prompt: 'Do it',
       },
     ],
     doneStage: 'done',
   }, {
-    id: 'one', title: 'One', steps: [{ id: 's', title: 'S', stage: 'plan', gate: 'auto', sessions: [{ name: 'main', prompt: 'x' }] }],
+    id: 'one', title: 'One', steps: [{ id: 's', title: 'S', stage: 'plan', gate: 'auto', prompt: 'x' }],
   }, {
-    id: 'free', title: 'Free', steps: [{ id: 's', title: 'S', gate: 'auto', sessions: [{ name: 'main', prompt: 'x' }] }],
+    id: 'free', title: 'Free', steps: [{ id: 's', title: 'S', gate: 'auto', prompt: 'x' }],
   }],
   refused: [{ file: 'bad.yaml', error: 'bad.yaml: title is required', version: 'abc' }],
+  versions: { 'plan-implement-review': 'v-pir', one: 'v-one' },
 };
 
 const run: WorkflowRunView = {
@@ -55,19 +56,19 @@ function make() {
 }
 
 describe('WorkflowsController', () => {
-  it('lists definitions as a summary (no prompts) and the refused files', async () => {
+  it('lists definitions as a summary (no prompts, with the file version when known) and the refused files', async () => {
     const { workflows } = make();
     expect(await workflows.list()).toEqual({
       definitions: [
         {
-          id: 'plan-implement-review', title: 'Plan, implement, review', doneStage: 'done',
+          id: 'plan-implement-review', title: 'Plan, implement, review', doneStage: 'done', version: 'v-pir',
           steps: [
-            { id: 'plan', title: 'Plan', stage: 'plan', gate: 'human', sessions: ['main'] },
-            { id: 'review', title: 'Review', stage: 'review', gate: 'auto', sessions: ['impl', 'review'] },
+            { id: 'plan', title: 'Plan', stage: 'plan', gate: 'human' },
+            { id: 'review', title: 'Review', stage: 'review', gate: 'auto' },
           ],
         },
-        { id: 'one', title: 'One', steps: [{ id: 's', title: 'S', stage: 'plan', gate: 'auto', sessions: ['main'] }] },
-        { id: 'free', title: 'Free', steps: [{ id: 's', title: 'S', gate: 'auto', sessions: ['main'] }] },
+        { id: 'one', title: 'One', version: 'v-one', steps: [{ id: 's', title: 'S', stage: 'plan', gate: 'auto' }] },
+        { id: 'free', title: 'Free', steps: [{ id: 's', title: 'S', gate: 'auto' }] },
       ],
       refused: [{ file: 'bad.yaml', error: 'bad.yaml: title is required', version: 'abc' }],
       writable: true,

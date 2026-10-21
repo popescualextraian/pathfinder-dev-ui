@@ -1,4 +1,5 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { ApiError } from '../../src/api/http';
 import { useWorkflows } from '../../src/state/use-workflows';
 import * as api from '../../src/api/workflows-api';
 import { makeWorkflow } from '../fixtures/workflows';
@@ -7,7 +8,7 @@ jest.mock('../../src/api/workflows-api');
 const listWorkflows = api.listWorkflows as jest.Mock;
 
 describe('useWorkflows', () => {
-  beforeEach(() => listWorkflows.mockReset());
+  beforeEach(() => jest.resetAllMocks());
 
   it('is off without error when the backend answers null', async () => {
     listWorkflows.mockResolvedValue(null);
@@ -34,5 +35,45 @@ describe('useWorkflows', () => {
     const { result } = renderHook(() => useWorkflows());
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current).toMatchObject({ enabled: false, error: 'boom' });
+  });
+
+  it('remove deletes with the version the list loaded, without reading the file again', async () => {
+    listWorkflows.mockResolvedValue({ definitions: [makeWorkflow({ version: 'v-listed' })], refused: [], writable: true });
+    (api.deleteWorkflow as jest.Mock).mockResolvedValue(undefined);
+    const { result } = renderHook(() => useWorkflows());
+    await waitFor(() => expect(result.current.enabled).toBe(true));
+    let outcome: string | null = 'x';
+    await act(async () => {
+      outcome = await result.current.remove('plan-implement-review', 'v-listed');
+    });
+    expect(outcome).toBeNull();
+    expect(api.deleteWorkflow).toHaveBeenCalledWith('plan-implement-review', 'v-listed');
+    expect(api.readWorkflow).not.toHaveBeenCalled();
+    expect(listWorkflows).toHaveBeenCalledTimes(2);
+  });
+
+  it('remove of a file changed since the list was loaded says so and reloads the list', async () => {
+    listWorkflows.mockResolvedValue({ definitions: [makeWorkflow({ version: 'v-listed' })], refused: [], writable: true });
+    (api.deleteWorkflow as jest.Mock).mockRejectedValue(new ApiError(409, 'The workflow was changed by someone else'));
+    const { result } = renderHook(() => useWorkflows());
+    await waitFor(() => expect(result.current.enabled).toBe(true));
+    let outcome: string | null = null;
+    await act(async () => {
+      outcome = await result.current.remove('plan-implement-review', 'v-listed');
+    });
+    expect(outcome).toMatch(/changed since the list was loaded/);
+    expect(listWorkflows).toHaveBeenCalledTimes(2);
+  });
+
+  it('remove without a listed version reads it first', async () => {
+    listWorkflows.mockResolvedValue({ definitions: [makeWorkflow()], refused: [], writable: true });
+    (api.readWorkflow as jest.Mock).mockResolvedValue({ definition: {}, version: 'v-read' });
+    (api.deleteWorkflow as jest.Mock).mockResolvedValue(undefined);
+    const { result } = renderHook(() => useWorkflows());
+    await waitFor(() => expect(result.current.enabled).toBe(true));
+    await act(async () => {
+      await result.current.remove('plan-implement-review');
+    });
+    expect(api.deleteWorkflow).toHaveBeenCalledWith('plan-implement-review', 'v-read');
   });
 });

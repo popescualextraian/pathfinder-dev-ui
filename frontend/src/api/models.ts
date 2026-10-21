@@ -149,8 +149,6 @@ export interface WorkflowStepSummary {
   title: string;
   stage?: string;
   gate: WorkflowGate;
-  /** Session names. */
-  sessions: string[];
 }
 
 export interface WorkflowSummary {
@@ -158,6 +156,8 @@ export interface WorkflowSummary {
   title: string;
   steps: WorkflowStepSummary[];
   doneStage?: string;
+  /** Of the file as listed: a delete with it fails (409) when the file changed since. */
+  version?: string;
 }
 
 export interface RefusedWorkflow {
@@ -174,19 +174,20 @@ export interface WorkflowList {
   writable: boolean;
 }
 
-export interface WorkflowSessionDef {
-  name: string;
-  prompt: string;
-  fork?: string;
-  model?: string;
-}
-
+/** One step: one prompt in one conversation (session) of the task. */
 export interface WorkflowStepDef {
+  /** Generated from the title by the editor; never shown. */
   id: string;
   title: string;
   stage?: string;
+  prompt: string;
+  /** Not with `continue` (the conversation keeps its model). */
+  model?: string;
+  /** Id of an earlier step: this step goes on in that step's conversation. */
+  continue?: string;
+  /** Id of an earlier step: this step starts as a copy of that step's conversation. */
+  fork?: string;
   gate: WorkflowGate;
-  sessions: WorkflowSessionDef[];
   requires?: string[];
   exitPrompt?: string;
 }
@@ -207,10 +208,8 @@ export interface StoredWorkflow {
 /** Where a definition rule was broken. */
 export interface WorkflowErrorLocation {
   stepId?: string;
-  session?: string;
-  /** Set instead of stepId / session when the id / name is empty or missing. */
+  /** Set instead of stepId when the step's id is empty or missing. */
   stepIndex?: number;
-  sessionIndex?: number;
   field?: string;
 }
 
@@ -230,14 +229,9 @@ export type WorkflowRunPhase = 'sessions' | 'exit' | 'awaiting-approval' | 'bloc
 export type WorkflowRunSessionStatus = 'pending' | 'running' | 'done';
 
 /** The step as the run view carries it (the definition as the run started, with prompts). */
-export interface WorkflowRunStep {
-  id: string;
-  title: string;
-  stage?: string;
-  gate: WorkflowGate;
-  sessions: Array<{ name: string; prompt: string; fork?: string; model?: string }>;
-  requires?: string[];
-  exitPrompt?: string;
+export interface WorkflowRunStep extends WorkflowStepDef {
+  /** Only on runs saved before one-session steps: the session the step used; wins over the derived name. */
+  session?: string;
 }
 
 export interface WorkflowRun {

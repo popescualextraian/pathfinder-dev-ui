@@ -3,7 +3,7 @@ import { WorkflowDefinition, WorkflowDefinitionError, WorkflowDefinitionsService
 import { FakeDefinitions, FakeWorkItems } from '../../../helpers/fake-workflow';
 
 const def = (over: Partial<WorkflowDefinition> = {}): WorkflowDefinition => ({
-  id: 'ignored', title: 'T', steps: [{ id: 's', title: 'S', stage: 'todo', gate: 'auto', sessions: [{ name: 'main', prompt: 'p {{item.id}}' }] }], ...over,
+  id: 'ignored', title: 'T', steps: [{ id: 's', title: 'S', stage: 'todo', gate: 'auto', prompt: 'p {{item.id}}' }], ...over,
 });
 
 function make(stages?: string[]) {
@@ -36,8 +36,8 @@ describe('WorkflowDefinitionsService', () => {
 
     it('returns the first error with its location', async () => {
       const { service } = make();
-      const bad = def({ steps: [{ id: 'a', title: 'A', gate: 'auto', sessions: [{ name: 'main', prompt: 'p' }, { name: 'x', prompt: 'q', fork: 'zz' }] }] });
-      expect(await service.validate(bad)).toEqual([{ message: expect.stringContaining('fork'), stepId: 'a', session: 'x', field: 'fork' }]);
+      const bad = def({ steps: [{ id: 'a', title: 'A', gate: 'auto', prompt: 'p', fork: 'zz' }] });
+      expect(await service.validate(bad)).toEqual([{ message: expect.stringContaining('fork'), stepId: 'a', field: 'fork' }]);
     });
 
     it('checks the stages against the work items', async () => {

@@ -33,7 +33,7 @@ test('create a workflow in the editor, run it on a card, edit it', async ({ page
   await page.getByLabel('Workflow title').fill(title);
   await expect(page.getByLabel('Workflow id')).toHaveValue(id);
   await page.getByLabel('Step title').fill('Draft');
-  await page.getByRole('textbox', { name: 'Session 1 prompt' }).fill('Draft #{{item.id}}: {{item.title}}');
+  await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Draft #{{item.id}}: {{item.title}}');
   await expect(page.getByLabel('When this step starts, move the item to')).toHaveValue('');
 
   // Step 2: moves the card to Review.
@@ -41,7 +41,7 @@ test('create a workflow in the editor, run it on a card, edit it', async ({ page
   await expect(page.getByTestId('step-box-2')).toBeVisible();
   await page.getByLabel('Step title').fill('Check');
   await page.getByLabel('When this step starts, move the item to').selectOption({ label: 'Review' });
-  await page.getByRole('textbox', { name: 'Session 1 prompt' }).fill('Check #{{item.id}}');
+  await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Check #{{item.id}}');
   await expect(page.getByTestId('step-box-2')).toContainText('→ Review');
   await expect(page.getByTestId('step-box-1')).toContainText('no lane move');
   await page.screenshot({ path: 'test-results/workflow-editor.png', fullPage: true });
@@ -81,7 +81,7 @@ test('create a workflow in the editor, run it on a card, edit it', async ({ page
   await expect(page.getByLabel('Workflow id')).toBeDisabled();
   await page.getByLabel('Workflow title').fill(`${title} v2`);
   await page.getByTestId('step-box-1').click();
-  await page.getByRole('textbox', { name: 'Session 1 prompt' }).fill('Draft again #{{item.id}}');
+  await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Draft again #{{item.id}}');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
   await page.getByRole('button', { name: 'Cancel' }).click();

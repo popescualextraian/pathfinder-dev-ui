@@ -18,9 +18,7 @@ steps:
   - id: work
     title: Work
     stage: doing
-    sessions:
-      - name: main
-        prompt: "Work on #{{item.id}}: {{item.title}}"
+    prompt: "Work on #{{item.id}}: {{item.title}}"
     gate: human
 doneStage: done
 `;
@@ -49,7 +47,7 @@ describe('workflows API (e2e)', () => {
     ({ app, dataDir } = await createApp({
       launcher: new FakeLauncher(bridge.url),
       backlog: { gitlab },
-      workflows: { 'do-it.yaml': TWO_STEPS, 'bad.yaml': 'title: Bad\nsteps:\n  - id: x\n    title: X\n    stage: nowhere\n    gate: human\n    sessions: [{ name: main, prompt: p }]\n' },
+      workflows: { 'do-it.yaml': TWO_STEPS, 'bad.yaml': 'title: Bad\nsteps:\n  - id: x\n    title: X\n    stage: nowhere\n    gate: human\n    prompt: p\n' },
     }));
   });
   afterEach(async () => {
@@ -63,7 +61,8 @@ describe('workflows API (e2e)', () => {
     expect(res.body).toEqual({
       definitions: [{
         id: 'do-it', title: 'Do and finish', doneStage: 'done',
-        steps: [{ id: 'work', title: 'Work', stage: 'doing', gate: 'human', sessions: ['main'] }],
+        steps: [{ id: 'work', title: 'Work', stage: 'doing', gate: 'human' }],
+        version: expect.stringMatching(/^[0-9a-f]{64}$/),
       }],
       refused: [{ file: 'bad.yaml', error: expect.stringContaining('bad.yaml'), version: expect.stringMatching(/^[0-9a-f]{64}$/) }],
       writable: true,
@@ -73,7 +72,7 @@ describe('workflows API (e2e)', () => {
   describe('editing definitions', () => {
     const definition = {
       title: 'New one',
-      steps: [{ id: 'a', title: 'A', gate: 'auto', sessions: [{ name: 'main', prompt: 'Do {{item.title}}' }] }],
+      steps: [{ id: 'a', title: 'A', gate: 'auto', prompt: 'Do {{item.title}}' }],
     };
 
     it('reads a definition with its version', async () => {
@@ -81,7 +80,9 @@ describe('workflows API (e2e)', () => {
       expect(res.body).toEqual({
         definition: expect.objectContaining({ id: 'do-it', title: 'Do and finish', doneStage: 'done' }), version: expect.stringMatching(/^[0-9a-f]{64}$/),
       });
-      expect(res.body.definition.steps[0].sessions[0].prompt).toContain('{{item.title}}');
+      expect(res.body.definition.steps[0].prompt).toContain('{{item.title}}');
+      const listed = (await api().get('/api/workflows').expect(200)).body.definitions[0];
+      expect(listed.version).toBe(res.body.version);
       await api().get('/api/workflows/nope').expect(404);
       await api().get('/api/workflows/bad').expect(404);
     });

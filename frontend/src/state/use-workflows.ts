@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ApiError } from '../api/http';
 import type { RefusedWorkflow, WorkflowSummary } from '../api/models';
 import { deleteRefusedWorkflow, deleteWorkflow, listWorkflows, readWorkflow } from '../api/workflows-api';
 
@@ -47,15 +48,21 @@ export function useWorkflows() {
     }
   }, [apply]);
 
-  /** Deletes a definition (reads its version first). Null when done, else the message. */
+  /**
+   * Deletes a definition with the version the list loaded (read first when the list had none), so a file changed on
+   * disk since is not deleted (409: the list is reloaded). Null when done, else the message.
+   */
   const remove = useCallback(
-    async (id: string): Promise<string | null> => {
+    async (id: string, version?: string): Promise<string | null> => {
       try {
-        const stored = await readWorkflow(id);
-        await deleteWorkflow(id, stored.version);
+        await deleteWorkflow(id, version ?? (await readWorkflow(id)).version);
         await reload();
         return null;
       } catch (e) {
+        if (e instanceof ApiError && e.status === 409) {
+          await reload();
+          return 'The workflow file changed since the list was loaded: check it and delete again.';
+        }
         return e instanceof Error ? e.message : String(e);
       }
     },

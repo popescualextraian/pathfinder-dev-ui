@@ -1,5 +1,6 @@
 .dialog { position: fixed; inset: 0; background: rgba(29, 29, 43, 0.5); display: flex; align-items: center; justify-content: center; z-index: 10; cursor: default; }
 .panel { background: var(--paper); border-radius: var(--radius-card); padding: 20px; width: 420px; max-width: 95vw; display: flex; flex-direction: column; gap: 12px; }
+.wide { width: min(1000px, 95vw); max-height: 90vh; }
 .panel h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
 .message { margin: 0; font-size: 13px; color: var(--ink-soft); }
 .choices { display: flex; flex-direction: column; gap: 8px; }

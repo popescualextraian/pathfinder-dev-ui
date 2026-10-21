@@ -8,10 +8,14 @@ interface DialogProps {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** A large panel (for editing long text). */
+  wide?: boolean;
+  /** Selector of the element that takes the focus when it opens (default: the first button). */
+  initialFocus?: string;
 }
 
 /** Modal shell like ItemDialog's: portal to body (never inside a draggable card), Escape closes, focus returns. */
-export function Dialog({ title, onClose, children }: DialogProps) {
+export function Dialog({ title, onClose, children, wide, initialFocus = 'button' }: DialogProps) {
   const id = useId();
   const panel = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -19,7 +23,7 @@ export function Dialog({ title, onClose, children }: DialogProps) {
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
-    panel.current?.querySelector<HTMLElement>('button')?.focus();
+    panel.current?.querySelector<HTMLElement>(initialFocus)?.focus();
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
     document.addEventListener('keydown', onKey);
     return () => {
@@ -30,7 +34,7 @@ export function Dialog({ title, onClose, children }: DialogProps) {
 
   return createPortal(
     <div className={styles.dialog}>
-      <div ref={panel} className={styles.panel} role="dialog" aria-modal="true" aria-labelledby={id}>
+      <div ref={panel} className={`${styles.panel} ${wide ? styles.wide : ''}`} role="dialog" aria-modal="true" aria-labelledby={id}>
         <h2 id={id}>{title}</h2>
         {children}
       </div>

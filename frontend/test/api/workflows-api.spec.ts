@@ -3,6 +3,7 @@ import {
   stopRun, updateWorkflow, validateWorkflow,
 } from '../../src/api/workflows-api';
 import { ApiError } from '../../src/api/http';
+import type { WorkflowDefinition } from '../../src/api/models';
 
 const json = (status: number, body: unknown) =>
   Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(body) } as Response);
@@ -58,7 +59,14 @@ describe('workflows-api', () => {
   });
 
   describe('editing', () => {
-    const def = { title: 'T', steps: [] };
+    const def: WorkflowDefinition = {
+      title: 'T',
+      steps: [
+        { id: 'plan', title: 'Plan', gate: 'human', prompt: 'plan', model: 'sonnet' },
+        { id: 'build', title: 'Build', gate: 'auto', prompt: 'build', continue: 'plan' },
+        { id: 'review', title: 'Review', gate: 'human', prompt: 'review', fork: 'build' },
+      ],
+    };
     it('readWorkflow encodes the id', async () => {
       fetchMock.mockReturnValue(json(200, { definition: def, version: 'v1' }));
       expect(await readWorkflow('a b')).toEqual({ definition: def, version: 'v1' });

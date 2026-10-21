@@ -7,7 +7,7 @@ import { newRunId, RUN_ID, WorkflowRun } from '../../../../src/workflow/service/
 const run = (id: string, createdAt: string): WorkflowRun => ({
   id, workflowId: 'wf', itemId: '7', taskId: 'T-20261020-abcd', stepIndex: 0, phase: 'sessions', state: 'running',
   item: { id: '7', title: 'Seven', description: '', url: 'u', stage: 'todo' },
-  definition: { id: 'wf', title: 'WF', steps: [{ id: 's', title: 'S', stage: 'plan', gate: 'auto', sessions: [{ name: 'main', prompt: 'p' }] }] },
+  definition: { id: 'wf', title: 'WF', steps: [{ id: 's', title: 'S', stage: 'plan', gate: 'auto', prompt: 'p' }] },
   sessions: { main: { status: 'running' } }, createdAt, updatedAt: createdAt,
 });
 
