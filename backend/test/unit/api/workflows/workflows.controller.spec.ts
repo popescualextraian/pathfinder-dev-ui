@@ -39,6 +39,7 @@ function make() {
     list: jest.fn().mockResolvedValue([run]),
     get: jest.fn().mockResolvedValue(run),
     start: jest.fn().mockResolvedValue(run),
+    startTask: jest.fn().mockResolvedValue(run),
     advance: jest.fn().mockResolvedValue(run),
     stop: jest.fn().mockResolvedValue(run),
   };
@@ -126,6 +127,21 @@ describe('WorkflowRunsController', () => {
     expect(runner.advance).toHaveBeenLastCalledWith(run.id, { force: false });
     expect(await runs.stop(run.id)).toBe(run);
     expect(runner.stop).toHaveBeenCalledWith(run.id);
+  });
+
+  it('starts a plain task run through the runner', async () => {
+    const { runner, runs } = make();
+    const input = { itemId: '7', prompt: 'look', title: 'T', model: 'opus', repository: 'r' };
+    expect(await runs.startTask(input)).toBe(run);
+    expect(runner.startTask).toHaveBeenCalledWith(input);
+  });
+
+  it('declares task before the :id routes and answers 201', () => {
+    const proto = WorkflowRunsController.prototype as unknown as Record<string, object>;
+    const paths = Object.getOwnPropertyNames(proto)
+      .map((name) => Reflect.getMetadata('path', proto[name]) as string | undefined).filter((p) => p !== undefined);
+    expect(paths.indexOf('task')).toBeGreaterThanOrEqual(0);
+    expect(Reflect.getMetadata('__httpCode__', proto.startTask)).toBeUndefined();
   });
 
   it('answers 201 for a start and 200 for advance and stop', () => {

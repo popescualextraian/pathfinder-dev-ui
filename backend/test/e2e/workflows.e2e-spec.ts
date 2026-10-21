@@ -272,6 +272,19 @@ describe('workflows API (e2e)', () => {
     record(await api().get('/api/workflow-runs?itemId=a%20b').expect(400));
   });
 
+  it('starts a plain task run: 201, 409 while active (either kind), 404 and 400', async () => {
+    const res = record(await api().post('/api/workflow-runs/task').send({ itemId, prompt: 'look at it', title: 'My task' }).expect(201));
+    expect(res.body).toMatchObject({ kind: 'task', itemId, state: 'running', taskId: expect.any(String) });
+    record(await api().post('/api/workflow-runs/task').send({ itemId, prompt: 'again' }).expect(409));
+    record(await api().post('/api/workflow-runs').send({ itemId, workflowId: 'do-it' }).expect(409));
+    record(await api().post('/api/workflow-runs/task').send({ itemId: '99999', prompt: 'x' }).expect(404));
+    record(await api().post('/api/workflow-runs/task').send({ itemId, prompt: '' }).expect(400));
+    record(await api().post('/api/workflow-runs/task').send({ itemId: '../x', prompt: 'x' }).expect(400));
+    record(await api().post('/api/workflow-runs/task').send({ itemId, prompt: 'x', model: '-no' }).expect(400));
+    record(await api().post(`/api/workflow-runs/${res.body.id}/advance`).send({}).expect(409));
+    expect(record(await api().post(`/api/workflow-runs/${res.body.id}/stop`).expect(200)).body.state).toBe('stopped');
+  });
+
   it('never sends a token', async () => {
     const run = record(await api().post('/api/workflow-runs').send({ itemId, workflowId: 'do-it' }).expect(201)).body;
     record(await api().get('/api/workflow-runs').expect(200));

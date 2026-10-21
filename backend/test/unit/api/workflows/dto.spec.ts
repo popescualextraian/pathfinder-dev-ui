@@ -4,6 +4,7 @@ import { validate } from 'class-validator';
 import { AdvanceRunDto } from '../../../../src/api/workflows/dto/advance-run.dto';
 import { RunsQueryDto } from '../../../../src/api/workflows/dto/runs-query.dto';
 import { StartGenerationDto } from '../../../../src/api/workflows/dto/workflow-generation.dto';
+import { StartTaskRunDto } from '../../../../src/api/workflows/dto/start-task-run.dto';
 import { StartRunDto } from '../../../../src/api/workflows/dto/start-run.dto';
 import { CreateWorkflowDto, UpdateWorkflowDto, ValidateWorkflowDto, VersionQueryDto } from '../../../../src/api/workflows/dto/workflow-definition.dto';
 
@@ -23,6 +24,26 @@ describe('StartRunDto', () => {
 
   it.each([undefined, '', 5, '../w', 'w/x', '.w', 'x'.repeat(101)])('rejects workflow id %p', async (workflowId) => {
     expect(await errorsOf(StartRunDto, { itemId: '7', workflowId })).toContain('workflowId');
+  });
+});
+
+describe('StartTaskRunDto', () => {
+  it('accepts the item and a prompt, and the optional fields', async () => {
+    expect(await errorsOf(StartTaskRunDto, { itemId: '7', prompt: 'hi' })).toEqual([]);
+    expect(await errorsOf(StartTaskRunDto, { itemId: '7', prompt: 'hi', title: 'T', model: 'claude-opus-4.1', repository: 'my-repo' })).toEqual([]);
+  });
+
+  it.each([undefined, '', '../x', 5])('rejects item id %p', async (itemId) => {
+    expect(await errorsOf(StartTaskRunDto, { itemId, prompt: 'hi' })).toContain('itemId');
+  });
+
+  it.each([undefined, '', '  ', 5, 'x'.repeat(20_001)])('rejects prompt %p', async (prompt) => {
+    expect(await errorsOf(StartTaskRunDto, { itemId: '7', prompt })).toContain('prompt');
+  });
+
+  it.each([['title', ''], ['title', ' '], ['title', 'x'.repeat(201)], ['title', 5], ['model', 'x'.repeat(101)], ['model', '-bad'], ['model', 5],
+    ['repository', '../x'], ['repository', 'x'.repeat(101)], ['repository', 5]])('rejects %s %p', async (field, value) => {
+    expect(await errorsOf(StartTaskRunDto, { itemId: '7', prompt: 'hi', [field]: value })).toContain(field);
   });
 });
 
