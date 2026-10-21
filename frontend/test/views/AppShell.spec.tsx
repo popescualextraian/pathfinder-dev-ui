@@ -30,7 +30,7 @@ describe('AppShell', () => {
     render(<AppShell sidebar={<p>S</p>} list={<p>L</p>} main={<p>M</p>} facts={<p>F</p>} />);
     expect(screen.getByRole('region', { name: 'Tasks' })).toBeTruthy();
     expect(screen.getByRole('complementary', { name: 'Facts' })).toBeTruthy();
-    expect(screen.getByRole('navigation', { name: 'Repositories' })).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeTruthy();
   });
 });
 

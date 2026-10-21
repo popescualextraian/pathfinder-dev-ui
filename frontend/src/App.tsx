@@ -55,6 +55,7 @@ export function App() {
             onSelectRepository={route.selectRepository}
             onNewTask={() => setCreating(true)}
             backlogEnabled={backlog.enabled}
+            backlogCount={backlog.enabled ? backlog.items.length : undefined}
             view={route.view}
             onSelectView={route.selectView}
             workflowsEnabled={workflowsOn}
