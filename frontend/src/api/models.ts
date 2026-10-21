@@ -156,6 +156,8 @@ export interface WorkflowSummary {
   title: string;
   steps: WorkflowStepSummary[];
   doneStage?: string;
+  /** Of the file as listed: a delete with it fails (409) when the file changed since. */
+  version?: string;
 }
 
 export interface RefusedWorkflow {

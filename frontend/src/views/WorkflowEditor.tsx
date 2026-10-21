@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Lane } from '../api/models';
 import type { WorkflowEditor as Editor } from '../state/use-workflow-editor';
-import { addStep, canMoveStep, errorAt, moveStep, removeStep, toggleGate } from '../state/workflow-draft';
+import { addStep, canMoveStep, errorAt, moveStep, removeStep, stepTitle, toggleGate } from '../state/workflow-draft';
 import { Button } from './Button';
 import { ConfirmDialog } from './Dialog';
 import { WorkflowInspector, doneStageError } from './WorkflowInspector';
@@ -14,9 +14,21 @@ interface Props {
   onClose: () => void;
   /** Saved: the id the file has now. */
   onSaved: (id: string) => void;
+  /** A route change away from the editor is held (unsaved changes): ask, then `onLeave` or `onStay`. */
+  leaving?: boolean;
+  onLeave?: () => void;
+  onStay?: () => void;
 }
 
-export function WorkflowEditor({ editor, lanes, onClose, onSaved }: Props) {
+const PROMPT_LINE_MAX = 60;
+
+/** The first non-empty line of a prompt, shortened to fit a step box. */
+export function promptLine(prompt: string): string {
+  const line = prompt.split('\n').map((l) => l.trim()).find((l) => l !== '') ?? '';
+  return line.length > PROMPT_LINE_MAX ? `${line.slice(0, PROMPT_LINE_MAX - 1).trimEnd()}…` : line;
+}
+
+export function WorkflowEditor({ editor, lanes, onClose, onSaved, leaving = false, onLeave, onStay }: Props) {
   const { draft, validationError: error, readOnly } = editor;
   const [selected, setSelected] = useState<number | null>(0);
   const [asking, setAsking] = useState<'cancel' | 'delete-step' | null>(null);
@@ -123,13 +135,14 @@ export function WorkflowEditor({ editor, lanes, onClose, onSaved }: Props) {
                     ) : (
                       <span className={styles.noLane}>no lane move</span>
                     )}
-                    {s.sessions.map((x) => (
-                      <span key={x.name} className={styles.session}>
-                        {x.name}
-                        {x.fork && <span className={styles.fork}> ⑂ fork</span>}
-                        {x.model && <span className={styles.model}> {x.model}</span>}
+                    {s.prompt.trim() !== '' && (
+                      <span className={styles.prompt} data-testid="step-prompt">
+                        {promptLine(s.prompt)}
                       </span>
-                    ))}
+                    )}
+                    {s.continue !== undefined && <span className={styles.conversation}>{`↩ continues ${stepTitle(draft, s.continue)}`}</span>}
+                    {s.fork !== undefined && <span className={styles.conversation}>{`⑂ copy of ${stepTitle(draft, s.fork)}`}</span>}
+                    {s.model && s.continue === undefined && <span className={styles.model}>{s.model}</span>}
                     {s.requires && s.requires.length > 0 && <span className={styles.requires}>◈ requires files</span>}
                   </button>
                   <button
@@ -208,7 +221,7 @@ export function WorkflowEditor({ editor, lanes, onClose, onSaved }: Props) {
         <WorkflowInspector draft={draft} step={sel} lanes={lanes} error={error} readOnly={readOnly} onChange={change} />
       </div>
 
-      {asking === 'cancel' && (
+      {(asking === 'cancel' || leaving) && (
         <ConfirmDialog
           title="Discard your changes?"
           message="The workflow has changes that are not saved."
@@ -217,9 +230,13 @@ export function WorkflowEditor({ editor, lanes, onClose, onSaved }: Props) {
           danger
           onConfirm={() => {
             setAsking(null);
-            onClose();
+            if (leaving) onLeave?.();
+            else onClose();
           }}
-          onCancel={() => setAsking(null)}
+          onCancel={() => {
+            setAsking(null);
+            onStay?.();
+          }}
         />
       )}
       {asking === 'delete-step' && step && sel !== null && (

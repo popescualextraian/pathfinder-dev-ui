@@ -7,7 +7,7 @@ const refused = [{ file: 'broken.yaml', error: 'steps must be a non-empty list',
 
 const setup = (over: Partial<Parameters<typeof WorkflowList>[0]> = {}) => {
   const props = {
-    definitions: [makeWorkflow()],
+    definitions: [makeWorkflow({ version: 'v-listed' })],
     refused,
     writable: true,
     onNew: jest.fn(),
@@ -36,6 +36,13 @@ describe('WorkflowList', () => {
     expect(p.onDuplicate).toHaveBeenCalledWith('plan-implement-review');
   });
 
+  it('deletes with the version the list loaded', async () => {
+    const p = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Plan, implement, review' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+    expect(p.onDelete).toHaveBeenCalledWith('plan-implement-review', 'v-listed');
+  });
+
   it('deletes only after the confirm', async () => {
     const p = setup();
     fireEvent.click(screen.getByRole('button', { name: 'Delete Plan, implement, review' }));
@@ -44,7 +51,7 @@ describe('WorkflowList', () => {
     expect(p.onDelete).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Delete Plan, implement, review' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
-    expect(p.onDelete).toHaveBeenCalledWith('plan-implement-review');
+    expect(p.onDelete).toHaveBeenCalledWith('plan-implement-review', 'v-listed');
   });
 
   it('shows a delete error', async () => {

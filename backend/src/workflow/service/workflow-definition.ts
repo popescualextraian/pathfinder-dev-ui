@@ -40,4 +40,6 @@ export interface RefusedWorkflow {
 export interface WorkflowDefinitions {
   definitions: WorkflowDefinition[];
   refused: RefusedWorkflow[];
+  /** Version of each listed definition's file content, by id (what delete and update expect). */
+  versions?: Record<string, string>;
 }

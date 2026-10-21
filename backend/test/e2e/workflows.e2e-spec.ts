@@ -62,6 +62,7 @@ describe('workflows API (e2e)', () => {
       definitions: [{
         id: 'do-it', title: 'Do and finish', doneStage: 'done',
         steps: [{ id: 'work', title: 'Work', stage: 'doing', gate: 'human' }],
+        version: expect.stringMatching(/^[0-9a-f]{64}$/),
       }],
       refused: [{ file: 'bad.yaml', error: expect.stringContaining('bad.yaml'), version: expect.stringMatching(/^[0-9a-f]{64}$/) }],
       writable: true,
@@ -80,6 +81,8 @@ describe('workflows API (e2e)', () => {
         definition: expect.objectContaining({ id: 'do-it', title: 'Do and finish', doneStage: 'done' }), version: expect.stringMatching(/^[0-9a-f]{64}$/),
       });
       expect(res.body.definition.steps[0].prompt).toContain('{{item.title}}');
+      const listed = (await api().get('/api/workflows').expect(200)).body.definitions[0];
+      expect(listed.version).toBe(res.body.version);
       await api().get('/api/workflows/nope').expect(404);
       await api().get('/api/workflows/bad').expect(404);
     });

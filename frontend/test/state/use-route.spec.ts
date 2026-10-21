@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { buildHash, parseHash, resolveSession, useRoute } from '../../src/state/use-route';
+import { buildHash, parseHash, resolveSession, useLeaveGuard, useRoute } from '../../src/state/use-route';
 
 describe('route hash', () => {
   it('parses and builds', () => {
@@ -195,5 +195,67 @@ describe('workflows route', () => {
     expect(buildHash({ ...parseHash('#/workflows'), workflow: undefined })).toBe('#/workflows');
     expect(buildHash(parseHash('#/workflows/two'))).toBe('#/workflows/two');
     expect(buildHash(parseHash('#/workflows/new?from=a%20b'))).toBe('#/workflows/new?from=a%20b');
+  });
+});
+
+describe('useLeaveGuard', () => {
+  const fire = () =>
+    act(() => {
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+
+  beforeEach(() => {
+    window.location.hash = '#/workflows/wf';
+  });
+
+  it('while active, holds a route change (link, sidebar, back) until confirmed and restores the address', () => {
+    const route = renderHook(() => useRoute());
+    const guard = renderHook(({ active }) => useLeaveGuard(active), { initialProps: { active: true } });
+    act(() => route.result.current.selectView('backlog'));
+    fire();
+    expect(guard.result.current.pending).toBe('#/backlog');
+    expect(route.result.current.view).toBe('workflows');
+    expect(window.location.hash).toBe('#/workflows/wf');
+
+    act(() => guard.result.current.stay());
+    expect(guard.result.current.pending).toBeNull();
+    expect(window.location.hash).toBe('#/workflows/wf');
+
+    window.location.hash = '#/tasks/T-1';
+    fire();
+    expect(guard.result.current.pending).toBe('#/tasks/T-1');
+    act(() => guard.result.current.proceed());
+    fire();
+    expect(window.location.hash).toBe('#/tasks/T-1');
+    expect(route.result.current.view).toBe('tasks');
+    expect(guard.result.current.pending).toBeNull();
+  });
+
+  it('lets everything through when inactive or released', () => {
+    const route = renderHook(() => useRoute());
+    const guard = renderHook(({ active }) => useLeaveGuard(active), { initialProps: { active: false } });
+    act(() => route.result.current.selectView('backlog'));
+    fire();
+    expect(route.result.current.view).toBe('backlog');
+
+    window.location.hash = '#/workflows/wf';
+    fire();
+    guard.rerender({ active: true });
+    act(() => guard.result.current.release());
+    act(() => route.result.current.selectView('tasks'));
+    fire();
+    expect(route.result.current.view).toBe('tasks');
+    expect(guard.result.current.pending).toBeNull();
+  });
+
+  it('asks the browser before unloading the page while active', () => {
+    const guard = renderHook(({ active }) => useLeaveGuard(active), { initialProps: { active: true } });
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    guard.rerender({ active: false });
+    const later = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(later);
+    expect(later.defaultPrevented).toBe(false);
   });
 });

@@ -10,6 +10,8 @@ import type { WorkItems } from './work-items';
 export interface WorkflowDefinitionList {
   definitions: WorkflowDefinition[];
   refused: RefusedWorkflow[];
+  /** Version of each listed definition's file, by id. */
+  versions?: Record<string, string>;
   /** Whether the folder accepts writes (every write is refused otherwise). */
   writable: boolean;
 }
@@ -25,8 +27,8 @@ export class WorkflowDefinitionsService {
   ) {}
 
   async list(): Promise<WorkflowDefinitionList> {
-    const [{ definitions, refused }, writable] = await Promise.all([this.defs.list(), this.defs.writable()]);
-    return { definitions, refused, writable };
+    const [{ definitions, refused, versions }, writable] = await Promise.all([this.defs.list(), this.defs.writable()]);
+    return { definitions, refused, ...(versions !== undefined && { versions }), writable };
   }
 
   read(id: string): Promise<StoredWorkflow> {

@@ -27,6 +27,13 @@ describe('WorkflowDefinitionFileRepository', () => {
     expect(r.refused).toEqual([]);
   });
 
+  it('gives the version of each listed definition, the one read and delete expect', async () => {
+    writeFileSync(join(dir, 'one.yaml'), GOOD('One'));
+    const repo = new WorkflowDefinitionFileRepository(dir);
+    const r = await repo.list();
+    expect(r.versions).toEqual({ one: (await repo.read('one')).version });
+  });
+
   it('refuses a bad file by name and still loads the others', async () => {
     writeFileSync(join(dir, 'good.yaml'), GOOD('Good'));
     writeFileSync(join(dir, 'bad.yaml'), 'title: [oops');
@@ -71,6 +78,6 @@ describe('WorkflowDefinitionFileRepository', () => {
 
   it('a missing directory lists nothing', async () => {
     const r = await new WorkflowDefinitionFileRepository(join(dir, 'nope')).list();
-    expect(r).toEqual({ definitions: [], refused: [] });
+    expect(r).toEqual({ definitions: [], refused: [], versions: {} });
   });
 });

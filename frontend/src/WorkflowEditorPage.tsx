@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { Lane } from './api/models';
+import { useLeaveGuard } from './state/use-route';
 import { useWorkflowEditor, type EditorSource } from './state/use-workflow-editor';
 import { WorkflowEditor } from './views/WorkflowEditor';
 
@@ -20,5 +21,23 @@ export function WorkflowEditorPage({ workflow, from, lanes, writable, onClose, o
     [workflow, from],
   );
   const editor = useWorkflowEditor(source, { writable });
-  return <WorkflowEditor editor={editor} lanes={lanes} onClose={onClose} onSaved={onSaved} />;
+  // Leaving by any route (sidebar, back, a link) with unsaved changes asks first, as Cancel does.
+  const guard = useLeaveGuard(editor.dirty && !editor.readOnly);
+  return (
+    <WorkflowEditor
+      editor={editor}
+      lanes={lanes}
+      onClose={() => {
+        guard.release();
+        onClose();
+      }}
+      onSaved={(id) => {
+        guard.release();
+        onSaved(id);
+      }}
+      leaving={guard.pending !== null}
+      onLeave={guard.proceed}
+      onStay={guard.stay}
+    />
+  );
 }

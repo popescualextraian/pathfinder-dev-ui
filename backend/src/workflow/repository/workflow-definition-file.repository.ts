@@ -36,7 +36,8 @@ export class WorkflowDefinitionFileRepository implements WorkflowDefinitionRepos
   }
 
   async list(): Promise<WorkflowDefinitions> {
-    const result: WorkflowDefinitions = { definitions: [], refused: [] };
+    const versions: Record<string, string> = {};
+    const result: WorkflowDefinitions = { definitions: [], refused: [], versions };
     let names: string[];
     try {
       names = (await readdir(this.dir)).filter(isYaml).sort();
@@ -64,6 +65,7 @@ export class WorkflowDefinitionFileRepository implements WorkflowDefinitionRepos
       files.set(id, file);
       try {
         result.definitions.push(parseWorkflowDefinition(id, text, { stages }));
+        versions[id] = version;
       } catch (e) {
         result.refused.push({ file, error: `${file}: ${(e as Error).message}`, version });
       }

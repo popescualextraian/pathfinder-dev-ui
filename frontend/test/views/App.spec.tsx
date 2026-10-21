@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../../src/App';
 import * as backlogApi from '../../src/api/backlog-api';
@@ -133,6 +134,46 @@ describe('App workflows screen', () => {
     expect(window.location.hash).toBe('#/workflows/new');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await screen.findByTestId('workflow-row-wf');
+    expect(window.location.hash).toBe('#/workflows');
+  });
+
+  const openDirtyEditor = async () => {
+    window.location.hash = '#/workflows/new';
+    m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [def], refused: [], writable: true });
+    m(workflowsApi.validateWorkflow).mockResolvedValue([]);
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText('Workflow title'), { target: { value: 'Unsaved' } });
+  };
+
+  it('leaving the editor with unsaved changes by the sidebar asks first; Keep editing stays', async () => {
+    await openDirtyEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Backlog' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Discard your changes?' });
+    expect(window.location.hash).toBe('#/workflows/new');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByLabelText('Workflow title')).toHaveValue('Unsaved');
+    expect(window.location.hash).toBe('#/workflows/new');
+  });
+
+  it('leaving by the browser (back, a link) asks too; Discard changes goes there', async () => {
+    await openDirtyEditor();
+    act(() => {
+      window.location.hash = '#/backlog';
+    });
+    const dialog = await screen.findByRole('dialog', { name: 'Discard your changes?' });
+    expect(screen.getByLabelText('Workflow title')).toHaveValue('Unsaved');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard changes' }));
+    await screen.findByTestId('backlog-card-7');
+    expect(window.location.hash).toBe('#/backlog');
+  });
+
+  it('Cancel asks once and leaves', async () => {
+    await openDirtyEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Discard changes' }));
+    await screen.findByTestId('workflow-row-wf');
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(window.location.hash).toBe('#/workflows');
   });
 });
