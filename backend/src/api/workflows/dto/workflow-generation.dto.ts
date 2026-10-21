@@ -1,4 +1,5 @@
-import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { MODEL_NAME, MODEL_NAME_MESSAGE } from '../../tasks/dto/start-task.dto';
 import { GENERATION_ID, MAX_DESCRIPTION_LENGTH } from '../../../workflow';
 
 export class StartGenerationDto {
@@ -6,7 +7,7 @@ export class StartGenerationDto {
   description!: string;
 
   // The model of the agent; an empty string means none (the default model).
-  @IsOptional() @IsString() @MaxLength(200)
+  @IsOptional() @ValidateIf((o: StartGenerationDto) => o.model !== '') @IsString() @MaxLength(100) @Matches(MODEL_NAME, { message: MODEL_NAME_MESSAGE })
   model?: string;
 }
 

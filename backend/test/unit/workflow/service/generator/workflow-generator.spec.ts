@@ -270,6 +270,26 @@ describe('WorkflowGenerator', () => {
     });
   });
 
+  it('a store that fails inside sync still schedules a retry', async () => {
+    generator.onModuleDestroy();
+    generator = await make({ initialMs: 5, maxMs: 10 });
+    const repo = (generator as unknown as { generations: WorkflowGenerationFileRepository }).generations;
+    const { id, taskId } = await generator.start('Do it');
+    const save = repo.save.bind(repo);
+    let failures = 1;
+    repo.save = async (g) => {
+      if (failures-- > 0) throw new Error('disk full');
+      return save(g);
+    };
+    tasks.setSession(taskId, 'main', { state: 'running' });
+    tasks.emit(taskId);
+    await generator.settled();
+    for (let i = 0; i < 50 && failures > -1; i++) await new Promise((r) => setTimeout(r, 5));
+    await generator.settled();
+    expect(failures).toBeLessThan(0);
+    expect((await viewOf(id)).state).toBe('writing');
+  });
+
   describe('recording before sending', () => {
     // The generation as stored when the prompt goes out.
     const storedAtSend = (): Array<{ state: string; attempts: number }> => {

@@ -46,7 +46,12 @@ describe('GenerationPanel', () => {
     expect(last).toHaveTextContent(/^Reading the repository y+…$/);
     expect(screen.getByRole('link', { name: 'open task' })).toHaveAttribute('href', '#/tasks/T-7');
     expect(screen.queryByRole('link', { name: /Open in editor/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+  });
+
+  it.each(['writing', 'asking', 'fixing'] as const)('%s: Discard is offered and calls onDiscard', (state) => {
+    const p = panel({ state, question: state === 'asking' ? { id: 'q1', session: 'main', text: 'Which?', options: [], asked: '2026-01-01T00:00:00Z' } : undefined });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(p.onDiscard).toHaveBeenCalled();
   });
 
   it('fixing: shows the attempt of two', () => {

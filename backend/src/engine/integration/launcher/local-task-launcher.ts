@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ChildProcess, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { EngineConfig } from '../../../commons/engine-config';
@@ -278,7 +278,9 @@ export class LocalTaskLauncher implements TaskLauncher {
     assertWorktreePaths([path]);
     const file = join(this.root, taskId, 'work', '.worktrees', taskId, path);
     try {
-      if ((await stat(file)).size > maxBytes) throw new WorktreeFileTooLargeError(path, taskId, maxBytes);
+      const info = await lstat(file);
+      if (!info.isFile()) throw new Error(`${path} is not a regular file`);
+      if (info.size > maxBytes) throw new WorktreeFileTooLargeError(path, taskId, maxBytes);
       return await readFile(file, 'utf8');
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;

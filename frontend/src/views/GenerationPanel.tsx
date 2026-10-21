@@ -166,23 +166,21 @@ export function GenerationPanel({ generation: g, action, onAnswer, onRequestChan
         </form>
       )}
 
-      {(g.state === 'ready' || g.state === 'failed') && (
-        <div className={styles.actions}>
-          {g.state === 'ready' && (
-            <a className={styles.primaryLink} href={editorHref(g.id)}>
-              Open in editor
-            </a>
-          )}
-          {g.state === 'failed' && g.hasDraft && (
-            <a className={styles.link} href={editorHref(g.id)}>
-              Open in editor anyway
-            </a>
-          )}
-          <Button variant="danger" disabled={busy} onClick={onDiscard}>
-            Discard
-          </Button>
-        </div>
-      )}
+      <div className={styles.actions}>
+        {g.state === 'ready' && (
+          <a className={styles.primaryLink} href={editorHref(g.id)}>
+            Open in editor
+          </a>
+        )}
+        {g.state === 'failed' && g.hasDraft && (
+          <a className={styles.link} href={editorHref(g.id)}>
+            Open in editor anyway
+          </a>
+        )}
+        <Button variant="danger" disabled={busy} onClick={onDiscard}>
+          Discard
+        </Button>
+      </div>
 
       {action.error && (
         <p className={styles.error} role="alert">

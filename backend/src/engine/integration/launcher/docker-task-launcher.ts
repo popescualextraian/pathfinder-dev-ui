@@ -33,6 +33,7 @@ async function firstTarFile(stream: Readable, maxBytes: number): Promise<Buffer 
       if (!(size <= maxBytes)) { stream.destroy(); return 'too-large'; }
       const flag = String.fromCharCode(buf[pos + 156] || 48);
       if (buf.length < pos + 512 + size) break;
+      if (flag === '5' || flag === '2' || flag === '1') throw new Error('not a regular file');
       if (flag === '0') return buf.subarray(pos + 512, pos + 512 + size);
       pos += 512 + Math.ceil(size / 512) * 512;
     }

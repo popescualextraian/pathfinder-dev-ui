@@ -260,11 +260,11 @@ describe('DockerTaskLauncher start, stop, remove, inspect, countRunning', () => 
 });
 
 // A tar of one file, as `docker cp` / getArchive returns it: 512-byte header, content padded to 512, two zero blocks.
-function tarOf(name: string, content: Buffer, declaredSize = content.length): Buffer {
+function tarOf(name: string, content: Buffer, declaredSize = content.length, flag = '0'): Buffer {
   const header = Buffer.alloc(512);
   header.write(name, 0, 'utf8');
   header.write(declaredSize.toString(8).padStart(11, '0') + '\0', 124, 'ascii');
-  header.write('0', 156, 'ascii');
+  header.write(flag, 156, 'ascii');
   const padding = Buffer.alloc((512 - (content.length % 512)) % 512);
   return Buffer.concat([header, content, padding, Buffer.alloc(1024)]);
 }
@@ -350,6 +350,16 @@ describe('DockerTaskLauncher.readFile', () => {
     expect(error).toBeInstanceOf(WorktreeFileTooLargeError);
     expect((error as Error).message).toMatch(/over 100 bytes/);
     expect(stream.destroyed).toBe(true);
+  });
+
+  it('refuses a directory or symlink as the first entry instead of returning an inner file', async () => {
+    const { launcher, container } = setup();
+    const dir = tarOf('plans/', Buffer.alloc(0), 0, '5').subarray(0, 512);
+    const inner = tarOf('plans/a.yaml', Buffer.from('x'));
+    container.getArchive.mockResolvedValue(archive(Buffer.concat([dir, inner])));
+    await expect(launcher.readFile('T-1', 'plans', 100)).rejects.toThrow('not a regular file');
+    container.getArchive.mockResolvedValue(archive(tarOf('link.yaml', Buffer.alloc(0), 0, '2')));
+    await expect(launcher.readFile('T-1', 'link.yaml', 100)).rejects.toThrow('not a regular file');
   });
 
   it('refuses .. and absolute paths before calling docker', async () => {

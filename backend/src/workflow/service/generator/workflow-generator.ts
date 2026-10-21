@@ -212,6 +212,8 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
   private syncLogged(id: string): Promise<void> {
     return this.exclusive(id, () => this.sync(id)).catch((error: unknown) => {
       this.logger.error(`Workflow generation ${id}: ${messageOf(error)}`);
+      // E.g. the store failed: the generation is as last stored and is looked at again.
+      this.scheduleRetry(id);
     });
   }
 

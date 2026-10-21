@@ -1,6 +1,6 @@
 import { BadRequestException, Logger } from '@nestjs/common';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { bridgeEnv, cloneEnv, findFakeAgent, LocalTaskLauncher } from '../../../../../src/engine/integration/launcher/local-task-launcher';
@@ -340,6 +340,13 @@ describe('LocalTaskLauncher.readFile', () => {
   });
   afterEach(() => rmSync(dataDir, { recursive: true, force: true }));
   const launcher = () => new LocalTaskLauncher({ ...base, dataDir, localAgent: 'fake' });
+
+  it('refuses a symlink and a directory as not a regular file', async () => {
+    const tree = join(dataDir, 'local-tasks', 'T-1', 'work', '.worktrees', 'T-1');
+    symlinkSync(join(tree, 'workflow-draft.yaml'), join(tree, 'link.yaml'));
+    await expect(launcher().readFile('T-1', 'link.yaml', 100)).rejects.toThrow('not a regular file');
+    await expect(launcher().readFile('T-1', 'plans', 100)).rejects.toThrow('not a regular file');
+  });
 
   it('reads a file of the task worktree', async () => {
     await expect(launcher().readFile('T-1', 'workflow-draft.yaml', 100)).resolves.toBe('name: x\n');
