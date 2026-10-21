@@ -111,8 +111,20 @@ From Windows the folder is `\\wsl$\Ubuntu\home\<you>\pathfinder` (Explorer, or V
 agentic build-base        # agentic-dev-base:local, about 15 minutes the first time
 ```
 
-Behind a TLS-intercepting proxy: put the company CA certificate (PEM, `*.crt`) into `~/.agentic/ca/` first
-(pathfinder-dev-base README, Prerequisites).
+Behind a TLS-intercepting proxy (Zscaler, Netskope, ...), trust its root certificate **before** the first build, or
+downloads fail with `x509`/`certificate` errors (some hosts may pass while others are intercepted):
+
+1. Windows: run `certmgr.msc`, **Trusted Root Certification Authorities**, **Certificates**, find the proxy's root,
+   **All Tasks**, **Export**, **Base-64 encoded X.509 (.CER)**, save it as `proxy-root.crt` in Downloads. Two entries
+   with the same name (a renewed root): export the newest (**Valid from**) only.
+2. Ubuntu:
+   ```bash
+   sudo cp /mnt/c/Users/<windows-user>/Downloads/proxy-root.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
+   mkdir -p ~/.agentic/ca && cp /mnt/c/Users/<windows-user>/Downloads/proxy-root.crt ~/.agentic/ca/
+   ```
+
+Added after the base image exists: `agentic build-base --force`. A build that prints nothing for 10 minutes hangs on a
+download: Ctrl-C and run it again (finished steps are cached).
 
 ## 4. Your project
 
