@@ -11,7 +11,7 @@ The left menu does not feel natural. "Show" is a generic label that could hold a
 - Every destination is a real nav item: icon, 15px label, clear active state (existing red inset bar), optional count badge (Tasks: number of tasks, Backlog: number of items).
 - Areas that do not exist yet are absent (no greyed placeholders). Each future area has a named home group. A group with no visible item is not rendered.
 - The repository filter becomes a contextual sub-list under the Tasks item, shown only while Tasks is the active view (selected: "All repositories" or one repository, with counts). It no longer sits above the navigation.
-- **Naming stays "Tasks"** and "+ New task" stays (the human decided; "Runs"/"Agent runs" were considered and rejected). The mockup (`assets/10-mockup.png`) now shows the final labels.
+- **Naming stays "Tasks"** and "+ New task" stays (the human decided; "Runs"/"Agent runs" were considered and rejected).
 - Order inside Work: Backlog first (the thing to be done), then Tasks (the agent working on it). Brand and the primary "+ New task" button stay at the top.
 - Existing visibility rules stay: Backlog only when the backlog is on, Workflows only when workflows are on. With the backlog off, only Tasks shows.
 
@@ -33,10 +33,10 @@ The left menu does not feel natural. "Show" is a generic label that could hold a
 - Update existing Sidebar unit tests and any Playwright specs that click the old "Show" items; add a test for hidden groups and for the filter shown only on Tasks.
 
 ## Left to the builder
-Exact icons, spacing, badge styling, and the sub-list's visual detail, within the mockup in `assets/10-mockup.png` (final labels).
+Exact icons, spacing, badge styling, and the sub-list's visual detail,.
 
 ## As built (task 10)
-- Built as specified, with the final result in `assets/10-result.png`; plan: `docs/superpowers/plans/10.md`.
+- Built as specified; plan: `docs/superpowers/plans/10.md`.
 - Leaving Tasks resets the repository filter to All: the existing routes (`#/backlog`, `#/workflows`) never carried it, and routes were out of scope. Remembering it would be a routing change, a separate task.
 - A view whose area is off (stale `#/backlog` link, or the backlog still loading) marks Tasks as current and shows its repository list, as the app shows Tasks in that case.
 - Known gaps: some new CSS uses raw `rgba(255,255,255,..)` instead of theme variables (as the old sidebar did); no test for a very large count badge.
