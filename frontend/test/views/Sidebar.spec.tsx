@@ -71,4 +71,21 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: 'Backlog' }).textContent).toContain('8');
     expect(screen.getByRole('button', { name: 'Tasks' }).textContent).toContain('1');
   });
+
+  it('a view without a visible entry falls back to Tasks as current, with its repository list', () => {
+    setup({ view: 'backlog', backlogEnabled: false });
+    expect(screen.getByRole('button', { name: 'Tasks' }).getAttribute('aria-current')).toBe('true');
+    expect(screen.getByRole('button', { name: /All repositories/ })).toBeTruthy();
+  });
+
+  it('backlog on, workflows off: no Automate heading', () => {
+    setup({ backlogEnabled: true });
+    expect(screen.queryByRole('heading', { name: 'Automate' })).toBeNull();
+  });
+
+  it('marks the current view', () => {
+    setup({ view: 'workflows', backlogEnabled: true, workflowsEnabled: true });
+    expect(screen.getByRole('button', { name: 'Workflows' }).getAttribute('aria-current')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Tasks' }).getAttribute('aria-current')).toBeNull();
+  });
 });

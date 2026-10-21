@@ -55,7 +55,10 @@ function navGroups({ backlogEnabled, workflowsEnabled, backlogCount, tasks }: Pr
 }
 
 export function Sidebar(props: Props) {
-  const { repositories, tasks, selectedRepository, onSelectRepository, onNewTask, view = 'tasks', onSelectView } = props;
+  const { repositories, tasks, selectedRepository, onSelectRepository, onNewTask, onSelectView } = props;
+  const groups = navGroups(props);
+  // A view whose area is off (a stale link, or still loading) is shown as Tasks by the app, so mark Tasks.
+  const view = groups.some((g) => g.items.some((e) => e.id === props.view)) ? props.view : 'tasks';
   return (
     <div className={styles.sidebar}>
       <div className={styles.brand}>
@@ -69,7 +72,7 @@ export function Sidebar(props: Props) {
           + New task
         </Button>
       </div>
-      {navGroups(props).map((group) => (
+      {groups.map((group) => (
         <div key={group.label}>
           <h2 className={styles.kicker}>{group.label}</h2>
           <ul className={styles.nav}>
