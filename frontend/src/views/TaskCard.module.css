@@ -1,6 +1,11 @@
-.card { position: relative; display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 10px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-card); font: inherit; color: var(--ink); text-align: left; cursor: pointer; overflow: hidden; }
+.card { position: relative; display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 10px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-card); color: var(--ink); overflow: hidden; }
 .card:hover { border-color: var(--msg-red-light); }
-.card:focus-visible { outline: 2px solid var(--msg-red); outline-offset: 2px; }
+.card:has(.hit:focus-visible) { outline: 2px solid var(--msg-red); outline-offset: 2px; }
+/* The select button fills the card (its ::after covers the box); the schedule chip sits above it. */
+.hit { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 0; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.hit:focus-visible { outline: none; }
+.hit::after { content: ''; position: absolute; inset: 0; }
+.schedule { position: relative; z-index: 1; display: flex; min-width: 0; }
 .selected::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--msg-red); }
 .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }

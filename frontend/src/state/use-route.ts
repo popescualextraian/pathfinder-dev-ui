@@ -2,18 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const MAIN_SESSION = 'main';
 
+export type View = 'tasks' | 'backlog' | 'workflows' | 'schedules';
+
 export interface Route {
   repository: string | null;
   taskId: string | null;
   /** Selected session; null means the default (main). */
   session: string | null;
-  view: 'tasks' | 'backlog' | 'workflows';
+  view: View;
   /** Workflows view: a definition id, or `new`; absent shows the list. */
   workflow?: string;
   /** Workflows view, `new`: the definition to copy (`#/workflows/new?from=<id>`). */
   from?: string;
   /** Workflows view, `new`: the generation whose draft to open (`#/workflows/new?generation=<id>`). */
   generation?: string;
+  /** Schedules view: a schedule id, or `new`; absent shows the list. */
+  schedule?: string;
+  /** Schedules view: the schedule's form (`#/schedules/<id>/edit`). */
+  scheduleEdit?: boolean;
   /** Selected board item (`#/backlog?item=<id>`); absent when none. */
   item?: string;
 }
@@ -54,6 +60,19 @@ export function parseHash(hash: string): Route {
     }
     return out;
   }
+  if (wf[0] === 'schedules' && wf.length <= 3) {
+    const out: Route = { ...route, view: 'schedules' };
+    if (wf.length === 3 && (wf[2] !== 'edit' || wf[1] === 'new')) return route;
+    if (wf[1]) {
+      try {
+        out.schedule = decodeURIComponent(wf[1]);
+      } catch {
+        return out;
+      }
+      if (wf[2] === 'edit') out.scheduleEdit = true;
+    }
+    return out;
+  }
   const parts = stripped.split('/').filter(Boolean);
   for (let i = 0; i + 1 < parts.length; i += 2) {
     let value: string;
@@ -81,6 +100,10 @@ export function buildHash(route: Route): string {
     if (route.workflow === 'new' && route.generation) return `${base}?generation=${encodeURIComponent(route.generation)}`;
     return base;
   }
+  if (route.view === 'schedules') {
+    if (!route.schedule) return '#/schedules';
+    return `${scheduleHref(route.schedule)}${route.scheduleEdit && route.schedule !== 'new' ? '/edit' : ''}`;
+  }
   let hash = '#';
   if (route.repository) {
     hash += `/repo/${encodeURIComponent(route.repository)}`;
@@ -93,6 +116,9 @@ export function buildHash(route: Route): string {
     hash += `?session=${encodeURIComponent(route.session)}`;
   return hash;
 }
+
+export const scheduleHref = (id: string) => `#/schedules/${encodeURIComponent(id)}`;
+export const taskHref = (id: string) => `#/tasks/${encodeURIComponent(id)}`;
 
 /** The session to show: the requested one when the task has it, else main. */
 export function resolveSession(name: string | null | undefined, sessions: { name: string }[] | undefined): string {
@@ -132,8 +158,22 @@ export function useRoute() {
     [navigate],
   );
   const selectView = useCallback(
-    (view: 'tasks' | 'backlog' | 'workflows') =>
-      navigate({ ...parseHash(window.location.hash), view, workflow: undefined, from: undefined, generation: undefined }),
+    (view: View) =>
+      navigate({
+        ...parseHash(window.location.hash),
+        view,
+        workflow: undefined,
+        from: undefined,
+        generation: undefined,
+        schedule: undefined,
+        scheduleEdit: undefined,
+      }),
+    [navigate],
+  );
+  /** A schedule's detail (or its form with `edit`), `new` for the form of a new one, null for the list. */
+  const selectSchedule = useCallback(
+    (schedule: string | null, edit = false) =>
+      navigate({ ...parseHash(window.location.hash), view: 'schedules', schedule: schedule ?? undefined, scheduleEdit: edit || undefined }),
     [navigate],
   );
   const selectWorkflow = useCallback(
@@ -164,6 +204,9 @@ export function useRoute() {
     selectView,
     selectItem,
     selectWorkflow,
+    selectSchedule,
+    schedule: route.schedule ?? null,
+    scheduleEdit: route.scheduleEdit ?? false,
     workflow: route.workflow ?? null,
     from: route.from ?? null,
     generation: route.generation ?? null,

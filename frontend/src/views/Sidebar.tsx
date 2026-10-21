@@ -1,11 +1,10 @@
 import type { Repository, Task } from '../api/models';
+import type { View } from '../state/use-route';
 import { Button } from './Button';
 import type { NavIconName } from './nav-icons';
 import { NavItem } from './NavItem';
 import { RepositoryList } from './RepositoryList';
 import styles from './Sidebar.module.css';
-
-type View = 'tasks' | 'backlog' | 'workflows';
 
 interface Props {
   repositories: Repository[];
@@ -48,7 +47,11 @@ function navGroups({ backlogEnabled, workflowsEnabled, backlogCount, tasks }: Pr
     },
     {
       label: 'Automate',
-      items: workflowsEnabled ? [{ id: 'workflows' as const, label: 'Workflows', icon: 'workflows' as const }] : [],
+      items: [
+        ...(workflowsEnabled ? [{ id: 'workflows' as const, label: 'Workflows', icon: 'workflows' as const }] : []),
+        // Schedules are always on.
+        { id: 'schedules' as const, label: 'Schedules', icon: 'schedules' as const },
+      ],
     },
   ];
   return groups.filter((g) => g.items.length > 0);

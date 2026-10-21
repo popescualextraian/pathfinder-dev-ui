@@ -9,6 +9,8 @@ import * as tasksApi from '../../src/api/tasks-api';
 import * as statusStream from '../../src/api/task-status-stream';
 import * as workflowsApi from '../../src/api/workflows-api';
 import * as runsStream from '../../src/api/workflow-runs-stream';
+import * as schedulesApi from '../../src/api/schedules-api';
+import { makeRecord, makeResult, makeSummary } from '../fixtures/schedules';
 import { makeTask } from '../fixtures/tasks';
 import { makeRun, makeWorkflow } from '../fixtures/workflows';
 
@@ -20,6 +22,7 @@ jest.mock('../../src/api/tasks-api');
 jest.mock('../../src/api/task-status-stream');
 jest.mock('../../src/api/workflows-api');
 jest.mock('../../src/api/workflow-runs-stream');
+jest.mock('../../src/api/schedules-api');
 const m = (f: unknown) => f as jest.Mock;
 
 const item = {
@@ -304,5 +307,57 @@ describe('App sidebar navigation', () => {
     m(workflowsApi.listWorkflows).mockResolvedValue(null);
     render(<App />);
     expect(await screen.findByRole('navigation', { name: 'Main navigation' })).toBeTruthy();
+  });
+});
+
+describe('App schedules screen', () => {
+  beforeEach(() => {
+    m(workflowsApi.listWorkflows).mockResolvedValue(null);
+    m(repositoriesApi.listRepositories).mockResolvedValue([{ name: 'repo-a', url: 'u', default: true }]);
+    m(schedulesApi.listSchedules).mockResolvedValue([makeSummary({ lastResult: makeResult() })]);
+    m(schedulesApi.getSchedule).mockResolvedValue(makeRecord({ results: [makeResult({ summary: 'All green.' })] }));
+    m(schedulesApi.previewSchedule).mockResolvedValue({ zone: 'UTC', next: [] });
+  });
+
+  it('the sidebar entry shows the list; a row opens the detail; Edit opens the form; Cancel returns to the detail', async () => {
+    window.location.hash = '#/';
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Schedules' }));
+    const row = await screen.findByTestId('schedule-row-nightly');
+    expect(window.location.hash).toBe('#/schedules');
+    act(() => {
+      window.location.hash = within(row).getByRole('link', { name: 'Nightly deps' }).getAttribute('href') as string;
+    });
+    expect(await screen.findByText('All green.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(await screen.findByRole('heading', { name: 'Edit schedule' })).toBeTruthy();
+    expect(window.location.hash).toBe('#/schedules/nightly/edit');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/schedules/nightly'));
+    expect(await screen.findByRole('region', { name: 'Settings' })).toBeTruthy();
+  });
+
+  it('#/schedules/new opens the form; saving goes to the new schedule', async () => {
+    window.location.hash = '#/schedules/new';
+    m(schedulesApi.createSchedule).mockResolvedValue(makeRecord());
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText('Title'), { target: { value: 'Nightly deps' } });
+    fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'Update' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    });
+    expect(schedulesApi.createSchedule).toHaveBeenCalledWith(expect.objectContaining({ repository: 'repo-a', title: 'Nightly deps' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/schedules/nightly'));
+    expect(await screen.findByRole('region', { name: 'Settings' })).toBeTruthy();
+  });
+
+  it('an unknown schedule says so with a way back', async () => {
+    const { ApiError } = jest.requireActual('../../src/api/http');
+    m(schedulesApi.getSchedule).mockRejectedValue(new ApiError(404, 'Schedule nope not found'));
+    window.location.hash = '#/schedules/nope';
+    render(<App />);
+    expect((await screen.findByRole('alert')).textContent).toContain('Schedule nope was not found');
+    fireEvent.click(screen.getByRole('button', { name: /All schedules/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/schedules'));
   });
 });

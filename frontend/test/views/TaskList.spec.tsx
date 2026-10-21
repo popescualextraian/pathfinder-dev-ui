@@ -122,6 +122,35 @@ describe('TaskCard', () => {
     expect(screen.getByRole('button').getAttribute('aria-current')).toBeNull();
   });
 
+  it('a scheduled task: a clock chip with the schedule title linking to it, outside the select button', () => {
+    const onSelect = jest.fn();
+    render(<TaskCard task={makeTask({ scheduleId: 'nightly', scheduleTitle: 'Nightly deps' })} selected={false} onSelect={onSelect} />);
+    const chip = screen.getByRole('link', { name: /Nightly deps/ });
+    expect(chip.getAttribute('href')).toBe('#/schedules/nightly');
+    expect(chip.textContent).toContain('⏰');
+    expect(screen.getByRole('button').contains(chip)).toBe(false);
+    chip.addEventListener('click', (e) => e.preventDefault()); // keep the test's address
+    fireEvent.click(chip);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('a finished scheduled task shows the first line of its summary', () => {
+    render(
+      <TaskCard
+        task={makeTask({ scheduleId: 's', scheduleTitle: 'S', state: 'stopped', section: 'done', lastMessage: 'last', summaryLine: 'Updated 3 packages.' })}
+        selected={false}
+        onSelect={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('Updated 3 packages.')).toBeTruthy();
+    expect(screen.queryByText('last')).toBeNull();
+  });
+
+  it('an ordinary task has no schedule chip', () => {
+    render(<TaskCard task={makeTask()} selected={false} onSelect={jest.fn()} />);
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+
   it('labels closed tasks', () => {
     render(<TaskCard task={tasks[3]} selected={false} onSelect={jest.fn()} />);
     expect(screen.getByText('closed')).toBeTruthy();

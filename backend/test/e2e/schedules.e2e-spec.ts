@@ -54,6 +54,7 @@ describe('schedules API (e2e)', () => {
       nextRunAt: expect.stringMatching(/T02:00:00/), results: [],
     });
     expect(await create()).toMatchObject({ id: 'nightly-deps-2' });
+    expect((await create({ title: 'New' })).id).toBe('new-2');
     const file = join(dataDir, 'schedules', 'nightly-deps.json');
     expect(readdirSync(join(dataDir, 'schedules'))).toContain('nightly-deps.json');
     expect(statSync(file).mode & 0o777).toBe(0o600);
@@ -91,6 +92,15 @@ describe('schedules API (e2e)', () => {
     await api().put('/api/schedules/nope').send(body()).expect(404);
     await api().delete('/api/schedules/nope').expect(404);
     await api().post('/api/schedules/nope/run').expect(404);
+  });
+
+  it('carries the zone on the list, one schedule, create and replace', async () => {
+    expect((await create()).zone).toBe('UTC');
+    expect((await api().get('/api/schedules').expect(200)).body[0].zone).toBe('UTC');
+    expect((await api().get('/api/schedules/nightly-deps').expect(200)).body.zone).toBe('UTC');
+    expect((await api().put('/api/schedules/nightly-deps').send(body()).expect(200)).body.zone).toBe('UTC');
+    const file = JSON.parse(readFileSync(join(dataDir, 'schedules', 'nightly-deps.json'), 'utf8'));
+    expect(file.zone).toBeUndefined();
   });
 
   it('replaces (keeps id and results, recomputes next run) and toggles enabled', async () => {

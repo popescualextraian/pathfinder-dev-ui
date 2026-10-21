@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { buildHash, parseHash, resolveSession, useLeaveGuard, useRoute } from '../../src/state/use-route';
+import { buildHash, parseHash, resolveSession, scheduleHref, taskHref, useLeaveGuard, useRoute } from '../../src/state/use-route';
 
 describe('route hash', () => {
   it('parses and builds', () => {
@@ -288,5 +288,39 @@ describe('useLeaveGuard', () => {
     const later = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(later);
     expect(later.defaultPrevented).toBe(false);
+  });
+});
+
+describe('schedules route', () => {
+  it('parses and builds list, new, detail and edit', () => {
+    expect(parseHash('#/schedules')).toMatchObject({ view: 'schedules' });
+    expect(parseHash('#/schedules').schedule).toBeUndefined();
+    expect(parseHash('#/schedules/new')).toMatchObject({ view: 'schedules', schedule: 'new' });
+    expect(parseHash('#/schedules/nightly')).toMatchObject({ view: 'schedules', schedule: 'nightly' });
+    expect(parseHash('#/schedules/nightly').scheduleEdit).toBeUndefined();
+    expect(parseHash('#/schedules/nightly/edit')).toMatchObject({ view: 'schedules', schedule: 'nightly', scheduleEdit: true });
+    for (const h of ['#/schedules', '#/schedules/new', '#/schedules/nightly', '#/schedules/nightly/edit']) expect(buildHash(parseHash(h))).toBe(h);
+    expect(parseHash('#/schedules/a/b/c').view).toBe('tasks');
+  });
+
+  it('selectSchedule and selectView move between the pages', () => {
+    window.location.hash = '#/schedules/nightly/edit';
+    const route = renderHook(() => useRoute());
+    expect(route.result.current).toMatchObject({ view: 'schedules', schedule: 'nightly', scheduleEdit: true });
+    act(() => route.result.current.selectSchedule('nightly'));
+    expect(window.location.hash).toBe('#/schedules/nightly');
+    act(() => route.result.current.selectSchedule('nightly', true));
+    expect(window.location.hash).toBe('#/schedules/nightly/edit');
+    act(() => route.result.current.selectView('schedules'));
+    expect(window.location.hash).toBe('#/schedules');
+    act(() => route.result.current.selectView('tasks'));
+    expect(window.location.hash).toBe('#/');
+  });
+});
+
+describe('scheduleHref / taskHref', () => {
+  it('builds links', () => {
+    expect(scheduleHref('a b')).toBe('#/schedules/a%20b');
+    expect(taskHref('T-1')).toBe('#/tasks/T-1');
   });
 });

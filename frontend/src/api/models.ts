@@ -327,6 +327,8 @@ export interface Schedule extends Omit<ScheduleInput, 'timeoutMinutes' | 'enable
   timeoutMinutes: number;
   enabled: boolean;
   nextRunAt: string | null;
+  /** SCHEDULES_TIMEZONE: times are shown in it. */
+  zone?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -5,6 +5,9 @@ describe('proposeScheduleId', () => {
     expect(proposeScheduleId('Nightly deps update!', [])).toBe('nightly-deps-update');
     expect(proposeScheduleId('Příliš žluťoučký', [])).toMatch(SCHEDULE_ID);
   });
+  it('never gives `new` (the form route #/schedules/new)', () => {
+    expect(proposeScheduleId('New', [])).toBe('new-2');
+  });
   it('makes it unique with -2, -3', () => {
     expect(proposeScheduleId('Nightly', ['nightly'])).toBe('nightly-2');
     expect(proposeScheduleId('Nightly', ['nightly', 'nightly-2'])).toBe('nightly-3');
