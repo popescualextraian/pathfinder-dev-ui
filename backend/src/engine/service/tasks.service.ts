@@ -306,8 +306,18 @@ export class TasksService {
   }
 
   async appAction(id: string, name: string, action: AppAction): Promise<AppView> {
-    const { client, record } = await this.appsOf(id);
-    return toAppView(record, await client.appAction(name, action));
+    // start and restart wake a suspended task like prompt does; stop and the reads never start a container.
+    let record: TaskRecord;
+    if (action === 'stop') {
+      record = (await this.appsOf(id)).record;
+    } else {
+      if (this.config.launcher === 'local') {
+        await this.require(id);
+        throw new ConflictException('Apps need the Docker launcher');
+      }
+      record = await this.wake(id);
+    }
+    return toAppView(record, await this.bridgeFor(record).appAction(name, action));
   }
 
   async appLogs(id: string, name: string, lines: number): Promise<{ lines: string[] }> {
@@ -530,8 +540,22 @@ export class TasksService {
 }
 
 function toAppView(record: TaskRecord, app: BridgeApp): AppView {
-  const hostPort = app.ports.length ? record.appPorts?.[app.name]?.[String(app.ports[0])] : undefined;
-  return { ...app, link: hostPort === undefined ? null : `http://localhost:${hostPort}${app.url}` };
+  const view: AppView = { name: app.name, state: app.state, ports: app.ports, url: app.url, since: app.since, link: null };
+  if (app.exit_code !== undefined) view.exit_code = app.exit_code;
+  const ports = record.appPorts && Object.hasOwn(record.appPorts, app.name) ? record.appPorts[app.name] : undefined;
+  const first = app.ports.length ? String(app.ports[0]) : undefined;
+  const hostPort = ports && first !== undefined && Object.hasOwn(ports, first) ? ports[first] : undefined;
+  if (hostPort === undefined) return view;
+  // The bridge's url is only a path: anything else (userinfo, another host, a protocol-relative url) falls back to "/".
+  const path = /^\/[^\s\\]*$/.test(app.url) && !app.url.startsWith('//') ? app.url : '/';
+  const origin = `http://localhost:${hostPort}`;
+  try {
+    const link = new URL(path, origin);
+    if (link.origin === origin) view.link = link.href;
+  } catch {
+    // no link
+  }
+  return view;
 }
 
 function closedConflict(id: string): ConflictException {

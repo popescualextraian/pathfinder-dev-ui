@@ -865,3 +865,78 @@ describe('TasksService apps', () => {
     await expect(withApps().service.apps('T-nope')).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe('TasksService apps: links and waking', () => {
+  const base = { name: 'web', state: 'running', ports: [3000], since: 'x' };
+  const linkOf = async (url: string) => {
+    const { service } = setup({
+      records: [record({ appPorts: { web: { '3000': 49153 } } })], bridge: { apps: jest.fn(async () => [{ ...base, url }]) },
+    });
+    return (await service.apps(ID))[0].link;
+  };
+
+  it.each([
+    ['/app', 'http://localhost:49153/app'],
+    ['@evil.example/', 'http://localhost:49153/'],
+    ['//x', 'http://localhost:49153/'],
+    ['?x', 'http://localhost:49153/'],
+    ['/a\\b', 'http://localhost:49153/'],
+    ['/a b', 'http://localhost:49153/'],
+    ['/p?q=1', 'http://localhost:49153/p?q=1'],
+  ])('builds the link for the bridge url %s', async (url, link) => {
+    expect(await linkOf(url)).toBe(link);
+  });
+
+  it('returns only known fields', async () => {
+    const { service } = setup({
+      records: [record({ appPorts: { web: { '3000': 49153 } } })],
+      bridge: { apps: jest.fn(async () => [{ ...base, url: '/', extra: 'x' }]) },
+    });
+    expect(Object.keys((await service.apps(ID))[0]).sort()).toEqual(['link', 'name', 'ports', 'since', 'state', 'url']);
+  });
+
+  it('ignores inherited names in appPorts', async () => {
+    const { service } = setup({
+      records: [record({ appPorts: {} })], bridge: { apps: jest.fn(async () => [{ ...base, name: 'constructor', url: '/' }]) },
+    });
+    expect((await service.apps(ID))[0].link).toBeNull();
+  });
+
+  it('wakes a suspended task before start and restart, with fresh ports', async () => {
+    const web = { ...base, url: '/' };
+    const appAction = jest.fn(async () => web);
+    const start = jest.fn(async () => ({ web: { '3000': 50000 } }));
+    const { service, launcher } = setup({
+      records: [record({ appPorts: { web: { '3000': 49153 } } })],
+      launcher: { inspect: jest.fn(async () => ({ exists: true, running: false })), start },
+      bridge: { appAction },
+    });
+    const view = await service.appAction(ID, 'web', 'restart');
+    expect(launcher.start).toHaveBeenCalled();
+    expect(view.link).toBe('http://localhost:50000/');
+    expect(appAction).toHaveBeenCalledWith('web', 'restart');
+  });
+
+  it('does not wake for stop, the list or the logs', async () => {
+    const { service, launcher } = setup({ records: [record()], launcher: notRunning });
+    await expect(service.appAction(ID, 'web', 'stop')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.apps(ID)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.appLogs(ID, 'web', 5)).rejects.toBeInstanceOf(ConflictException);
+    expect(launcher.start).not.toHaveBeenCalled();
+  });
+
+  it('still refuses start for a stopped, closed or local task, without starting anything', async () => {
+    for (const over of [{ lastState: 'stopped' as const }, { closed: true }]) {
+      const { service, launcher } = setup({ records: [record(over)], launcher: notRunning });
+      await expect(service.appAction(ID, 'web', 'start')).rejects.toBeInstanceOf(ConflictException);
+      expect(launcher.start).not.toHaveBeenCalled();
+    }
+    const { records, launcher, factory } = setup({ records: [record()], launcher: notRunning });
+    const local = new TasksService(
+      records as never, launcher as never, factory as never, { ...config, launcher: 'local' } as never,
+      new TaskUpdates(), new TaskCostService(records as never, launcher as never),
+    );
+    await expect(local.appAction(ID, 'web', 'start')).rejects.toThrow('Apps need the Docker launcher');
+    expect(launcher.start).not.toHaveBeenCalled();
+  });
+});
