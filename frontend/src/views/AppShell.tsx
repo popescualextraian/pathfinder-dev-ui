@@ -15,7 +15,7 @@ export function AppShell({ sidebar, list, main, facts, board }: Props) {
   return (
     <div className={styles.shell}>
       <div className={styles.columns}>
-        <nav className={styles.sidebar} aria-label="Repositories">
+        <nav className={styles.sidebar} aria-label="Main navigation">
           {sidebar}
         </nav>
         {board !== undefined ? (

@@ -1,8 +1,7 @@
-.kicker { margin: 16px 16px 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.55); font-weight: 600; }
-.list { list-style: none; margin: 0; padding: 0 8px; }
-.item { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--paper); font: inherit; font-size: 14px; cursor: pointer; text-align: left; }
+.list { list-style: none; margin: 2px 0 6px 28px; padding: 0; }
+.item { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 8px; padding: 5px 10px; border: 0; border-radius: 6px; background: transparent; color: rgba(255,255,255,0.8); font: inherit; font-size: 13.5px; cursor: pointer; text-align: left; }
 .item:hover { background: rgba(255,255,255,0.08); }
 .item:focus-visible { outline: 2px solid var(--accent-gold); outline-offset: 1px; }
-.selected { background: rgba(255,255,255,0.14); box-shadow: inset 3px 0 0 var(--msg-red-light); }
+.selected { background: rgba(255,255,255,0.1); color: var(--paper); }
 .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.count { font-size: 12px; color: rgba(255,255,255,0.65); }
+.count { flex: none; font-size: 12px; color: rgba(255,255,255,0.65); }

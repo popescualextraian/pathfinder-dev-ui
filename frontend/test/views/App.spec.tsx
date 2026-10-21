@@ -284,3 +284,25 @@ describe('App workflow generations', () => {
     await screen.findByTestId('workflow-row-wf');
   });
 });
+
+describe('App sidebar navigation', () => {
+  it('the repository list is hidden on Backlog and back on Tasks (filter resets to All, as the routes always did)', async () => {
+    window.location.hash = '#/repo/repo-a';
+    m(workflowsApi.listWorkflows).mockResolvedValue(null);
+    m(repositoriesApi.listRepositories).mockResolvedValue([{ name: 'repo-a', url: 'u', default: true }]);
+    render(<App />);
+    const repo = await screen.findByRole('button', { name: /repo-a/ });
+    expect(repo.getAttribute('aria-current')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Backlog' }));
+    await screen.findByTestId('backlog-card-7');
+    expect(screen.queryByRole('button', { name: /repo-a/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+    expect((await screen.findByRole('button', { name: /All repositories/ })).getAttribute('aria-current')).toBe('true');
+  });
+
+  it('names the sidebar landmark Main navigation', async () => {
+    m(workflowsApi.listWorkflows).mockResolvedValue(null);
+    render(<App />);
+    expect(await screen.findByRole('navigation', { name: 'Main navigation' })).toBeTruthy();
+  });
+});
