@@ -19,6 +19,9 @@ npm start              # http://localhost:3000
 
 No Docker at hand? `npm run start:local` runs tasks as local processes (see Local launcher).
 
+Setting up a machine for the team (WSL, Docker, your project, the UI in Docker): [docs/team-setup.md](docs/team-setup.md),
+or run `claude` in this checkout and type `/pathfinder-setup`.
+
 ## Architecture
 
 ```mermaid
