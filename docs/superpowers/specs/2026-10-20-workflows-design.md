@@ -2,6 +2,9 @@
 
 (Condensed verbatim from the approved task; binding.)
 
+> Note (task 015): the file format below is superseded. A step no longer has `sessions:`; it has one `prompt` and optional
+> `model`, `continue` and `fork` (each naming an earlier step). See README, Workflows, for the current format.
+
 ## Goal
 HD starts a **workflow** on a backlog card. It creates one task for the item and runs its steps one after another.
 Each step is one or more sessions of that task; the workflow moves the card into the step's lane. A step ends at a

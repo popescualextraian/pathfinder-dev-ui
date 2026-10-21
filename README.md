@@ -350,8 +350,8 @@ API and the card moves of workflows. Changes found by polling never emit one. No
 ## Workflows
 
 A workflow carries one backlog card through steps. From a card the user starts a workflow: it creates one task
-named `#<item id> <item title>` (default repository) and runs the steps one after another. A step is one or more
-sessions of that task; when it starts, the card moves into the step's lane. Steps hand work over through files in the
+named `#<item id> <item title>` (default repository) and runs the steps one after another. A step is one prompt in one
+conversation (session) of that task; when it starts, the card moves into the step's lane. Steps hand work over through files in the
 task's worktree. Workflows are on only when `BACKLOG_CONFIG` **and** `WORKFLOWS_DIR` are set (`WORKFLOWS_DIR` alone is
 ignored: no routes, no buttons); then `WORKFLOWS_DATA_DIR` is required.
 
@@ -368,45 +368,53 @@ steps:
   - id: plan
     title: Plan
     stage: plan                  # optional: a lane id of the backlog; the card moves there when the step starts
-    sessions:
-      - name: main               # the first session of the first step is the task's main session: it must be named main
-        prompt: |
-          You plan backlog item #{{item.id}}: {{item.title}}
-          {{item.description}}
-    gate: human                  # human: wait for "Continue"; auto: go on when the sessions are done
+    prompt: |                    # the first step runs in the task's main session
+      You plan backlog item #{{item.id}}: {{item.title}}
+      {{item.description}}
+    gate: human                  # human: wait for "Continue"; auto: go on when the step is done
     exitPrompt: Make sure the plan is complete in plans/{{item.id}}.md and committed.
   - id: implement
     title: Implement
     stage: in-progress
     requires:                    # block list or quoted items: [plans/{{item.id}}.md] is not valid YAML
       - "plans/{{item.id}}.md"
-    sessions:
-      - name: impl
-        prompt: Implement plans/{{item.id}}.md.
+    prompt: Implement plans/{{item.id}}.md.     # a new conversation (a session named after the step id)
+    gate: auto
+  - id: fix
+    title: Fix
+    continue: implement          # optional: send this prompt into that earlier step's conversation
+    prompt: Fix what the tests show.
     gate: auto
   - id: review
     title: Review
     stage: review
-    sessions:
-      - name: review
-        fork: impl               # optional: start as a copy of that earlier session's conversation
-        model: sonnet            # optional
-        prompt: Review the branch against plans/{{item.id}}.md.
+    fork: implement              # optional: start as a copy of that earlier step's conversation
+    model: sonnet                # optional (not with continue)
+    prompt: Review the branch against plans/{{item.id}}.md.
     gate: human
 doneStage: done                  # optional: the card goes there when the workflow ends
 ```
 
-- `title` and a non-empty `steps` are required. A step needs a unique `id`, `title`, a non-empty `sessions` and a `gate`
-  (`human` or `auto`); `requires` and `exitPrompt` are optional. A session needs a `name` (`[a-z0-9][a-z0-9_-]{0,31}`, unique in the
-  workflow) and a `prompt`; `fork` (the name of an earlier session) and `model` are optional. The sessions of a step run one after another.
+- `title` and a non-empty `steps` are required. A step needs a unique `id` (`[a-z0-9][a-z0-9_-]{0,31}`; `main` only on the first
+  step), `title`, `prompt` and `gate` (`human` or `auto`); `stage`, `requires`, `exitPrompt`, `model`, `continue` and `fork` are optional.
+  The editor generates ids from the titles, so nobody has to type one.
+- Conversations: a step runs in the task's `main` session if it is the first, in the session of the step it `continue`s (chains
+  are followed; the prompt is sent into the running conversation), or in a new session named after its step id; with `fork` that new session
+  starts as a copy of the named step's conversation. `continue` and `fork` name an earlier step, not the first step's own, and not both.
+  `model` applies to a new conversation and is refused with `continue`. The exit prompt goes to the step's own session.
+- Old format: a file whose steps have `sessions:` is refused with "the file uses the old format (sessions:); since task 015 a step has one
+  prompt: see README". Convert a folder with `node tools/convert-workflows.mjs <dir>` (run `npx nest build` first: it uses `dist/`). It rewrites
+  each old file in place (comments are lost, so keep them in a copy) and leaves new files alone; a step with more than one session is
+  refused with a message and its file stays unchanged (split the step by hand; exit code 1). Runs saved in the old format are converted
+  when loaded (the session names of their steps are kept), so runs in flight continue.
 - Placeholders in prompts, `exitPrompt` and `requires`: `{{item.id}}`, `{{item.title}}`, `{{item.description}}`, `{{item.url}}`,
   `{{task.id}}`, `{{task.branch}}`, `{{step.id}}`. An unknown placeholder is a load error. `{{task.id}}` and `{{task.branch}}` are
-  refused in the prompt of the first step's first session: that prompt starts the task, so they are not known yet (use them in its
-  `exitPrompt` or later sessions).
-- A file with invalid YAML, a broken rule, a `stage` that is not a lane id, a `fork` of a session that is not earlier, or the same id as an
+  refused in the prompt of the first step: that prompt starts the task, so they are not known yet (use them in its
+  `exitPrompt` or later steps).
+- A file with invalid YAML, a broken rule, a `stage` that is not a lane id, a `continue`/`fork` of a step that is not earlier, or the same id as an
   earlier file (`one.yaml` and `one.yml`: the second is refused) is refused with an error naming the file; the other files still load. `GET /api/workflows` lists the refused files with their errors.
-- Gates: after the last session of a step is done, `auto` goes on at once, `human` waits (`awaiting-approval`) for **Continue**.
-  Continuing sends the step's `exitPrompt` (if any) to its last session and waits for it, then checks the next step's `requires`, moves
+- Gates: after a step is done, `auto` goes on at once, `human` waits (`awaiting-approval`) for **Continue**.
+  Continuing sends the step's `exitPrompt` (if any) to its session and waits for it, then checks the next step's `requires`, moves
   the card and starts the next step. After the last step the run is `done` and the card goes to `doneStage` if set.
 - `requires`: paths relative to the task's worktree (`/work/.worktrees/<task id>` in Docker, the agent's working directory). An absolute
   path or a `..` segment is a load error; a path that becomes one once filled in (e.g. from the item's title) fails the run.
@@ -420,9 +428,9 @@ doneStage: done                  # optional: the card goes there when the workfl
 
 | Route | Does | Success |
 |---|---|---|
-| `GET /api/workflows` | `{definitions: [{id, title, doneStage?, steps: [{id, title, stage?, gate, sessions: [name]}]}], refused: [{file, error, version?}], writable}` | 200 |
+| `GET /api/workflows` | `{definitions: [{id, title, doneStage?, version, steps: [{id, title, stage?, gate}]}], refused: [{file, error, version?}], writable}` | 200 |
 | `GET /api/workflows/:id` | `{definition (with prompts), version}`; `version` is a hash of the file | 200, 404 |
-| `POST /api/workflows/validate` `{definition}` | `{errors: []}` or the first error `{message, stepId?, session?, field?}`; writes nothing | 200 |
+| `POST /api/workflows/validate` `{definition}` | `{errors: []}` or the first error `{message, stepId?, stepIndex?, field?}`; writes nothing | 200 |
 | `POST /api/workflows` `{id, definition}` | Creates `<id>.yaml` (id `[a-z0-9][a-z0-9-]{0,63}`); id exists 409; broken rule 400 with `location` | 201 `{definition, version}` |
 | `PUT /api/workflows/:id` `{definition, version}` | Replaces the file (a `<id>.yml` is replaced by `<id>.yaml`); changed since `version` 409 | 200 |
 | `DELETE /api/workflows/:id?version=` | Deletes the file (active runs keep their snapshot); changed 409 | 204 |
@@ -442,7 +450,7 @@ A save through the editor rewrites the file as YAML: comments of a hand-written 
 
 **Editor** (`#/workflows`, `#/workflows/<id>`, `#/workflows/new`): the list (Edit, Duplicate, Delete, refused files with Delete only) and
 an editor showing the workflow as a flow of steps with the gate on the arrow between them (click toggles), an inspector for the selected step
-(lane to move to or none, required files, exit prompt, sessions with placeholder chips) and the first error marked on its step and field.
+grouped as title and lane, **Start** (required files, Conversation: new, continue or copy of an earlier step, Prompt), **End** (exit prompt, then: wait for approval or go on) and Advanced (model); one row of placeholder chips inserts at the cursor of the last field, and Expand opens a prompt in a large dialog. The first error is marked on its step and field. Leaving the editor with unsaved changes asks first (sidebar, address change, closing the tab).
 Read-only folders open the editor read-only. Docker: compose mounts `WORKFLOWS_DIR_HOST` writable; see Docker deployment for who must be able to write it. `start:local` copies nothing by default: its folder is written in place
 (Playwright's server uses a copy under `.local/<port>/workflows`).
 
