@@ -199,22 +199,51 @@ With apps declared, the task view lists them with **Start**, **Open**, **Logs** 
 | After changing `.agentic/` of the project | `agentic build` in the project; new tasks use the new image |
 | After changing `pathfinder.env` | `tools/deploy.sh ~/pathfinder/pathfinder.env` |
 
-## 7. Optional: the GitLab backlog board
+## 7. Optional: the GitLab backlog board and workflows
 
-A board of the project's GitLab issues in lanes, at `#/backlog`. It needs its own token (a project access token,
-role Developer, scope `api`; see [Tokens](#tokens)) and a lanes file. The first sync creates the lanes' `status::...`
-labels in the project; issues without one land in the default lane.
+A board of the project's GitLab issues in lanes (Todo, Plan, In progress, Test, Review, Done) at `#/backlog`, and
+workflows that carry a card through steps (plan, implement, review), each step a prompt in a task. Both are off until
+configured; workflows need the board.
+
+**The board's token.** The board reads and edits issues, labels, comments and members through GitLab's API, so it
+needs its own token: the repository token (`GH_TOKEN`) has code rights only and gets 403.
+
+1. GitLab: open the project, **Settings**, **Access tokens**, **Add new token** (a *project* access token: it works
+   on this project only; you need the Maintainer or Owner role to create one).
+2. Name `pathfinder-board`, an expiry date, role **Developer**, scope **`api`** only. Create, copy the value (GitLab
+   shows it once).
+3. No project access tokens on your GitLab? A classic personal access token with **`api`** works too, but reaches
+   every project your account can; not a fine-grained token, and not `read_api` (it cannot move cards).
+
+**Settings.** The lanes file, a writable folder for the workflow definitions (the editor saves there; the UI runs as
+uid 1000, which is your WSL user on a default install, `id -u`), and the token:
 
 ```bash
-cp ~/pathfinder/pathfinder-dev-ui/backlog.example.yaml ~/pathfinder/backlog.yaml   # edit baseUrl, project, lanes
-cat >> ~/pathfinder/pathfinder.env <<'EOF'
-BACKLOG_CONFIG_FILE=/home/<you>/pathfinder/backlog.yaml
+cd ~/pathfinder
+cp pathfinder-dev-ui/backlog.example.yaml backlog.yaml      # set gitlab.baseUrl and gitlab.project; lanes as you like
+cp -r pathfinder-dev-ui/workflows.example workflows         # the example workflows
+cat >> pathfinder.env <<EOF2
+BACKLOG_CONFIG_FILE=$HOME/pathfinder/backlog.yaml
+WORKFLOWS_DIR_HOST=$HOME/pathfinder/workflows
 GITLAB_TOKEN=
-EOF
+EOF2
+nano pathfinder.env                                         # paste the token after GITLAB_TOKEN=
 ```
 
-Fill in `GITLAB_TOKEN`, then `tools/deploy.sh ~/pathfinder/pathfinder.env`. Workflows on the board:
-`WORKFLOWS_DIR_HOST` (pathfinder-dev-ui README, Workflows).
+Check the token without printing it (expect `"scopes":["api"]`, then `200`):
+
+```bash
+T="$(sed -n 's/^GITLAB_TOKEN=//p' ~/pathfinder/pathfinder.env)"
+curl -s -H "PRIVATE-TOKEN: $T" https://gitlab.example.com/api/v4/personal_access_tokens/self | jq -c '{name,scopes,expires_at}'
+curl -s -o /dev/null -w '%{http_code}\n' -H "PRIVATE-TOKEN: $T" "https://gitlab.example.com/api/v4/projects/group%2Fproject/issues"
+unset T
+```
+
+Then `tools/deploy.sh ~/pathfinder/pathfinder.env`. The sidebar gets Backlog and Workflows. The first sync creates
+the lanes' `status::...` labels in the project; issues without one land in the default lane. Moving a card swaps its
+label in GitLab. A workflow started from a card runs real tasks (they cost like any task) and waits for your
+**Continue** at each `human` gate. Lanes, workflow format and the editor: pathfinder-dev-ui README, Backlog and
+Workflows.
 
 ## Tokens
 
@@ -242,5 +271,6 @@ and `GH_TOKEN` in its environment; the UI has no login, so it listens on 127.0.0
 | a task shows no apps | `apps:` is not in the `.agentic/agentic.yaml` the task cloned (committed and pushed?), or the image was built before it (`agentic build`, then a new task) |
 | an app has no link | the task was started before the image had the app's port: start a new task |
 | Open shows nothing | the app must listen on `0.0.0.0`, on a port listed in `ports`; **Logs** shows its output |
+| the board is empty or shows an error; `curl` above gives 401 or 403 | the board token is wrong, expired, or lacks `api` / access to the project (step 7) |
 | Explorer cannot open `\\wsl$\Ubuntu\...` | use **Linux** in Explorer's left pane, or `\\wsl.localhost\Ubuntu\...`, or edit in the Ubuntu terminal with `nano` |
 | a token was lost (GitLab shows it only once) | GitLab, Access tokens: **Rotate** it (new value, same rights) or create a new one; the feed token cannot be used |
