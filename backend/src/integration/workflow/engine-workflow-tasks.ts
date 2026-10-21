@@ -34,7 +34,7 @@ export class EngineWorkflowTasks implements WorkflowTasks {
     this.changes = updates.changes.pipe(map((change) => (change.kind === 'task' ? change.task.id : change.id)));
   }
 
-  // In the default repository. The engine records and launches the task and then waits for its bridge; when that wait
+  // In the given repository, else the default one. The engine records and launches the task and then waits for its bridge; when that wait
   // fails (502, bridge not ready) the task exists all the same and keeps starting. Its id is taken from the engine's
   // announcement of the new task (same prompt and title, created after this call began), so the run follows it rather
   // than leaving it orphaned. Errors before the task was created are passed on.
@@ -47,7 +47,12 @@ export class EngineWorkflowTasks implements WorkflowTasks {
       if (created === undefined && change.kind === 'task' && ours(change.task)) created = change.task.id;
     });
     try {
-      const view = await this.tasks.start({ title: input.title, prompt: input.prompt, ...(input.model !== undefined && { model: input.model }), ...(input.kind !== undefined && { kind: input.kind }) });
+      const view = await this.tasks.start({
+        title: input.title, prompt: input.prompt,
+        ...(input.model !== undefined && { model: input.model }),
+        ...(input.repository !== undefined && { repository: input.repository }),
+        ...(input.kind !== undefined && { kind: input.kind }),
+      });
       return view.id;
     } catch (error) {
       if (created === undefined) throw error;

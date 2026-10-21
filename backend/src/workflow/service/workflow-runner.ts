@@ -5,7 +5,9 @@ import { forkSourceOf, sessionNames, sessionOfStep } from './step-session';
 import type { StepDef } from './workflow-definition';
 import { WORKFLOW_DEFINITION_REPOSITORY, WorkflowDefinitionRepository } from './workflow-definition.repository';
 import { WorkflowConflictError, WorkflowNotFoundError } from './workflow-errors';
-import { isActive, newRunId, RunPhase, RunState, toRunView, WorkflowRun, WorkflowRunView } from './workflow-run';
+import {
+  isActive, isTaskRun, newRunId, RunPhase, RunState, TASK_RUN_DEFINITION, toRunView, WorkflowRun, WorkflowRunView,
+} from './workflow-run';
 import { WORKFLOW_RUN_REPOSITORY, WorkflowRunRepository } from './workflow-run.repository';
 import { WorkflowRunUpdates } from './workflow-run-updates';
 import { WORKFLOW_TASKS, WorkflowTasks, WorkflowTaskSnapshot, WorkflowTaskState } from './workflow-tasks';
@@ -43,11 +45,21 @@ export interface RetryDelays {
   maxMs: number;
 }
 
+/** A plain task on an item: the task's title (default `#<id> <title>`), first prompt, model and repository. */
+export interface TaskRunStart {
+  itemId: string;
+  prompt: string;
+  title?: string;
+  model?: string;
+  repository?: string;
+}
+
 export const WORKFLOW_RETRY_DELAYS = Symbol('WORKFLOW_RETRY_DELAYS');
 
 /**
  * Drives workflow runs: one task per run, the steps' sessions one after another, gates, exit prompts, required files,
- * the item's stage. Follows `WorkflowTasks.changes` (no polling). Work on one run is serialized, so concurrent
+ * the item's stage. A plain-task run (`kind: 'task'`) only links a task to its item: no steps, no card moves; it
+ * follows the task's state until stopped or the task is gone. Follows `WorkflowTasks.changes` (no polling). Work on one run is serialized, so concurrent
  * change events never start a session twice.
  */
 @Injectable()
@@ -115,11 +127,7 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     const def = await this.defs.get(workflowId);
     if (!def) throw new WorkflowNotFoundError(`Workflow ${workflowId} not found`);
     return this.exclusive(`item:${itemId}`, async () => {
-      if ((await this.runs.list()).some((r) => r.itemId === itemId && isActive(r))) {
-        throw new WorkflowConflictError(`Item ${itemId} already has an active workflow run`);
-      }
-      const item = await this.items.get(itemId);
-      if (!item) throw new WorkflowNotFoundError(`Work item ${itemId} not found`);
+      const item = await this.freeItem(itemId);
       const step = def.steps[0];
       // The task does not exist yet: the parser refuses {{task.*}} in this prompt.
       const prompt = fillPlaceholders(step.prompt, { item, step });
@@ -132,16 +140,49 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
         sessions: { ...sessions, [sessionOfStep(def, 0)]: { status: 'running' } }, state: 'running', pendingStage: step.stage,
         createdAt: now, updatedAt: now,
       };
-      // Hold the run's queue so change events of the new task wait until it is recorded.
-      return this.exclusive(run.id, async () => {
-        await this.runs.save(run);
-        this.index(run);
-        this.updates.changed(toRunView(run));
-        // Moves the card (a failure leaves a warning and is retried) and catches up with changes of the task that
-        // came while it was being started, when there was no run yet.
-        await this.sync(run.id);
-        return toRunView(await this.load(run.id));
+      return this.record(run);
+    });
+  }
+
+  /** Starts a plain task linked to the item: no card move, no steps; one active run per item, of either kind. */
+  async startTask(input: TaskRunStart): Promise<WorkflowRunView> {
+    const { itemId } = input;
+    return this.exclusive(`item:${itemId}`, async () => {
+      const item = await this.freeItem(itemId);
+      const taskId = await this.tasks.start({
+        title: input.title ?? `#${item.id} ${item.title}`, prompt: input.prompt,
+        ...(input.model !== undefined && { model: input.model }),
+        ...(input.repository !== undefined && { repository: input.repository }),
       });
+      const now = new Date().toISOString();
+      const run: WorkflowRun = {
+        id: newRunId(), kind: 'task', workflowId: TASK_RUN_DEFINITION.id, definition: structuredClone(TASK_RUN_DEFINITION), itemId,
+        item: { ...item }, taskId, stepIndex: 0, phase: 'sessions', sessions: {}, state: 'running', createdAt: now, updatedAt: now,
+      };
+      return this.record(run);
+    });
+  }
+
+  // The item, when it exists and has no active run of either kind.
+  private async freeItem(itemId: string) {
+    if ((await this.runs.list()).some((r) => r.itemId === itemId && isActive(r))) {
+      throw new WorkflowConflictError(`Item ${itemId} already has an active run`);
+    }
+    const item = await this.items.get(itemId);
+    if (!item) throw new WorkflowNotFoundError(`Work item ${itemId} not found`);
+    return item;
+  }
+
+  // Saves a new run and announces it. Holds the run's queue so change events of the new task wait until it is recorded.
+  private record(run: WorkflowRun): Promise<WorkflowRunView> {
+    return this.exclusive(run.id, async () => {
+      await this.runs.save(run);
+      this.index(run);
+      this.updates.changed(toRunView(run));
+      // Moves the card (a failure leaves a warning and is retried) and catches up with changes of the task that
+      // came while it was being started, when there was no run yet.
+      await this.sync(run.id);
+      return toRunView(await this.load(run.id));
     });
   }
 
@@ -149,6 +190,7 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
   advance(runId: string, options: { force?: boolean } = {}): Promise<WorkflowRunView> {
     return this.exclusive(runId, async () => {
       const run = await this.load(runId);
+      if (isTaskRun(run)) throw new WorkflowConflictError('A plain task has no steps to continue');
       if (!isActive(run) || (run.phase !== 'awaiting-approval' && run.phase !== 'blocked')) {
         throw new WorkflowConflictError(`The run is ${run.state === 'needs-you' ? run.phase : run.state}; it continues only when awaiting approval or blocked`);
       }
@@ -203,6 +245,11 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     const r = structuredClone(run);
     const snap = await this.tasks.get(r.taskId);
     if (this.taskGone(r, snap)) {
+      await this.persist(r, run);
+      return;
+    }
+    if (isTaskRun(r)) {
+      this.deriveState(r, snap);
       await this.persist(r, run);
       return;
     }
@@ -356,11 +403,12 @@ export class WorkflowRunner implements OnModuleInit, OnModuleDestroy {
     return true;
   }
 
-  // needs-you while a session of the run has an open question; otherwise the state of the phase.
+  // needs-you while a session of the run (of a plain task: any session of the task) has an open question or stopped
+  // with an error; otherwise the state of the phase.
   private deriveState(r: WorkflowRun, snap: Snapshot | null | undefined): void {
     if (!isActive(r)) return;
     const needsYou = (snap?.sessions ?? []).some((s) => {
-      const mine = r.sessions[s.name];
+      const mine = isTaskRun(r) ? { status: 'running' } : r.sessions[s.name];
       return mine !== undefined && mine.status !== 'pending' && (s.openQuestions > 0 || NEEDS_YOU.has(s.state));
     });
     r.state = needsYou ? 'needs-you' : PHASE_STATE[r.phase];
