@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { ApiError } from '../../src/api/http';
 import type { WorkflowGenerationSummary, WorkflowGenerationView } from '../../src/api/models';
-import { GENERATION_POLL_MS, isActiveGeneration, useWorkflowGenerations } from '../../src/state/use-workflow-generations';
+import { GENERATION_POLL_MS, isActiveGeneration, markGenerationSavedQuietly, useWorkflowGenerations } from '../../src/state/use-workflow-generations';
 import * as api from '../../src/api/workflows-api';
 import * as tasks from '../../src/api/tasks-api';
 
@@ -196,5 +196,22 @@ describe('useWorkflowGenerations', () => {
       await result.current.reload();
     });
     expect(result.current.generations).toHaveLength(2);
+  });
+});
+
+describe('markGenerationSavedQuietly', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it('resolves null when marked', async () => {
+    m(api.markGenerationSaved).mockResolvedValue(view({ state: 'saved' }));
+    await expect(markGenerationSavedQuietly('G-1')).resolves.toBeNull();
+    expect(api.markGenerationSaved).toHaveBeenCalledWith('G-1');
+  });
+
+  it('never rejects: a failure becomes a notice', async () => {
+    m(api.markGenerationSaved).mockRejectedValue(new Error('boom'));
+    await expect(markGenerationSavedQuietly('G-1')).resolves.toBe(
+      'The workflow is saved, but its generation could not be closed (boom). Discard it on the Workflows page.',
+    );
   });
 });

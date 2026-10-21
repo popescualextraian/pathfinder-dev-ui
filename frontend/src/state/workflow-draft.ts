@@ -87,6 +87,37 @@ export function normalize(def: WorkflowDefinition): WorkflowDefinition {
   return { ...def, steps };
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+const OPTIONAL_STRINGS = ['stage', 'model', 'continue', 'fork', 'exitPrompt'] as const;
+
+/**
+ * The editor's draft from a generated definition, which may be a broken mapping (a failed generation keeps the last
+ * file that parsed): missing or mistyped fields become empty or are dropped, a missing step id is proposed from the
+ * title, and the draft rules are restored as for an edit (`normalize`). The validator then reports what is left.
+ */
+export function draftFromGenerated(raw: unknown): WorkflowDefinition {
+  const src = isRecord(raw) ? raw : {};
+  const taken: string[] = [];
+  const rawSteps = Array.isArray(src.steps) ? src.steps.filter(isRecord) : [];
+  const steps = rawSteps.map((s, index): WorkflowStepDef => {
+    const title = str(s.title) ?? '';
+    const id = str(s.id) || proposeStepId(title, taken, index);
+    taken.push(id);
+    const step: WorkflowStepDef = { id, title, gate: s.gate === 'auto' ? 'auto' : 'human', prompt: str(s.prompt) ?? '' };
+    for (const key of OPTIONAL_STRINGS) {
+      const value = str(s[key]);
+      if (value !== undefined) step[key] = value;
+    }
+    if (Array.isArray(s.requires)) step.requires = s.requires.filter((r): r is string => typeof r === 'string');
+    return step;
+  });
+  const def: WorkflowDefinition = { title: str(src.title) ?? '', steps };
+  const doneStage = str(src.doneStage);
+  if (doneStage !== undefined) def.doneStage = doneStage;
+  return normalize(def);
+}
+
 export const setTitle = (def: WorkflowDefinition, title: string): WorkflowDefinition => ({ ...def, title });
 
 export function setDoneStage(def: WorkflowDefinition, doneStage: string | undefined): WorkflowDefinition {

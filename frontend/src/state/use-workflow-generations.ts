@@ -26,6 +26,19 @@ const summaryOf = (view: WorkflowGenerationView): WorkflowGenerationSummary => {
 };
 const isOpen = (g: { state: WorkflowGenerationState }) => g.state !== 'saved' && g.state !== 'discarded';
 
+/**
+ * Tells the backend a generation's draft was saved (closes its task). Best effort after a successful save: never
+ * rejects, resolves null when done, else a notice to show (the save itself stands).
+ */
+export async function markGenerationSavedQuietly(id: string): Promise<string | null> {
+  try {
+    await api.markGenerationSaved(id);
+    return null;
+  } catch (e) {
+    return `The workflow is saved, but its generation could not be closed (${messageOf(e)}). Discard it on the Workflows page.`;
+  }
+}
+
 export type ActionResult<T> = { ok: true; value: T } | { ok: false };
 
 /**

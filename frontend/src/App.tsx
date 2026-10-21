@@ -16,6 +16,7 @@ import { Sidebar } from './views/Sidebar';
 import { TaskList } from './views/TaskList';
 import { WorkflowList } from './views/WorkflowList';
 import { WorkflowEditorPage } from './WorkflowEditorPage';
+import { WorkflowGenerationsSection } from './WorkflowGenerationsSection';
 
 export function App() {
   const route = useRoute();
@@ -39,6 +40,8 @@ export function App() {
       }
     : undefined;
   const [creating, setCreating] = useState(false);
+  /** A notice for the saved workflow it names (shown in its editor only). */
+  const [editorNotice, setEditorNotice] = useState<{ workflow: string; text: string } | null>(null);
   const { task, loading: taskLoading, error: taskError } = useTask(route.taskId, allTasks);
 
   return (
@@ -61,12 +64,16 @@ export function App() {
           route.view === 'workflows' && workflowsOn ? (
             route.workflow ? (
               <WorkflowEditorPage
-                key={`${route.workflow}:${route.from ?? ''}`}
+                key={`${route.workflow}:${route.from ?? ''}:${route.generation ?? ''}`}
                 workflow={route.workflow}
                 from={route.from}
+                generation={route.generation}
+                notice={editorNotice?.workflow === route.workflow ? editorNotice.text : null}
+                onNotice={(workflow, text) => setEditorNotice({ workflow, text })}
                 lanes={backlog.lanes}
                 writable={workflows.writable}
                 onClose={() => {
+                  setEditorNotice(null);
                   void workflows.reload();
                   route.selectWorkflow(null);
                 }}
@@ -85,6 +92,7 @@ export function App() {
                 onDuplicate={(id) => route.selectWorkflow('new', id)}
                 onDelete={workflows.remove}
                 onDeleteRefused={workflows.removeRefused}
+                generations={workflows.writable ? <WorkflowGenerationsSection /> : undefined}
               />
             )
           ) : route.view === 'backlog' && backlog.enabled ? (

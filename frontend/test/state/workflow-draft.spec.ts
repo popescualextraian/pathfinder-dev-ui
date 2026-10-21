@@ -1,6 +1,6 @@
 import type { WorkflowDefinition } from '../../src/api/models';
 import {
-  addStep, conversationChoices, conversationOf, duplicateDraft, errorAt, isSameDefinition, moveStep, newDraft, normalize,
+  addStep, conversationChoices, draftFromGenerated, conversationOf, duplicateDraft, errorAt, isSameDefinition, moveStep, newDraft, normalize,
   proposeId, proposeStepId, removeStep, setConversation, setDoneStage, slugify, stepTitle, toggleGate, toWire, updateStep,
 } from '../../src/state/workflow-draft';
 
@@ -215,5 +215,37 @@ describe('toWire, isSameDefinition and errorAt', () => {
     const byIndex = { message: 'm', stepIndex: 1, field: 'id' };
     expect(errorAt(byIndex, { stepIndex: 1, field: 'id' })).toBe(true);
     expect(errorAt(byIndex, { stepIndex: 0 })).toBe(false);
+  });
+});
+
+describe('draftFromGenerated', () => {
+  it('keeps a valid definition as it is (without an id)', () => {
+    expect(draftFromGenerated({ id: 'x', ...three(), doneStage: 'done' })).toEqual({ ...three(), doneStage: 'done' });
+  });
+
+  it('tolerates a broken mapping: missing fields become empty, wrong types are dropped', () => {
+    expect(draftFromGenerated({ steps: [{ title: 'Plan', gate: 'sometimes', requires: ['A.md', 3] }, 'junk', { prompt: 7 }] })).toEqual({
+      title: '',
+      steps: [
+        { id: 'plan', title: 'Plan', gate: 'human', prompt: '', requires: ['A.md'] },
+        { id: 'step-1', title: '', gate: 'human', prompt: '' },
+      ],
+    });
+    expect(draftFromGenerated(undefined)).toEqual({ title: '', steps: [] });
+    expect(draftFromGenerated({ title: 5, steps: 'no', doneStage: 3 })).toEqual({ title: '', steps: [] });
+  });
+
+  it('keeps the optional strings and restores the draft rules (continue only to an earlier step)', () => {
+    const d = draftFromGenerated({
+      title: 'T',
+      steps: [
+        { id: 'a', title: 'A', gate: 'auto', prompt: 'p', stage: 'plan', model: 'opus', exitPrompt: 'e', continue: 'b' },
+        { id: 'b', title: 'B', gate: 'human', prompt: 'q', continue: 'a', model: 'haiku' },
+      ],
+    });
+    expect(d.steps).toEqual([
+      { id: 'a', title: 'A', gate: 'auto', prompt: 'p', stage: 'plan', model: 'opus', exitPrompt: 'e' },
+      { id: 'b', title: 'B', gate: 'human', prompt: 'q', continue: 'a' },
+    ]);
   });
 });
