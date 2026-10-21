@@ -1,6 +1,6 @@
 import { stringify } from 'node:querystring';
 import { FilterConfig } from '../src/config';
-import { Decision, FilterRequest, MAX_BODY_BYTES, decide, inspectShowsKind } from '../src/rules';
+import { Decision, FilterRequest, MAX_APP_PORTS, MAX_BODY_BYTES, decide, inspectShowsKind } from '../src/rules';
 
 const config: FilterConfig = {
   image: 'agentic-test:local',
@@ -47,6 +47,14 @@ function containerBody(patch: Record<string, unknown> = {}, hostPatch: Record<st
   };
 }
 
+// What the launcher adds for an image with apps: each port exposed and bound to 127.0.0.1 with HostPort "" (random).
+function withPorts(ports: number[], bindings?: unknown, exposed?: unknown): Record<string, unknown> {
+  return containerBody(
+    { ExposedPorts: exposed ?? Object.fromEntries(ports.map((p) => [`${p}/tcp`, {}])) },
+    { PortBindings: bindings ?? Object.fromEntries(ports.map((p) => [`${p}/tcp`, [{ HostIp: '127.0.0.1', HostPort: '' }]])) },
+  );
+}
+
 function create(body: Record<string, unknown>, query = `name=${NAME}`): Decision {
   return decide(request('POST', `/containers/create?${query}`, body), config);
 }
@@ -75,6 +83,26 @@ describe('decide: allowed requests', () => {
     const body = containerBody();
     const decision = create(body, dockerodeQuery(body));
     expect(decision).toEqual({ action: 'forward', method: 'POST', path: `/containers/create?name=${NAME}`, body: Buffer.from(JSON.stringify(body)) });
+  });
+
+  it('forwards the app ports of the launcher: ExposedPorts and loopback PortBindings with a Docker-picked host port', () => {
+    const body = withPorts([3000, 9229, 8080]);
+    const decision = create(body, dockerodeQuery(body));
+    expect(decision).toEqual({ action: 'forward', method: 'POST', path: `/containers/create?name=${NAME}`, body: Buffer.from(JSON.stringify(body)) });
+  });
+
+  it(`allows up to ${MAX_APP_PORTS} app ports, the binding keys in either order`, () => {
+    const ports = Array.from({ length: MAX_APP_PORTS }, (_v, i) => 1 + i * 3000);
+    expect(create(withPorts(ports)).action).toBe('forward');
+    expect(create(withPorts([65535])).action).toBe('forward');
+    expect(create(withPorts([3000], { '3000/tcp': [{ HostPort: '', HostIp: '127.0.0.1' }] })).action).toBe('forward');
+  });
+
+  it.each([
+    ['GET', '/images/agentic-test:local/json'],
+    ['GET', '/v1.47/images/agentic-test:local/json'],
+  ])('forwards the inspect of FILTER_IMAGE (the launcher reads its apps label): %s %s', (method, url) => {
+    expect(decide(request(method, url), config)).toEqual({ action: 'forward', method, path: url });
   });
 
   it('keeps the version prefix on create', () => {
@@ -272,6 +300,69 @@ describe('decide: forbidden container create variants', () => {
   it('never puts Env values into the reason', () => {
     const reason = refused(create(containerBody({ Env: ['AGENTIC_TASK_TOKEN=secret-token-value', 7] })));
     expect(reason).not.toContain('secret-token-value');
+  });
+});
+
+describe('decide: forbidden app port variants', () => {
+  const loop = [{ HostIp: '127.0.0.1', HostPort: '' }];
+  it.each([
+    ['a binding on all interfaces', withPorts([3000], { '3000/tcp': [{ HostIp: '0.0.0.0', HostPort: '' }] })],
+    ['a binding without HostIp (all interfaces)', withPorts([3000], { '3000/tcp': [{ HostPort: '' }] })],
+    ['an empty HostIp', withPorts([3000], { '3000/tcp': [{ HostIp: '', HostPort: '' }] })],
+    ['an IPv6 HostIp', withPorts([3000], { '3000/tcp': [{ HostIp: '::', HostPort: '' }] })],
+    ['another loopback address', withPorts([3000], { '3000/tcp': [{ HostIp: '127.0.0.2', HostPort: '' }] })],
+    ['a fixed host port', withPorts([3000], { '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: '3000' }] })],
+    ['a host port range', withPorts([3000], { '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: '3000-3010' }] })],
+    ['a missing HostPort', withPorts([3000], { '3000/tcp': [{ HostIp: '127.0.0.1' }] })],
+    ['a numeric HostPort', withPorts([3000], { '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: 0 }] })],
+    ['an extra key in a binding', withPorts([3000], { '3000/tcp': [{ ...loop[0], HostName: 'x' }] })],
+    ['two bindings for a port', withPorts([3000], { '3000/tcp': [...loop, ...loop] })],
+    ['no binding for a port', withPorts([3000], { '3000/tcp': [] })],
+    ['a null binding list', withPorts([3000], { '3000/tcp': null })],
+    ['a binding that is not an object', withPorts([3000], { '3000/tcp': ['127.0.0.1:'] })],
+    ['udp', withPorts([3000], { '3000/udp': loop }, { '3000/udp': {} })],
+    ['sctp', withPorts([3000], { '3000/sctp': loop }, { '3000/sctp': {} })],
+    ['a port without protocol', withPorts([3000], { '3000': loop }, { '3000': {} })],
+    ['port 0', withPorts([0])],
+    ['port 65536', withPorts([65536])],
+    ['a port with a leading zero', withPorts([3000], { '03000/tcp': loop }, { '03000/tcp': {} })],
+    ['a container port range', withPorts([3000], { '3000-3005/tcp': loop }, { '3000-3005/tcp': {} })],
+    ['a port with an IP prefix', withPorts([3000], { '0.0.0.0:3000/tcp': loop }, { '0.0.0.0:3000/tcp': {} })],
+    ['PortBindings without ExposedPorts', containerBody({}, { PortBindings: { '3000/tcp': loop } })],
+    ['ExposedPorts without PortBindings', containerBody({ ExposedPorts: { '3000/tcp': {} } })],
+    ['an exposed port that is not bound', withPorts([3000], undefined, { '3000/tcp': {}, '4000/tcp': {} })],
+    ['a bound port that is not exposed', withPorts([3000, 4000], undefined, { '3000/tcp': {} })],
+    ['an ExposedPorts value that is not {}', withPorts([3000], undefined, { '3000/tcp': { x: 1 } })],
+    ['an ExposedPorts value null', withPorts([3000], undefined, { '3000/tcp': null })],
+    ['empty PortBindings and ExposedPorts', withPorts([])],
+    ['PortBindings that is not an object', withPorts([3000], [loop], undefined)],
+    ['ExposedPorts that is a list', withPorts([3000], undefined, ['3000/tcp'])],
+    [`more than ${MAX_APP_PORTS} ports`, withPorts(Array.from({ length: MAX_APP_PORTS + 1 }, (_v, i) => 3000 + i))],
+    ['PublishAllPorts', containerBody({}, { PublishAllPorts: true })],
+    ['PublishAllPorts next to the app ports', { ...withPorts([3000]), HostConfig: { ...(withPorts([3000]).HostConfig as object), PublishAllPorts: true } }],
+  ])('refuses %s', (_label, body) => {
+    refused(create(JSON.parse(JSON.stringify(body))));
+  });
+
+  it('refuses the inspect of another image or another image endpoint', () => {
+    for (const [method, url] of [
+      ['GET', '/images/alpine/json'],
+      ['GET', '/images/agentic-test:local2/json'],
+      ['GET', '/images/agentic-test/json'],
+      ['GET', '/images/agentic-test%3Alocal/json'],
+      ['GET', '/images/agentic-test:local/json?x=1'],
+      ['GET', '/images/agentic-test:local/history'],
+      ['GET', '/images/agentic-test:local'],
+      ['HEAD', '/images/agentic-test:local/json'],
+      ['POST', '/images/agentic-test:local/json'],
+      ['DELETE', '/images/agentic-test:local'],
+      ['POST', '/images/agentic-test:local/tag?repo=x'],
+      ['GET', '/images/../images/agentic-test:local/json'],
+      ['GET', '/v1.47/images/alpine/json'],
+    ]) {
+      refused(decide(request(method, url), config));
+    }
+    refused(decide(request('GET', '/images/agentic-test:local/json', { a: 1 }), config));
   });
 });
 

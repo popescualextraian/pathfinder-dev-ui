@@ -216,14 +216,15 @@ export class LocalTaskLauncher implements TaskLauncher {
 
   // Respawns the bridge on the same port, so the bridge URL the service keeps stays valid.
   // Not the bridge of a scheduled run that ended normally (exit 0 after a final state): that run is over.
-  async start(taskId: string): Promise<void> {
+  async start(taskId: string): Promise<undefined> {
     const task = this.must(taskId);
-    if (task.launching || this.alive(task)) return;
+    if (task.launching || this.alive(task)) return undefined;
     if (task.scheduled && task.child?.exitCode === 0 && (await this.finalState(taskId))) {
       throw new ConflictException(`The scheduled run of task ${taskId} has ended; its bridge is not started again`);
     }
     const child = this.spawnBridge(taskId, task);
     if (this.entrypoint()) await this.awaitUp(task, child);
+    return undefined;
   }
 
   async stop(taskId: string): Promise<void> {

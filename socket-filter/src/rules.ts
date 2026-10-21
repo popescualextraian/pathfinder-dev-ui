@@ -183,9 +183,54 @@ function noBody(req: FilterRequest): void {
 
 const CONTAINER_ID = /^[0-9a-f]{64}$/;
 
-const CONTAINER_KEYS = ['Image', 'name', 'Cmd', 'Labels', 'Env', 'HostConfig'];
-const HOST_CONFIG_KEYS = ['Binds', 'NetworkMode', 'CapDrop', 'SecurityOpt'];
+const CONTAINER_KEYS = ['Image', 'name', 'Cmd', 'Labels', 'Env', 'ExposedPorts', 'HostConfig'];
+const HOST_CONFIG_KEYS = ['Binds', 'NetworkMode', 'CapDrop', 'SecurityOpt', 'PortBindings'];
 const VOLUME_KEYS = ['Name', 'Labels', 'Driver'];
+
+/** At most this many app ports per task container (the launcher's cap on the image's apps label). */
+export const MAX_APP_PORTS = 20;
+const APP_PORT_KEY = /^([1-9][0-9]{0,4})\/tcp$/;
+
+// App ports as the launcher publishes them: each port exposed ({}) and bound once to 127.0.0.1 with HostPort ""
+// (Docker picks a free host port). Both maps name the same ports; anything else is refused.
+function checkAppPorts(body: JsonObject, host: JsonObject): void {
+  const exposedGiven = own(body, 'ExposedPorts');
+  const boundGiven = own(host, 'PortBindings');
+  if (!exposedGiven && !boundGiven) return;
+  if (!exposedGiven || !boundGiven) refuse('ExposedPorts and PortBindings must come together');
+  const exposed = body.ExposedPorts;
+  const bound = host.PortBindings;
+  if (!isObject(exposed)) refuse('ExposedPorts must be an object');
+  if (!isObject(bound)) refuse('PortBindings must be an object');
+  const ports = Object.keys(bound);
+  if (ports.length === 0 || ports.length > MAX_APP_PORTS) refuse(`PortBindings must name 1 to ${MAX_APP_PORTS} ports`);
+  for (const key of ports) {
+    const m = APP_PORT_KEY.exec(key);
+    if (!m || Number(m[1]) > 65535) refuse(`port ${safe(key)} must be <1-65535>/tcp`);
+    const bindings = bound[key];
+    if (!Array.isArray(bindings) || bindings.length !== 1) refuse('each port must have exactly one binding');
+    const binding: Json = bindings[0];
+    if (!isObject(binding) || Object.keys(binding).length !== 2 || binding.HostIp !== '127.0.0.1' || binding.HostPort !== '') {
+      refuse('a binding must be exactly {"HostIp":"127.0.0.1","HostPort":""}');
+    }
+  }
+  const exposedPorts = Object.keys(exposed);
+  if (exposedPorts.length !== ports.length || !exposedPorts.every((key) => own(bound, key))) {
+    refuse('ExposedPorts must name the same ports as PortBindings');
+  }
+  for (const value of Object.values(exposed)) {
+    if (!isObject(value) || Object.keys(value).length !== 0) refuse('ExposedPorts values must be {}');
+  }
+}
+
+// GET /images/<FILTER_IMAGE>/json, literally (the launcher reads the apps label of the task image). Nothing else
+// under /images is allowed; the image reference may hold ':', '/' and '@', which the generic path check refuses.
+function imageInspect(req: FilterRequest, config: FilterConfig): Forward | undefined {
+  const m = /^(\/v1\.\d{1,3})?\/images\/(.+)\/json$/.exec(req.url);
+  if (!m || req.method !== 'GET' || m[2] !== config.image) return undefined;
+  noBody(req);
+  return { action: 'forward', method: 'GET', path: `${m[1] ?? ''}/images/${config.image}/json` };
+}
 
 function containerCreate(req: FilterRequest, target: Target, config: FilterConfig): Forward {
   const query = queryOf(target.params, ['name'], CONTAINER_KEYS.filter((k) => k !== 'name'));
@@ -205,6 +250,7 @@ function containerCreate(req: FilterRequest, target: Target, config: FilterConfi
   if (host.NetworkMode !== config.network) refuse('NetworkMode not allowed');
   if (!sameJson(host.CapDrop, ['ALL'])) refuse('CapDrop must be ["ALL"]');
   if (!sameJson(host.SecurityOpt, ['no-new-privileges'])) refuse('SecurityOpt must be ["no-new-privileges"]');
+  checkAppPorts(body, host);
   return { action: 'forward', method: 'POST', path: buildPath(target.prefix, '/containers/create', [['name', name as string]]), body: Buffer.from(JSON.stringify(body)) };
 }
 
@@ -301,6 +347,8 @@ function route(req: FilterRequest, config: FilterConfig): Decision {
   if (req.headers.upgrade !== undefined || connection.split(',').some((t) => t.trim() === 'upgrade')) {
     refuse('connection upgrade not allowed');
   }
+  const image = imageInspect(req, config);
+  if (image) return image;
   const target = parseTarget(req.url);
   const { path } = target;
   const method = req.method;

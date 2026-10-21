@@ -1,0 +1,10 @@
+.apps { display: flex; flex-direction: column; gap: 8px; }
+.kicker { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--msg-red); font-weight: 700; }
+.app { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: var(--radius-card); padding: 10px 12px; }
+.row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.name { font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
+.link { font-size: 13px; color: var(--msg-red); overflow-wrap: anywhere; }
+.actions { display: flex; gap: 8px; margin-left: auto; }
+.note { margin: 0; font-size: 13px; color: var(--ink-soft); }
+.error { margin: 0; font-size: 13px; color: var(--msg-red); }
+.logs { margin: 0; padding: 8px; max-height: 300px; overflow: auto; background: var(--paper-soft); border-radius: 8px; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }

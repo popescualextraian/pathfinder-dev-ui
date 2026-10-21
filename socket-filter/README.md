@@ -32,8 +32,8 @@ Logging: one line per refused request (method, path without query, reason). Env 
 
 ## Rules
 
-Everything not listed is refused (exec, attach, logs, build, images, networks, plugins, swarm, events, commit,
-update, rename, kill, PUT archive, other containers, ...).
+Everything not listed is refused (exec, attach, logs, build, images other than the inspect of `FILTER_IMAGE`,
+networks, plugins, swarm, events, commit, update, rename, kill, PUT archive, other containers, ...).
 
 Requests in general:
 - The daemon always gets HTTP/1.1 requests built by the filter (a client speaking HTTP/1.0 is still answered, the filter does not reject it); an optional `/v1.NN` prefix is accepted. The path must match a route literally: percent-encoding, `..`, `.`, double or
@@ -47,8 +47,9 @@ Requests in general:
 | Request | Allowed when |
 |---|---|
 | `GET /_ping`, `HEAD /_ping`, `GET /version` | always, no query |
+| `GET /images/<FILTER_IMAGE>/json` | the reference exactly as in `FILTER_IMAGE` (literal, no percent-encoding), no query, no body; the launcher reads the image's apps label `agentic.apps` before a launch |
 | `POST /volumes/create` | body keys only `Name`, `Labels`, `Driver`; `Name` is a task name; `Driver` absent or `local`; labels all under the label prefix, kind label present, `<prefix>task` equals the id in the name. No `DriverOpts` (a `local` volume with `o=bind` would be a disguised bind mount). |
-| `POST /containers/create?name=<name>` | `name` is a task name; body keys only `Image`, `name`, `Cmd`, `Labels`, `Env`, `HostConfig`; `Image` is `FILTER_IMAGE`; `Cmd` is `["agentic-bridge"]`; labels as for volumes; `Env` free (list of strings; never logged); `HostConfig` keys only `Binds`, `NetworkMode`, `CapDrop`, `SecurityOpt` with `Binds` exactly `["<name>:/task"]`, `NetworkMode` = `FILTER_NETWORK`, `CapDrop` `["ALL"]`, `SecurityOpt` `["no-new-privileges"]`. So no `Privileged`, `Mounts`, host-path binds, `CapAdd`, ports, devices, `Entrypoint`, `User`, ... |
+| `POST /containers/create?name=<name>` | `name` is a task name; body keys only `Image`, `name`, `Cmd`, `Labels`, `Env`, `ExposedPorts`, `HostConfig`; `Image` is `FILTER_IMAGE`; `Cmd` is `["agentic-bridge"]`; labels as for volumes; `Env` free (list of strings; never logged); `HostConfig` keys only `Binds`, `NetworkMode`, `CapDrop`, `SecurityOpt`, `PortBindings` with `Binds` exactly `["<name>:/task"]`, `NetworkMode` = `FILTER_NETWORK`, `CapDrop` `["ALL"]`, `SecurityOpt` `["no-new-privileges"]`. App ports (see below) only as the launcher publishes them. So no `Privileged`, `Mounts`, host-path binds, `CapAdd`, `PublishAllPorts`, other port bindings, devices, `Entrypoint`, `User`, ... |
 | `POST /containers/<name>/start` | task name, or exactly one full 64-hex container id (the launcher starts a new container by the id that create returns); no query, no body; label check |
 | `POST /containers/<name>/stop` | task name; query `t` (seconds) only; a body only if it is exactly `{"t":<same>}`; label check |
 | `DELETE /containers/<name>` | task name; query `force`, `v` (booleans); label check |
@@ -62,6 +63,17 @@ Only start accepts a container id; every other action by id (stop, delete, inspe
 **The one id rule, and why.** dockerode's `createContainer` returns an object bound to the new container's 64-hex id, so the launcher's `container.start()` sends `POST /containers/<id>/start`, not the name. Without this rule no task could start. The rule is as narrow as it can be: only `start`, only a full lowercase 64-hex id, no query, no body, and the same upstream label check as for names (the filter inspects that id and refuses unless it carries the kind label). The launcher stays unchanged (decision of HD, 2026-10-20). Starting an existing labelled container is something the launcher may do anyway, so the rule adds no new power.
 There is no exec, and no way to start a container the filter did not create or create one other than a task container.
 
+**App ports.** The task image's apps (label `agentic.apps`) are published by the launcher at create. `ExposedPorts`
+and `HostConfig.PortBindings` are both absent, or both present and then:
+- the keys are `<port>/tcp` with a port 1 to 65535 (no leading zero, no range, no IP prefix, no udp or sctp), 1 to 20
+  ports (the launcher's cap on the label is 20 distinct ports too);
+- every port has exactly one binding, exactly `{"HostIp":"127.0.0.1","HostPort":""}`: loopback only, the host port
+  picked by Docker (no fixed host port, no `0.0.0.0` or IPv6, no other key);
+- `ExposedPorts` names exactly the same ports, each with the value `{}`.
+
+The launcher reads the assigned host ports back with `GET /containers/<name>/json` (by name, the allowed inspect),
+after the launch and on every start.
+
 ### Label check
 
 For container actions (start, stop, delete, json, archive) and `DELETE /volumes/<name>` the filter first inspects the
@@ -74,7 +86,7 @@ access could do that (the filter always creates task containers with the labels)
 ### What the real launcher sends
 
 Findings from running dockerode (`DockerTaskLauncher`) through the filter:
-- docker-modem copies all options into the query as well as the body, so create arrives as `?Image=..&name=..&Cmd=..&Labels=..&Env=..&HostConfig=..`
+- docker-modem copies all options into the query as well as the body, so create arrives as `?Image=..&name=..&Cmd=..&Labels=..&Env=..&HostConfig=..` (and `&ExposedPorts=..` for an image with apps)
   (the environment, i.e. tokens, would be in the URL), volume create as `?Name=..&Labels=..`. The filter accepts exactly these mirrored keys,
   drops them, and forwards only `?name=<name>`; any other key (`platform`, ...) is refused.
 - `stop` sends `?t=10` and the body `{"t":10}`; the body is dropped.

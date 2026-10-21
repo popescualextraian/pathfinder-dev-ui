@@ -1,7 +1,7 @@
 import { createServer, IncomingMessage, Server, ServerResponse } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer } from 'ws';
-import { BridgeEvent, BridgeQuestion, BridgeState } from '../../src/engine/service/bridge-client';
+import { BridgeApp, BridgeEvent, BridgeQuestion, BridgeState } from '../../src/engine/service/bridge-client';
 
 // A small stateful stand-in for ONE task bridge (HTTP + WebSocket, API v1), started on a free
 // loopback port. Enough behaviour for the REST e2e tests; not a copy of the real bridge.
@@ -15,6 +15,9 @@ export class FakeBridge {
   // Sessions besides main, in creation order; main is implicit.
   sessionNames: string[] = [];
   url = '';
+  // The apps of the container; start, stop and restart change their state.
+  apps: BridgeApp[] = [];
+  appLogLines: string[] = [];
 
   private server!: Server;
   private wss!: WebSocketServer;
@@ -147,8 +150,32 @@ export class FakeBridge {
           const chosen = this.events.filter((e) => e.seq > since && keep(e) && (session === null || e.name === session)).slice(0, limit);
           return send(200, chosen.map((e) => JSON.stringify(e)).join('\n') + '\n', 'application/x-ndjson');
         }
-        default:
+        case 'GET /apps':
+          return send(200, this.apps);
+        default: {
+          const action = /^\/apps\/([^/]+)\/(start|stop|restart)$/.exec(url.pathname);
+          const logs = /^\/apps\/([^/]+)\/logs$/.exec(url.pathname);
+          const app = this.apps.find((a) => a.name === (action ?? logs)?.[1]);
+          if (req.method === 'POST' && action) {
+            if (!app) return fail(404, 'not_found', `No app ${action[1]}`);
+            // like agentic-app: a start of a running app is a no-op; an app whose prepare runs refuses with 409
+            if (app.state === 'preparing') {
+              const then = action[2] === 'start' ? 'start it again when that ends' : 'stop it when that ends';
+              return fail(409, 'conflict', `agentic-app: app ${app.name} is preparing; ${then}`);
+            }
+            if (action[2] === 'start' && app.state === 'running') return send(202, app);
+            app.state = action[2] === 'stop' ? 'stopped' : 'running';
+            if (action[2] !== 'stop') app.exit_code = null;
+            app.since = Math.floor(Date.now() / 1000);
+            return send(202, app);
+          }
+          if (req.method === 'GET' && logs) {
+            if (!app) return fail(404, 'not_found', `No app ${logs[1]}`);
+            const lines = Number(url.searchParams.get('lines') ?? 200);
+            return send(200, { lines: this.appLogLines.slice(-lines) });
+          }
           return fail(404, 'not_found', 'No such route');
+        }
       }
     });
   }

@@ -62,6 +62,7 @@ describe('DockerTaskLauncher through the socket filter', () => {
 
   beforeEach(async () => {
     upstream = await new FakeUpstream().start();
+    upstream.images.set(engineConfig.image, { labels: {} });
     dir = mkdtempSync(join(tmpdir(), 'launcher-filter-'));
     logs = [];
     await startFilter();
@@ -80,6 +81,7 @@ describe('DockerTaskLauncher through the socket filter', () => {
     // dockerode starts the new container by the id the create returned; the filter checks that same id.
     const id = upstream.containers.get(NAME)!.id;
     expect(upstream.paths()).toEqual([
+      `GET /images/${engineConfig.image}/json`,
       'POST /volumes/create',
       `POST /containers/create?name=${NAME}`,
       `GET /containers/${id}/json`,
@@ -150,5 +152,65 @@ describe('DockerTaskLauncher through the socket filter', () => {
     upstream.addContainer(NAME, { labels: {}, running: true });
     await expect(launcher.stop(ID)).rejects.toMatchObject({ statusCode: 403 });
     expect(upstream.containers.get(NAME)?.running).toBe(true);
+  });
+
+  describe('apps', () => {
+    const appsLabel = Buffer.from(JSON.stringify({
+      web: { ports: [3000, 9229], url: '/', autostart: true },
+      api: { ports: [8080], url: '/health', autostart: false },
+    })).toString('base64');
+    const loopback = [{ HostIp: '127.0.0.1', HostPort: '' }];
+
+    beforeEach(() => upstream.images.set(engineConfig.image, { labels: { 'agentic.apps': appsLabel } }));
+
+    it('launches an image with apps: the published ports pass the filter and the host ports are read back', async () => {
+      const result = await launcher.launch(spec);
+      expect(logs).toEqual([]);
+      const body = upstream.containers.get(NAME)!.body as { ExposedPorts: unknown; HostConfig: { PortBindings: unknown } };
+      expect(body.ExposedPorts).toEqual({ '3000/tcp': {}, '9229/tcp': {}, '8080/tcp': {} });
+      expect(body.HostConfig.PortBindings).toEqual({ '3000/tcp': loopback, '9229/tcp': loopback, '8080/tcp': loopback });
+      expect(result).toEqual({
+        bridgeUrl: `http://${NAME}:8765`,
+        appPorts: { web: { 3000: 49153, 9229: 49154 }, api: { 8080: 49155 } },
+      });
+      // The image is inspected by FILTER_IMAGE, the new container by name (an inspect by id is refused).
+      expect(upstream.paths()).toContain(`GET /images/${engineConfig.image}/json`);
+      expect(upstream.paths()).toContain(`GET /containers/${NAME}/json`);
+    });
+
+    it('reads the new host ports on every start through the filter', async () => {
+      await launcher.launch(spec);
+      await launcher.stop(ID);
+      await expect(launcher.start(ID)).resolves.toEqual({ web: { 3000: 49156, 9229: 49157 }, api: { 8080: 49158 } });
+      expect(logs).toEqual([]);
+    });
+
+    it.each([
+      ['a binding on all interfaces', { '3000/tcp': [{ HostIp: '0.0.0.0', HostPort: '' }] }, { '3000/tcp': {} }, {}],
+      ['a fixed host port', { '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: '3000' }] }, { '3000/tcp': {} }, {}],
+      ['udp', { '3000/udp': loopback }, { '3000/udp': {} }, {}],
+      ['an extra key in a binding', { '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: '', Extra: 'x' }] }, { '3000/tcp': {} }, {}],
+      ['an extra HostConfig key', { '3000/tcp': loopback }, { '3000/tcp': {} }, { PublishAllPorts: true }],
+    ])('refuses a create with %s and nothing reaches Docker', async (_label, PortBindings, ExposedPorts, extraHost) => {
+      const docker = new Docker({ socketPath: join(dir, 'filter.sock') });
+      await expect(docker.createContainer({
+        Image: engineConfig.image,
+        name: NAME,
+        Cmd: ['agentic-bridge'],
+        Labels: { 'agentic-ui.task': ID, 'agentic-ui.kind': 'task' },
+        Env: [],
+        ExposedPorts: ExposedPorts as Record<string, object>,
+        HostConfig: {
+          Binds: [`${NAME}:/task`],
+          NetworkMode: engineConfig.dockerNetwork,
+          CapDrop: ['ALL'],
+          SecurityOpt: ['no-new-privileges'],
+          PortBindings: PortBindings as Docker.PortMap,
+          ...extraHost,
+        },
+      })).rejects.toMatchObject({ statusCode: 403 });
+      expect(upstream.paths().filter((p) => p.startsWith('POST /containers/create'))).toEqual([]);
+      expect(upstream.containers.size).toBe(0);
+    });
   });
 });
