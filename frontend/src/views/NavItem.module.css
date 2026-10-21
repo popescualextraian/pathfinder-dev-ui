@@ -1,0 +1,7 @@
+.item { display: flex; width: 100%; align-items: center; gap: 10px; padding: 9px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--paper); font: inherit; font-size: 15px; cursor: pointer; text-align: left; }
+.item:hover { background: rgba(255,255,255,0.08); }
+.item:focus-visible { outline: 2px solid var(--accent-gold); outline-offset: 1px; }
+.active { background: rgba(255,255,255,0.14); box-shadow: inset 3px 0 0 var(--msg-red-light); font-weight: 600; }
+.icon { display: inline-flex; flex: none; opacity: 0.85; }
+.label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.count { flex: none; margin-left: auto; padding: 1px 8px; border-radius: var(--radius-pill); background: rgba(255,255,255,0.14); font-size: 12px; font-weight: 400; }
