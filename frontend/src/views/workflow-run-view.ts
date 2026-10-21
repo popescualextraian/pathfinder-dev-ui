@@ -26,11 +26,26 @@ export const isTaskRun = (run: WorkflowRun) => run.kind === 'task';
 
 const KICKOFF_END = 'Read it and get familiar with it, then wait for my instructions. Do not change anything yet.';
 
-/** The default prompt of "▶ Task": the item, its description and link (each left out when empty), then wait. */
+// Limits of StartTaskRunDto (title, prompt).
+const MAX_TITLE = 200;
+const MAX_PROMPT = 20000;
+
+/** The default title of "▶ Task": `#<id> <title>`, cut to the title limit. */
+export function defaultTaskTitle(item: Pick<BacklogItem, 'id' | 'title'>): string {
+  return `#${item.id} ${item.title}`.slice(0, MAX_TITLE);
+}
+
+/**
+ * The default prompt of "▶ Task": the item, its description and link (each left out when empty), then wait.
+ * The description is cut when the whole would pass the prompt limit.
+ */
 export function kickoffPrompt(item: Pick<BacklogItem, 'id' | 'title' | 'description' | 'url'>): string {
-  return [`We plan to work on backlog item #${item.id}: ${item.title}`, item.description.trim(), item.url.trim(), KICKOFF_END]
-    .filter(Boolean)
-    .join('\n\n');
+  const head = `We plan to work on backlog item #${item.id}: ${item.title}`;
+  const url = item.url.trim();
+  const build = (description: string) => [head, description, url, KICKOFF_END].filter(Boolean).join('\n\n');
+  const description = item.description.trim();
+  const over = build(description).length - MAX_PROMPT;
+  return over > 0 ? build(description.slice(0, Math.max(0, description.length - over - 1)).trimEnd() + (description.length > over + 1 ? '…' : '')) : build(description);
 }
 
 export { isActiveRun };

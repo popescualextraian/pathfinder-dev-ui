@@ -1,5 +1,5 @@
 import type { WorkflowRunStep } from '../../src/api/models';
-import { currentSession, kickoffPrompt, openStepHref } from '../../src/views/workflow-run-view';
+import { currentSession, defaultTaskTitle, kickoffPrompt, openStepHref } from '../../src/views/workflow-run-view';
 import { makeRun } from '../fixtures/workflows';
 
 const step = (id: string, over: Partial<WorkflowRunStep> = {}): WorkflowRunStep => ({
@@ -47,5 +47,22 @@ describe('kickoffPrompt', () => {
   it('omits a missing description or link', () => {
     expect(kickoffPrompt({ ...item, description: ' ', url: '' })).toBe(`We plan to work on backlog item #7: Fix it\n\n${end}`);
     expect(kickoffPrompt({ ...item, description: '' })).toBe(`We plan to work on backlog item #7: Fix it\n\nhttps://x/7\n\n${end}`);
+  });
+});
+
+describe('limits of the prefilled task', () => {
+  it('cuts the default title to 200 characters', () => {
+    const title = defaultTaskTitle({ id: '7', title: 'x'.repeat(255) });
+    expect(title).toHaveLength(200);
+    expect(title.startsWith('#7 xxx')).toBe(true);
+    expect(defaultTaskTitle({ id: '7', title: 'Fix it' })).toBe('#7 Fix it');
+  });
+  it('keeps the whole title but cuts the description so the prompt stays under 20000', () => {
+    const item = { id: '7', title: 'x'.repeat(255), description: 'd'.repeat(30000), url: 'https://x/7' };
+    const prompt = kickoffPrompt(item);
+    expect(prompt.length).toBeLessThanOrEqual(20000);
+    expect(prompt).toContain('x'.repeat(255));
+    expect(prompt).toContain('https://x/7');
+    expect(prompt.endsWith('Do not change anything yet.')).toBe(true);
   });
 });

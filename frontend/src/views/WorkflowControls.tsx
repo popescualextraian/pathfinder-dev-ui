@@ -5,7 +5,7 @@ import { Button } from './Button';
 import { ConfirmDialog, Dialog, dialogStyles } from './Dialog';
 import { NewTaskDialog } from './NewTaskDialog';
 import { WorkflowRunLine } from './WorkflowRunLine';
-import { isActiveRun, isTaskRun, kickoffPrompt, stepStates, type WorkflowBoard } from './workflow-run-view';
+import { defaultTaskTitle, isActiveRun, isTaskRun, kickoffPrompt, stepStates, type WorkflowBoard } from './workflow-run-view';
 import styles from './Workflow.module.css';
 
 interface Props {
@@ -64,7 +64,7 @@ function TaskStart({ item, workflows, pending }: { item: BacklogItem; workflows:
         createPortal(
         <NewTaskDialog
           heading={`New task on #${item.id}`}
-          initial={{ title: `#${item.id} ${item.title}`, prompt: kickoffPrompt(item) }}
+          initial={{ title: defaultTaskTitle(item), prompt: kickoffPrompt(item) }}
           repositories={workflows.repositories}
           submit={async (input) => {
             const result = await workflows.startTask(item.id, input);

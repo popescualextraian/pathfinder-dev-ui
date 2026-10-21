@@ -448,8 +448,8 @@ A run: `{id, kind?, workflowId, definition (snapshot taken at start), itemId, it
 state, warning?, failureReason?, createdAt, updatedAt, finishedAt?}`. It never contains tokens. Errors have the usual `{statusCode, message, path}` body.
 
 **Plain-task runs** (`kind: 'task'`; absent = a workflow run): a link between a work item and one ordinary task, started with
-`POST /api/workflow-runs/task`. It has no workflow to follow (`workflowId: 'task'`, a definition titled `Task` without steps): it moves no card
-(never, also not at start or stop), starts no session and sends no exit prompt. Its state is `needs-you` while the task has an open question or a
+`POST /api/workflow-runs/task`. It has no workflow to follow (`workflowId: 'task'`, a definition titled `Task` without steps): the runner never moves its card
+(not at start or stop; a user may still drag it by hand), starts no session and sends no exit prompt. Its state is `needs-you` while the task has an open question or a
 failed or interrupted session, else `running`; it never becomes `done` by itself. Stop marks it `stopped` and leaves the task as it is; a task
 that is gone makes it `failed`. One active run per item counts both kinds: a plain task blocks a workflow start and the other way round.
 In the UI a card or detail without an active run has **▶ Task** next to **▶ Workflow** (also without definitions): the New task dialog

@@ -8,6 +8,10 @@ import { expect, test, APIRequestContext, Page } from '@playwright/test';
 interface Run { id: string; itemId: string; taskId: string; state: string; kind?: string }
 
 const EVIDENCE = 'reports/evidence';
+// Evidence screenshots only on request (EVIDENCE=1), so test:ui leaves the tree clean.
+const shot = async (page: Page, name: string) => {
+  if (process.env.EVIDENCE === '1') await shot(page, '${name}');
+};
 const created: string[] = [];
 
 async function newItem(request: APIRequestContext, title: string): Promise<{ id: string; title: string }> {
@@ -41,7 +45,7 @@ const lane = (page: Page, title: string) => page.getByRole('region', { name: tit
 const card = (page: Page, id: string) => page.getByTestId(`backlog-card-${id}`);
 
 test('▶ Task starts a plain task linked to the item; Stop ends the link; the card never moves', async ({ page }) => {
-  mkdirSync(EVIDENCE, { recursive: true });
+  if (process.env.EVIDENCE === '1') mkdirSync(EVIDENCE, { recursive: true });
   const item = await newItem(page.request, 'Magic link');
   const { id } = item;
   expect(await laneOf(page.request, id)).toBe('backlog');
@@ -57,7 +61,7 @@ test('▶ Task starts a plain task linked to the item; Stop ends the link; the c
   const prompt = dialog.getByLabel('Prompt');
   await expect(prompt).toHaveValue(new RegExp(`^We plan to work on backlog item #${id}: ${item.title}\\n\\nUsers want`));
   await expect(prompt).toHaveValue(/Do not change anything yet\.$/);
-  await page.screenshot({ path: `${EVIDENCE}/019-dialog.png`, fullPage: true });
+  await shot(page, '019-dialog');
   await prompt.fill(`Look at #${id}, then wait.`);
   await dialog.getByRole('button', { name: 'Start task' }).click();
   await expect(dialog).toBeHidden({ timeout: 30_000 }); // the task starts first (worktree, bridge)
@@ -70,7 +74,7 @@ test('▶ Task starts a plain task linked to the item; Stop ends the link; the c
   const view = page.getByRole('article');
   await expect(view.getByText(`echo: Look at #${id}, then wait.`).first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('task-workflow-line')).toHaveText(`Task · #${id} on the board`);
-  await page.screenshot({ path: `${EVIDENCE}/019-task-screen.png`, fullPage: true });
+  await shot(page, '019-task-screen');
 
   // Back to the board through the item link: the card's run line, in the same lane.
   await page.getByRole('link', { name: `#${id} on the board` }).click();
@@ -88,7 +92,7 @@ test('▶ Task starts a plain task linked to the item; Stop ends the link; the c
   const detail = page.getByRole('complementary', { name: 'Item detail' });
   await expect(detail.getByTestId('workflow-run-line').getByTestId('workflow-title')).toHaveText('Task');
   await expect(detail.getByRole('list', { name: 'Workflow steps' })).toHaveCount(0);
-  await page.screenshot({ path: `${EVIDENCE}/019-card-run-line.png`, fullPage: true });
+  await shot(page, '019-card-run-line');
   await line.getByRole('link', { name: 'Open task' }).click();
   await expect(page).toHaveURL(new RegExp(`#/tasks/${run!.taskId}`));
   await page.goBack();
@@ -104,5 +108,5 @@ test('▶ Task starts a plain task linked to the item; Stop ends the link; the c
   expect((await task.json()).state).not.toBe('stopped');
   await expect(lane(page, 'Backlog').getByTestId(`backlog-card-${id}`)).toBeVisible();
   expect(await laneOf(page.request, id)).toBe('backlog');
-  await page.screenshot({ path: `${EVIDENCE}/019-after-stop.png`, fullPage: true });
+  await shot(page, '019-after-stop');
 });

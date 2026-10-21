@@ -700,6 +700,14 @@ describe('WorkflowRunner', () => {
       expect(tasks.starts).toHaveLength(2);
     });
 
+    it('a workflow and a plain task started at once on one item: exactly one wins', async () => {
+      const results = await Promise.allSettled([runner.start('7', 'pir'), runner.startTask({ itemId: '7', prompt: 'p' })]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+      expect(lost.reason).toBeInstanceOf(WorkflowConflictError);
+      expect(tasks.starts).toHaveLength(1);
+    });
+
     it('stays running after the first turn ends idle; never done by itself; sends nothing', async () => {
       const run = await runner.startTask({ itemId: '7', prompt: 'p' });
       const t = run.taskId;
