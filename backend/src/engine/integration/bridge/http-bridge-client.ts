@@ -19,8 +19,13 @@ export interface BridgeClientOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-// An app's prepare step (npm ci) can take about 11 minutes.
-const APP_START_TIMEOUT_MS = 12 * 60_000;
+// The bridge's own limits are start 660 s, restart 840 s, stop 180 s: wait a little longer, so the
+// bridge answers (or fails) first.
+export const APP_ACTION_TIMEOUT_MS: Record<AppAction, number> = {
+  start: 670_000,
+  restart: 850_000,
+  stop: 190_000,
+};
 
 export class HttpBridgeClient implements BridgeClient {
   private readonly url: URL;
@@ -83,8 +88,7 @@ export class HttpBridgeClient implements BridgeClient {
   }
 
   async appAction(name: string, action: AppAction): Promise<BridgeApp> {
-    const timeout = action === 'stop' ? this.timeoutMs : APP_START_TIMEOUT_MS;
-    const text = await this.send('POST', `/apps/${encodeURIComponent(name)}/${action}`, undefined, timeout);
+    const text = await this.send('POST', `/apps/${encodeURIComponent(name)}/${action}`, undefined, APP_ACTION_TIMEOUT_MS[action]);
     return parseJson<BridgeApp>(() => JSON.parse(text) as BridgeApp);
   }
 

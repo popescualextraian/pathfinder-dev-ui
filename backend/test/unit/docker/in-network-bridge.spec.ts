@@ -216,3 +216,22 @@ describe('HelperContainer.exec', () => {
     expect(nodeCommand('"$0"')).toBe('PATH="/opt/node/22/bin:$PATH"; export PATH; exec node -e "$0"');
   });
 });
+
+describe('InNetworkBridgeClient apps', () => {
+  const app = { name: 'web', state: 'running', ports: [8080], url: '/', since: '2026-10-20T10:00:00Z' };
+
+  it('lists apps, relays an action with a generous helper timeout and reads logs', async () => {
+    const seen: HelperRequest[] = [];
+    const run = (request: HelperRequest) => {
+      seen.push(request);
+      const body = request.path.includes('/logs') ? { lines: ['x'] } : request.method === 'GET' ? [app] : app;
+      return Promise.resolve(`${JSON.stringify({ status: 200, body: JSON.stringify(body) })}\n`);
+    };
+    const client = new InNetworkBridgeClient('http://task:8765', TOKEN, run);
+    expect(await client.apps()).toEqual([app]);
+    expect(await client.appAction('web', 'start')).toEqual(app);
+    expect(await client.appLogs('web', 5)).toEqual(['x']);
+    expect(seen.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /apps', 'POST /apps/web/start', 'GET /apps/web/logs?lines=5']);
+    expect(seen[1].timeoutMs).toBeGreaterThanOrEqual(20_000);
+  });
+});

@@ -272,11 +272,27 @@ describe('HttpBridgeClient', () => {
       expect(seen[0]).toMatchObject({ method: 'GET', url: '/apps/web/logs?lines=50' });
     });
 
-    it('waits long for start and restart, briefly for stop and the reads', async () => {
-      reply = () => ({ status: 202, body: app, delayMs: 200 });
-      await expect(client({ timeoutMs: 50 }).appAction('web', 'start')).resolves.toEqual(app);
-      await expect(client({ timeoutMs: 50 }).appAction('web', 'restart')).resolves.toEqual(app);
-      await expect(client({ timeoutMs: 50 }).appAction('web', 'stop')).rejects.toBeInstanceOf(BridgeUnreachableError);
+    it('waits above the bridge limits: start 670 s, restart 850 s, stop 190 s, the reads as configured', async () => {
+      reply = () => ({ status: 202, body: app });
+      const spy = jest.spyOn(global, 'setTimeout');
+      try {
+        const delays = async (call: () => Promise<unknown>) => {
+          spy.mockClear();
+          await call();
+          return spy.mock.calls.map((c) => c[1]);
+        };
+        expect(await delays(() => client({ timeoutMs: 50 }).appAction('web', 'start'))).toContain(670_000);
+        expect(await delays(() => client({ timeoutMs: 50 }).appAction('web', 'restart'))).toContain(850_000);
+        expect(await delays(() => client({ timeoutMs: 50 }).appAction('web', 'stop'))).toContain(190_000);
+        reply = () => ({ status: 200, body: [app] });
+        expect(await delays(() => client({ timeoutMs: 50 }).apps())).toContain(50);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('a slow read still times out as unreachable', async () => {
+      reply = () => ({ status: 200, body: [app], delayMs: 200 });
       await expect(client({ timeoutMs: 50 }).apps()).rejects.toBeInstanceOf(BridgeUnreachableError);
     });
 

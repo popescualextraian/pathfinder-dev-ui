@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import {
-  AnswerInput, BridgeError, BridgeEvent, BridgeStatus, BridgeUnreachableError,
+  AnswerInput, AppAction, BridgeApp, BridgeError, BridgeEvent, BridgeStatus, BridgeUnreachableError,
 } from '../../src/engine/service/bridge-client';
 
 // The docker suite's way to reach task bridges: from INSIDE the test network, by container name,
@@ -131,6 +131,22 @@ export class InNetworkBridgeClient {
     return parseJson(() => text.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l) as BridgeEvent));
   }
 
+  async apps(): Promise<BridgeApp[]> {
+    const text = await this.send('GET', '/apps');
+    return parseJson(() => JSON.parse(text) as BridgeApp[]);
+  }
+
+  // The fixture app starts at once; the helper exec gives up after 30 s, so 25 s here.
+  async appAction(name: string, action: AppAction): Promise<BridgeApp> {
+    const text = await this.send('POST', `/apps/${encodeURIComponent(name)}/${action}`, undefined, 25_000);
+    return parseJson(() => JSON.parse(text) as BridgeApp);
+  }
+
+  async appLogs(name: string, lines: number): Promise<string[]> {
+    const text = await this.send('GET', `/apps/${encodeURIComponent(name)}/logs?lines=${lines}`);
+    return parseJson(() => (JSON.parse(text) as { lines: unknown[] }).lines.map(String));
+  }
+
   // eslint-disable-next-line require-yield
   async *eventStream(since: number): AsyncGenerator<BridgeEvent> {
     throw new Error(`The live event stream (since ${since}) is not supported in the docker suite`);
@@ -141,9 +157,10 @@ export class InNetworkBridgeClient {
     return parseJson(() => JSON.parse(text) as BridgeStatus);
   }
 
-  private async send(method: string, path: string, body?: unknown): Promise<string> {
+  private async send(method: string, path: string, body?: unknown, timeoutMs?: number): Promise<string> {
     const request: HelperRequest = { baseUrl: this.baseUrl, path, method, token: this.token };
     if (body !== undefined) request.body = body;
+    if (timeoutMs !== undefined) request.timeoutMs = timeoutMs;
     const stdout = await this.run(request);
     return replyBody(parseHelperReply(stdout, ''));
   }
