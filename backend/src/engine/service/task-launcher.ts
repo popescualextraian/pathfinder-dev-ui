@@ -30,6 +30,17 @@ export interface TaskInspection {
 // The ledger is read whole into memory: anything larger is treated as unreadable.
 export const LEDGER_MAX_BYTES = 8 * 1024 * 1024;
 
+// Cap for readFile of a worktree file (the UI only reads small text files such as workflow-draft.yaml).
+export const WORKTREE_FILE_MAX_BYTES = 64 * 1024;
+
+/** readFile of a worktree file larger than its cap (the message names the path, the task and the cap). */
+export class WorktreeFileTooLargeError extends Error {
+  constructor(path: string, taskId: string, readonly maxBytes: number) {
+    super(`File ${JSON.stringify(path)} of task ${taskId} is over ${maxBytes} bytes`);
+    this.name = 'WorktreeFileTooLargeError';
+  }
+}
+
 export interface TaskLauncher {
   // Creates and starts the task's container (and volume).
   launch(spec: LaunchSpec): Promise<LaunchResult>;
@@ -47,4 +58,8 @@ export interface TaskLauncher {
   // Whether each path (relative to the task's worktree, where the agent works: /work/.worktrees/<task id>) exists, file or directory.
   // Works on a stopped task. Refuses bad paths itself (BadRequestException, see assertWorktreePaths).
   hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>>;
+  // Text of one file in the task's worktree, or null when it is missing (also when the task folder is gone).
+  // Works on a stopped task. Refuses a bad path itself (BadRequestException, see assertWorktreePaths);
+  // throws WorktreeFileTooLargeError when the file is larger than maxBytes.
+  readFile(taskId: string, path: string, maxBytes: number): Promise<string | null>;
 }

@@ -470,6 +470,53 @@ checkout. For local testing without GitLab, `connector: memory` in the lanes YAM
 (`{title, description?, lane?}`); it is refused unless `BACKLOG_ALLOW_MEMORY_CONNECTOR=1`, which only `start:local` sets. Try it with the Playwright fixtures:
 `BACKLOG_CONFIG=e2e/fixtures/backlog.yaml WORKFLOWS_DIR=e2e/fixtures/workflows PORT=3101 npm run start:local`, then open `#/backlog`.
 
+### Generating a workflow with AI
+
+A second way to make a workflow beside the editor: describe it in words, an agent writes the definition, you review it in the editor and save.
+Nothing is saved without you. On `#/workflows` the button **Generate with AI** opens a box with the description (1 to 4000 characters) and an optional model.
+
+Flow: the description and a skill text (`backend/src/workflow/service/generator/workflow-author.md`, filled with the format, the placeholders and the live lane ids,
+the description at the end marked as input) go as the first prompt of an ordinary agent task of kind `workflow-generator` on the default project repository
+(`ENGINE_REPO_URL`, branch thrown away). The agent writes `workflow-draft.yaml` at the root of the task's worktree. When a turn is done (session idle, no open
+question) the UI reads that file (`TaskLauncher.readFile`), parses it and validates it with the editor's validator. Errors, or a missing file, go back to the same
+session as a fix prompt, at most 2 times (`fixing 1 of 2`); then the generation is `failed` with the errors. A valid draft is `ready`: **Open in editor**
+(`#/workflows/new?generation=<id>`, an unsaved new workflow with the id proposed from the title) and Save. **Request changes** on a ready draft sends your text to the
+same session and the check runs again (the fix count starts from zero). The generator task is not a card on the board; the Workflows page shows a panel per open generation
+(state, the agent's open question with an answer box, last message, cost so far, errors, a link to the task view).
+
+| Route | Does | Answer |
+|---|---|---|
+| `POST /api/workflows/generations` `{description, model?}` | Starts the task. `description` 1 to 4000 characters, `model` free text (empty = default) | 201 generation |
+| `GET /api/workflows/generations` | Open generations (not `saved`/`discarded`), oldest first, without the draft (`hasDraft`) | 200 list |
+| `GET /api/workflows/generations/:id` | One, with its draft (also `saved`/`discarded` until removed) | 200 generation, 404 |
+| `POST /api/workflows/generations/:id/changes` `{text}` | Request changes; only from `ready` | 200 generation, 409 |
+| `POST /api/workflows/generations/:id/saved` | The draft was saved (the editor calls it after Save); from `ready` or `failed`; closes the task | 200 generation, 409 |
+| `POST /api/workflows/generations/:id/discard` | Throws the draft away; from any open state; closes the task | 200 generation, 409 |
+
+A generation: `{id (G-YYYYMMDD-xxxxxxxx), taskId, description, model?, state, attempts (fixes sent in this round, 0..2), draft?, errors? ({message, stepId?, stepIndex?, field?}),
+failureReason?, warning?, question?, lastMessage?, cost?, createdAt, ...}`; `draft` is the valid definition when `ready`, the last parsed mapping when `failed` (then
+**Open in editor anyway**). States: `writing` (agent working), `asking` (open question; answer it in the panel or with the task answer route), `fixing`, `ready`,
+`failed` (errors after 2 fixes, the task failed, or was stopped), and the end states `saved` and `discarded`, kept 7 days and then removed. Generations are one mode-600 JSON each in
+`<WORKFLOWS_DATA_DIR>/generations` and survive a restart. A failed action (a read or prompt error) is retried on the runner's backoff, shown as `warning`.
+All routes answer 403 when the workflows folder is not writable (as the editor's writes), and there is no login. A generation start that the engine refuses (cap, bridge) passes that error on.
+
+Cost and capacity: a generation runs the real agent in the configured launcher and spends real tokens; the page says so next to the button. A `ready` draft keeps
+its task running until it is saved or discarded, so it counts toward `ENGINE_MAX_RUNNING` (with the default 2, two waiting drafts block every other start, workflow runs included).
+
+Skill file: when the workflow format changes, update `workflow-author.md` too; a unit test (`backend/test/unit/workflow/service/generator/workflow-author.spec.ts`) runs
+every YAML example in it through the real validator. Nest copies the file to `dist` on build (`nest-cli.json` assets).
+
+`TaskLauncher.readFile(taskId, path, maxBytes)` returns the content of a file in the task's worktree or `null` when missing (Docker: archive read; local: the worktree folder; the path is
+checked like `hasFiles`). The cap is 64 KB, larger is an error. The generator passes only the fixed name `workflow-draft.yaml`. The task record has an optional `kind`
+(`workflow-generator`), set by the generator, never accepted from the public `POST /api/tasks`; the task list and view label it "Workflow generator".
+
+Try it without tokens: `BACKLOG_CONFIG=e2e/fixtures/backlog.yaml WORKFLOWS_DIR=e2e/fixtures/workflows PORT=3101 npm run start:local`, open `#/workflows` and put a draft in the
+description with the fake agent's `FAKE_WRITE:` marker: a line `FAKE_WRITE:workflow-draft.yaml` directly followed by a fenced block with the YAML (the skill passes the description on unchanged,
+so the fake agent writes the block to the worktree). A draft with a bad field ends `failed` after 2 fixes; `ASK:<question>` on its own line makes the generation `asking`. The fake agent
+looks for markers in a multi-line prompt line by line: the first line starting with `ASK:` or `SLEEP:` or being exactly `CRASH` acts as that marker with the rest of that line (outside
+`FAKE_WRITE` blocks); a single-line prompt or one that starts with such a marker behaves as before (see the header of `tools/fake-agent/fake-agent.mjs`).
+Tests: `e2e/workflow-generation.spec.ts` (Playwright) and `backend/test/bridge/workflow-generation.bridge-spec.ts` (real bridge, local launcher, fake agent).
+
 ## Install
 
 ```sh
@@ -645,11 +692,11 @@ daemon available and have not been run yet; `docker compose config` accepts the 
 |---|---|
 | `npm test` | Jest unit tests: backend (`backend/test/unit/`) and frontend (`frontend/test/`, jsdom + React Testing Library) |
 | `npm run test:e2e` | Backend e2e tests (`backend/test/e2e/`, Jest + supertest; REST API with a fake launcher and a fake bridge). Needs a prior `npm run build` for the frontend tests. |
-| `npm run test:bridge` | `backend/test/bridge/`: the real `agentic-bridge` as a local process with a fake agent (`tools/fake-agent/fake-agent.mjs`), driven through the bridge client, the task service and the REST API (local launcher); also the poller and the status stream (a turn, an `ASK:` question and its answer, close), with a one-second poll interval. Skipped with a message on stderr where `agentic-bridge` is not on PATH. |
+| `npm run test:bridge` | `backend/test/bridge/`: the real `agentic-bridge` as a local process with a fake agent (`tools/fake-agent/fake-agent.mjs`; markers `ASK:`, `SLEEP:`, `CRASH`, `SHELL:`, `FAKE_WRITE:<path>` plus a fenced block writes a file in the worktree, see the file's header), driven through the bridge client, the task service and the REST API (local launcher); also the poller and the status stream (a turn, an `ASK:` question and its answer, close), with a one-second poll interval, and the workflow generator end to end. Skipped with a message on stderr where `agentic-bridge` is not on PATH. |
 | `npm run test:docker` | `backend/test/docker/`: real Docker, real task image, fake agent: start a task, reach idle, prompt and see the echo, wake it after `docker stop`, stop it (a prompt is then refused with 409 without starting it), remove, check container and volume are gone. Needs both `ENGINE_IMAGE` (the task image) and `FAKE_AGENT_DIR` (directory holding agentic-dev-base's `bridge/test/fake-agent.mjs`, mounted at `/fake`), and a reachable Docker daemon (Linux Docker or Docker Desktop); otherwise skipped with a message on stderr. The test process never connects to container IPs: bridge requests run in a helper container from `ENGINE_IMAGE` on the test network (`node` with a small built-ins-only script, `backend/test/docker/bridge-request.cjs`) and reach the task by container name, as the UI does. It creates a temporary network, the helper container and a local git repository (bound into the task and cloned from there, no GitHub needed), and removes all of them, task containers and volumes in `afterAll`, also after a failure. Example: `ENGINE_IMAGE=agentic-pathfinder-dev-ui:local FAKE_AGENT_DIR=/path/to/agentic-dev-base/bridge/test npm run test:docker` |
 | `npm run test:filter` | `socket-filter/test/`: the Docker socket filter's own suite (rules, server against a fake daemon). Also part of `npm test`. |
 | `npm run test:docker:filter` | `backend/test/docker-filter/`: real Docker; the filter on a temporary socket, `DockerTaskLauncher` through it, and forbidden requests (privileged, bind of `/`, other image, exec, foreign container, bind volume) that must answer 403 and change nothing. Needs `ENGINE_IMAGE` and a Docker daemon on a Unix socket, otherwise skipped with a message on stderr. |
-| `npm run test:ui` | Playwright (`e2e/`). Builds and starts the app on port 3100, uses the Chromium under `PLAYWRIGHT_BROWSERS_PATH` if set. |
+| `npm run test:ui` | Playwright (`e2e/`; includes `workflow-generation.spec.ts`). Builds and starts the app on port 3100, uses the Chromium under `PLAYWRIGHT_BROWSERS_PATH` if set. |
 | `npm run lint` | ESLint for `backend/src/` and `backend/test/` |
 
 ## Launchers
@@ -664,6 +711,7 @@ stop(taskId: string): Promise<void>
 remove(taskId: string): Promise<void>             // container and volume; no-op when gone
 inspect(taskId: string): Promise<TaskInspection>  // { exists, running, bridgeUrl }
 countRunning(): Promise<number>                   // for the ENGINE_MAX_RUNNING cap
+readFile(taskId, path, maxBytes): Promise<string | null>  // a file of the task's worktree, null if missing (64 KB cap)
 ```
 
 The bridge client does not depend on the launcher: the launcher only returns the bridge base URL, and
@@ -696,8 +744,8 @@ backend/
       integration/          gitlab/ (client, connector, file-links comment), connector factory
       repository/           backlog-cache.repository.ts (JSON file)
     workflow/               the optional workflow package; others import only workflow/index.ts
-      service/              WorkflowRunner, definition parser, placeholders, the WorkflowTasks and WorkItems interfaces
-      repository/           definition files (YAML), run files (JSON)
+      service/              WorkflowRunner, generator/ (WorkflowGenerator, skill workflow-author.md), definition parser, placeholders, the WorkflowTasks and WorkItems interfaces
+      repository/           definition files (YAML), run files and generation files (JSON)
     integration/workflow/   adapters of WorkflowTasks (engine) and WorkItems (backlog), wiring module
     commons/                engine config, validation pipe, logging interceptor, exception filters, shared utilities
   test/

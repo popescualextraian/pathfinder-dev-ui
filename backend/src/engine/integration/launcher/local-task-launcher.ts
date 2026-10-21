@@ -1,11 +1,11 @@
 import { Logger } from '@nestjs/common';
 import { ChildProcess, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { EngineConfig } from '../../../commons/engine-config';
-import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
 import { assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from './git-credential-env';
 
@@ -272,6 +272,21 @@ export class LocalTaskLauncher implements TaskLauncher {
       }
     }
     return result;
+  }
+
+  async readFile(taskId: string, path: string, maxBytes: number): Promise<string | null> {
+    assertWorktreePaths([path]);
+    const file = join(this.root, taskId, 'work', '.worktrees', taskId, path);
+    try {
+      const info = await lstat(file);
+      if (!info.isFile()) throw new Error(`${path} is not a regular file`);
+      if (info.size > maxBytes) throw new WorktreeFileTooLargeError(path, taskId, maxBytes);
+      return await readFile(file, 'utf8');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return null;
+      throw error;
+    }
   }
 
   // Bridge stdout/stderr so far (the last 64 KiB), for diagnostics.

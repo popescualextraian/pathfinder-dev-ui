@@ -45,6 +45,7 @@ beforeEach(() => {
   m(backlogStream.openBacklogStream).mockReturnValue(() => undefined);
   m(runsStream.openWorkflowRunsStream).mockReturnValue(() => undefined);
   m(workflowsApi.listRuns).mockResolvedValue([makeRun({ state: 'done' })]);
+  m(workflowsApi.listGenerations).mockResolvedValue([]);
 });
 
 describe('App workflows wiring', () => {
@@ -175,5 +176,96 @@ describe('App workflows screen', () => {
     await screen.findByTestId('workflow-row-wf');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(window.location.hash).toBe('#/workflows');
+  });
+});
+
+describe('App workflow generations', () => {
+  const def = { id: 'wf', title: 'My flow', doneStage: 'plan', steps: [{ id: 's', title: 'S', gate: 'human' as const }] };
+  const generation = {
+    id: 'G-1', taskId: 'T-9', description: 'Plan then build', state: 'ready' as const, attempts: 0,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+  };
+  const draft = { title: 'Generated flow', steps: [{ id: 'plan', title: 'Plan', gate: 'human', prompt: 'plan it' }] };
+
+  beforeEach(() => {
+    m(workflowsApi.validateWorkflow).mockResolvedValue([]);
+    m(workflowsApi.getGeneration).mockResolvedValue({ ...generation, draft });
+    m(workflowsApi.createWorkflow).mockImplementation(async (id: string, definition: object) => ({ definition: { id, ...definition }, version: 'v1' }));
+    m(workflowsApi.readWorkflow).mockImplementation(async (id: string) => ({ definition: { id, ...draft }, version: 'v1' }));
+  });
+  const list = (writable: boolean) =>
+    m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [def], refused: [], writable });
+
+  it('writable: the list has Generate with AI and the open generations', async () => {
+    window.location.hash = '#/workflows';
+    list(true);
+    m(workflowsApi.listGenerations).mockResolvedValue([{ ...generation, hasDraft: true }]);
+    render(<App />);
+    const panel = await screen.findByTestId('generation-G-1');
+    expect(screen.getByRole('button', { name: 'Generate with AI' })).toBeInTheDocument();
+    expect(within(panel).getByRole('link', { name: 'Open in editor' })).toHaveAttribute('href', '#/workflows/new?generation=G-1');
+  });
+
+  it('read-only: no generate button and no generations are read', async () => {
+    window.location.hash = '#/workflows';
+    list(false);
+    render(<App />);
+    await screen.findByTestId('workflow-row-wf');
+    expect(screen.queryByRole('button', { name: 'Generate with AI' })).toBeNull();
+    expect(workflowsApi.listGenerations).not.toHaveBeenCalled();
+  });
+
+  it('opens the draft as a new workflow, saves it and marks the generation saved', async () => {
+    window.location.hash = '#/workflows/new?generation=G-1';
+    list(true);
+    m(workflowsApi.markGenerationSaved).mockResolvedValue({ ...generation, state: 'saved' });
+    render(<App />);
+    expect(await screen.findByLabelText('Workflow title')).toHaveValue('Generated flow');
+    expect(workflowsApi.getGeneration).toHaveBeenCalledWith('G-1');
+    await waitFor(() => expect(screen.getByLabelText('Workflow id')).toHaveValue('generated-flow'));
+    fireEvent.change(screen.getByLabelText('Workflow id'), { target: { value: 'gen-flow' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/workflows/gen-flow'));
+    expect(workflowsApi.createWorkflow).toHaveBeenCalledWith('gen-flow', draft);
+    await waitFor(() => expect(workflowsApi.markGenerationSaved).toHaveBeenCalledWith('G-1'));
+    expect(screen.queryByTestId('editor-notice')).toBeNull();
+  });
+
+  it('a failed saved-mark does not undo the save: a notice shows on the saved workflow', async () => {
+    window.location.hash = '#/workflows/new?generation=G-1';
+    list(true);
+    m(workflowsApi.markGenerationSaved).mockRejectedValue(new Error('gone'));
+    render(<App />);
+    await screen.findByLabelText('Workflow title');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByTestId('editor-notice')).toHaveTextContent('could not be closed (gone)');
+    expect(window.location.hash).toBe('#/workflows/generated-flow');
+    expect(screen.getByLabelText('Workflow title')).toHaveValue('Generated flow');
+  });
+
+  it('the generated draft counts as unsaved: Cancel asks, then leaves without touching the generation', async () => {
+    window.location.hash = '#/workflows/new?generation=G-1';
+    list(true);
+    render(<App />);
+    await screen.findByLabelText('Workflow title');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Discard changes' }));
+    await screen.findByTestId('workflow-row-wf');
+    expect(window.location.hash).toBe('#/workflows');
+    expect(workflowsApi.markGenerationSaved).not.toHaveBeenCalled();
+    expect(workflowsApi.discardGeneration).not.toHaveBeenCalled();
+  });
+
+  it('an unknown generation shows an error with a way back', async () => {
+    window.location.hash = '#/workflows/new?generation=G-404';
+    list(true);
+    const { ApiError } = jest.requireActual('../../src/api/http');
+    m(workflowsApi.getGeneration).mockRejectedValue(new ApiError(404, 'not found'));
+    render(<App />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('There is no generation G-404');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the list' }));
+    await screen.findByTestId('workflow-row-wf');
   });
 });

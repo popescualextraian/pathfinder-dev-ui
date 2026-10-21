@@ -154,6 +154,79 @@ describe('workflows API (e2e)', () => {
     });
   });
 
+  describe('generations', () => {
+    const base = '/api/workflows/generations';
+
+    it('routes /generations to its own controller, not to a workflow id', async () => {
+      expect((await api().get(base).expect(200)).body).toEqual([]);
+      expect((await api().get('/api/workflows/do-it').expect(200)).body.definition.id).toBe('do-it');
+    });
+
+    it('starts a generation, lists and gets it, and discards it; the view has no tokens or internals', async () => {
+      const started = record(await api().post(base).send({ description: 'Plan then implement', model: '' }).expect(201));
+      const id = started.body.id;
+      expect(id).toMatch(/^G-\d{8}-[a-z0-9]{8}$/);
+      expect(started.body).toEqual(expect.objectContaining({ description: 'Plan then implement', state: 'writing', taskId: expect.any(String) }));
+      expect(started.body).not.toHaveProperty('turn');
+      expect(started.body).not.toHaveProperty('outbox');
+
+      const list = record(await api().get(base).expect(200));
+      expect(list.body).toHaveLength(1);
+      expect(list.body[0]).toEqual(expect.objectContaining({ id, state: 'writing', hasDraft: false }));
+      expect(list.body[0]).not.toHaveProperty('draft');
+      expect((await api().get(`${base}/${id}`).expect(200)).body.id).toBe(id);
+
+      const discarded = await api().post(`${base}/${id}/discard`).expect(200);
+      expect(discarded.body.state).toBe('discarded');
+      expect((await api().get(base).expect(200)).body).toEqual([]);
+      expect((await api().get(`${base}/${id}`).expect(200)).body.state).toBe('discarded');
+      await api().post(`${base}/${id}/discard`).expect(409);
+      expect(sent.join('\n')).not.toContain(FAKE_OAUTH_TOKEN);
+      expect(sent.join('\n')).not.toContain(FAKE_GH_TOKEN);
+    });
+
+    it('answers 409 to changes and saved while the agent is still writing', async () => {
+      const id = (await api().post(base).send({ description: 'Flow' }).expect(201)).body.id;
+      await api().post(`${base}/${id}/changes`).send({ text: 'More' }).expect(409);
+      await api().post(`${base}/${id}/saved`).expect(409);
+    });
+
+    it('answers 404 for an unknown id, 400 for a malformed id and bad bodies', async () => {
+      const unknown = `${base}/G-20200101-abcdefgh`;
+      await api().get(unknown).expect(404);
+      await api().post(`${unknown}/discard`).expect(404);
+      await api().post(`${unknown}/saved`).expect(404);
+      await api().post(`${unknown}/changes`).send({ text: 'x' }).expect(404);
+      await api().get(`${base}/..%2Fx`).expect(400);
+      await api().get(`${base}/nope`).expect(400);
+      await api().post(base).send({}).expect(400);
+      await api().post(base).send({ description: '' }).expect(400);
+      await api().post(base).send({ description: '   ' }).expect(400);
+      await api().post(base).send({ description: 'x'.repeat(4001) }).expect(400);
+      await api().post(base).send({ description: 'x', model: 5 }).expect(400);
+      const id = (await api().post(base).send({ description: 'Flow' }).expect(201)).body.id;
+      await api().post(`${base}/${id}/changes`).send({}).expect(400);
+      await api().post(`${base}/${id}/changes`).send({ text: '' }).expect(400);
+    });
+
+    it('answers 403 to every route when the folder is not writable', async () => {
+      const dir = join(dataDir, 'workflows');
+      const id = (await api().post(base).send({ description: 'Flow' }).expect(201)).body.id;
+      chmodSync(dir, 0o555);
+      try {
+        if (process.getuid?.() === 0) return; // root ignores modes
+        await api().post(base).send({ description: 'x' }).expect(403);
+        await api().get(base).expect(403);
+        await api().get(`${base}/${id}`).expect(403);
+        await api().post(`${base}/${id}/changes`).send({ text: 'x' }).expect(403);
+        await api().post(`${base}/${id}/discard`).expect(403);
+        await api().post(`${base}/${id}/saved`).expect(403);
+      } finally {
+        chmodSync(dir, 0o755);
+      }
+    });
+  });
+
   it('starts a run on an item: task created, card moved, run stored; a second start is 409', async () => {
     const stream = openSse(app, '/api/workflow-runs/stream');
     await new Promise((resolve) => setTimeout(resolve, 100));

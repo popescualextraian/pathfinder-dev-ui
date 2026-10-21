@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { validateWorkflowDefinition, WorkflowDefinitionError } from './parse-workflow';
 import type { WorkflowErrorLocation } from './parse-workflow';
 import type { RefusedWorkflow, WorkflowDefinition } from './workflow-definition';
+import { WorkflowReadOnlyError } from './workflow-errors';
 import { WORKFLOW_DEFINITION_REPOSITORY } from './workflow-definition.repository';
 import type { StoredWorkflow, WorkflowDefinitionRepository } from './workflow-definition.repository';
 import { WORK_ITEMS } from './work-items';
@@ -29,6 +30,11 @@ export class WorkflowDefinitionsService {
   async list(): Promise<WorkflowDefinitionList> {
     const [{ definitions, refused, versions }, writable] = await Promise.all([this.defs.list(), this.defs.writable()]);
     return { definitions, refused, ...(versions !== undefined && { versions }), writable };
+  }
+
+  /** Throws WorkflowReadOnlyError (403) when the folder does not accept writes. */
+  async assertWritable(): Promise<void> {
+    if (!(await this.defs.writable())) throw new WorkflowReadOnlyError();
   }
 
   read(id: string): Promise<StoredWorkflow> {

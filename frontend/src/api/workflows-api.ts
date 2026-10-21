@@ -1,4 +1,7 @@
-import type { StoredWorkflow, WorkflowDefinition, WorkflowList, WorkflowRun, WorkflowValidationError } from './models';
+import type {
+  StoredWorkflow, WorkflowDefinition, WorkflowGenerationSummary, WorkflowGenerationView, WorkflowList, WorkflowRun,
+  WorkflowValidationError,
+} from './models';
 import { ApiError, postJson, request } from './http';
 
 const runUrl = (id: string) => `/api/workflow-runs/${encodeURIComponent(id)}`;
@@ -44,3 +47,16 @@ export const deleteRefusedWorkflow = (file: string, version: string) =>
   request<void>(`/api/workflows/refused/${encodeURIComponent(file)}?version=${encodeURIComponent(version)}`, {
     method: 'DELETE',
   });
+
+const genUrl = (id: string) => `/api/workflows/generations/${encodeURIComponent(id)}`;
+
+export const startGeneration = (description: string, model?: string) =>
+  postJson<WorkflowGenerationView>('/api/workflows/generations', model ? { description, model } : { description });
+/** Open generations (not saved or discarded), oldest first, without drafts. */
+export const listGenerations = () => request<WorkflowGenerationSummary[]>('/api/workflows/generations');
+export const getGeneration = (id: string) => request<WorkflowGenerationView>(genUrl(id));
+export const requestGenerationChanges = (id: string, text: string) =>
+  postJson<WorkflowGenerationView>(`${genUrl(id)}/changes`, { text });
+export const discardGeneration = (id: string) => postJson<WorkflowGenerationView>(`${genUrl(id)}/discard`);
+/** Marks the draft as saved (after the editor saved it) and closes the generator's task. */
+export const markGenerationSaved = (id: string) => postJson<WorkflowGenerationView>(`${genUrl(id)}/saved`);

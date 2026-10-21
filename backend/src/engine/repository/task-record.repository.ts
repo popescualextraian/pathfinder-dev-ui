@@ -31,6 +31,8 @@ export interface SessionRecord {
   lastMessageAt?: string;
 }
 
+export type TaskKind = 'workflow-generator';
+
 export interface TaskRecord {
   id: string;
   // Absent in records of older versions: derived from the prompt.
@@ -41,6 +43,8 @@ export interface TaskRecord {
   repoUrl: string;
   repoRef?: string;
   model?: string;
+  // What the task is for; absent for ordinary tasks.
+  kind?: TaskKind;
   branch: string;
   containerName: string;
   bridgeUrl?: string;

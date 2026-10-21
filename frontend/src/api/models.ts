@@ -58,6 +58,8 @@ export interface Task {
   repoUrl: string;
   repoRef?: string;
   model?: string;
+  /** What the task is for; absent for ordinary tasks. */
+  kind?: TaskKind;
   branch: string;
   state: TaskState;
   reason?: string;
@@ -73,6 +75,8 @@ export interface Task {
   closedAt?: string;
   cost?: TaskCost;
 }
+
+export type TaskKind = 'workflow-generator';
 
 export interface StartTaskRequest {
   prompt: string;
@@ -251,3 +255,38 @@ export interface WorkflowRun {
   updatedAt: string;
   finishedAt?: string;
 }
+
+export type WorkflowGenerationState = 'writing' | 'asking' | 'fixing' | 'ready' | 'failed' | 'saved' | 'discarded';
+
+export interface WorkflowGenerationQuestion {
+  id: string;
+  /** Session the question belongs to (the generator's `main`). */
+  session: string;
+  text: string;
+  options: string[];
+  recommendation?: string | null;
+  asked: string;
+}
+
+/** One generation of a workflow by an agent. `draft` is only on the full view (ready: a valid definition; failed: the last parsed mapping). */
+export interface WorkflowGenerationView {
+  id: string;
+  taskId: string;
+  description: string;
+  model?: string;
+  state: WorkflowGenerationState;
+  /** Fixes sent in the current round. */
+  attempts: number;
+  draft?: WorkflowDefinition | Record<string, unknown>;
+  errors?: WorkflowValidationError[];
+  failureReason?: string;
+  warning?: string;
+  question?: WorkflowGenerationQuestion;
+  lastMessage?: string;
+  cost?: TaskCost;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+}
+
+export type WorkflowGenerationSummary = Omit<WorkflowGenerationView, 'draft'> & { hasDraft: boolean };

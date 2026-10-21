@@ -196,6 +196,26 @@ describe('workflows route', () => {
     expect(buildHash(parseHash('#/workflows/two'))).toBe('#/workflows/two');
     expect(buildHash(parseHash('#/workflows/new?from=a%20b'))).toBe('#/workflows/new?from=a%20b');
   });
+
+  it('parses and builds a new workflow from a generation', () => {
+    expect(parseHash('#/workflows/new?generation=G-1')).toMatchObject({ view: 'workflows', workflow: 'new', generation: 'G-1' });
+    expect(parseHash('#/workflows/new?generation=G-1').from).toBeUndefined();
+    expect(parseHash('#/workflows/two?generation=G-1').generation).toBeUndefined();
+    expect(buildHash(parseHash('#/workflows/new?generation=G%201'))).toBe('#/workflows/new?generation=G%201');
+    expect(buildHash({ ...parseHash('#/workflows'), workflow: 'new', generation: 'G-2' })).toBe('#/workflows/new?generation=G-2');
+  });
+
+  it('useRoute exposes the generation (null when absent) and selectView drops it', () => {
+    window.location.hash = '#/workflows/new?generation=G-1';
+    const route = renderHook(() => useRoute());
+    expect(route.result.current.generation).toBe('G-1');
+    act(() => route.result.current.selectView('workflows'));
+    expect(window.location.hash).toBe('#/workflows');
+    act(() => {
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect(route.result.current.generation).toBeNull();
+  });
 });
 
 describe('useLeaveGuard', () => {

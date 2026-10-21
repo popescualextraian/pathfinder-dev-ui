@@ -1,5 +1,6 @@
 import { BadGatewayException, NotFoundException } from '@nestjs/common';
-import { SessionView, TaskUpdates, TaskView } from '../../../../src/engine';
+import { SessionView, TaskUpdates, TaskView, WorktreeFileTooLargeError } from '../../../../src/engine';
+import { WorkflowFileTooLargeError } from '../../../../src/workflow';
 import { EngineWorkflowTasks } from '../../../../src/integration/workflow/engine-workflow-tasks';
 
 function session(name: string, patch: Partial<SessionView> = {}): SessionView {
@@ -21,6 +22,8 @@ function make() {
     prompt: jest.fn().mockResolvedValue(view()),
     get: jest.fn().mockResolvedValue(view()),
     hasFiles: jest.fn().mockResolvedValue({ 'a.md': true }),
+    readFile: jest.fn().mockResolvedValue('text'),
+    close: jest.fn().mockResolvedValue(view({ closed: true })),
   };
   const updates = new TaskUpdates();
   return { tasks, updates, adapter: new EngineWorkflowTasks(tasks as never, updates) };
@@ -31,6 +34,12 @@ describe('EngineWorkflowTasks', () => {
     const { tasks, adapter } = make();
     expect(await adapter.start({ title: '#7 Fix it', prompt: 'Plan #7', model: 'sonnet' })).toBe('T-20261020-abcd');
     expect(tasks.start).toHaveBeenCalledWith({ title: '#7 Fix it', prompt: 'Plan #7', model: 'sonnet' });
+  });
+
+  it('passes the kind to the engine when given', async () => {
+    const { tasks, adapter } = make();
+    await adapter.start({ title: 't', prompt: 'p', kind: 'workflow-generator' });
+    expect(tasks.start).toHaveBeenCalledWith({ title: 't', prompt: 'p', kind: 'workflow-generator' });
   });
 
   it('leaves the model out when none is given', async () => {
@@ -61,11 +70,32 @@ describe('EngineWorkflowTasks', () => {
     expect(await adapter.get('T-20261020-abcd')).toEqual({
       id: 'T-20261020-abcd', state: 'running', branch: 'agentic/T-20261020-abcd',
       sessions: [
-        { name: 'main', state: 'idle', openQuestions: 0, lastMessageAt: '2026-10-20T10:05:00.000Z' },
+        { name: 'main', state: 'idle', openQuestions: 0, lastMessageAt: '2026-10-20T10:05:00.000Z', lastMessage: 'secret-ish text' },
         { name: 'impl', state: 'waiting', openQuestions: 2 },
       ],
     });
     expect(tasks.get).toHaveBeenCalledWith('T-20261020-abcd');
+  });
+
+  it('gives the open questions oldest first and the cost figures', async () => {
+    const { tasks, adapter } = make();
+    tasks.get.mockResolvedValue(view({
+      state: 'waiting',
+      questions: [
+        { id: 'q2', source: 'ask', text: 'Later?', options: [], recommendation: null, asked: '2026-10-20T10:02:00.000Z', session: 'main' },
+        { id: 'q1', source: 'ask', text: 'Which lanes?', options: ['a', 'b'], recommendation: 'a', asked: '2026-10-20T10:01:00.000Z', session: 'main' },
+      ],
+      cost: {
+        input: 1, output: 2, cacheRead: 3, cacheWrite: 4, usd: { estimate: 0.5 }, sessions: 1,
+        snapshotAt: '2026-10-20T10:00:00.000Z', readAt: '2026-10-20T10:00:01.000Z',
+      },
+    }));
+    const snap = await adapter.get('T-1');
+    expect(snap?.questions).toEqual([
+      { id: 'q1', session: 'main', text: 'Which lanes?', options: ['a', 'b'], recommendation: 'a', asked: '2026-10-20T10:01:00.000Z' },
+      { id: 'q2', session: 'main', text: 'Later?', options: [], asked: '2026-10-20T10:02:00.000Z' },
+    ]);
+    expect(snap?.cost).toEqual({ input: 1, output: 2, cacheRead: 3, cacheWrite: 4, usd: { estimate: 0.5 } });
   });
 
   it('gives the reason of a failed or stopped task', async () => {
@@ -102,6 +132,32 @@ describe('EngineWorkflowTasks', () => {
     const { tasks, adapter } = make();
     expect(await adapter.hasFiles('T-1', ['a.md'])).toEqual({ 'a.md': true });
     expect(tasks.hasFiles).toHaveBeenCalledWith('T-1', ['a.md']);
+  });
+
+  it('passes readFile through', async () => {
+    const { tasks, adapter } = make();
+    expect(await adapter.readFile('T-1', 'a.yaml')).toBe('text');
+    expect(tasks.readFile).toHaveBeenCalledWith('T-1', 'a.yaml');
+  });
+
+  it('turns a file over the cap into the package error and passes other read errors on', async () => {
+    const { tasks, adapter } = make();
+    tasks.readFile.mockRejectedValue(new WorktreeFileTooLargeError('a.yaml', 'T-1', 64 * 1024));
+    const error: unknown = await adapter.readFile('T-1', 'a.yaml').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WorkflowFileTooLargeError);
+    expect((error as Error).message).toBe('a.yaml is larger than 64 KB');
+    tasks.readFile.mockRejectedValue(new Error('docker 500'));
+    await expect(adapter.readFile('T-1', 'a.yaml')).rejects.toThrow('docker 500');
+  });
+
+  it('closes a task; a task that is gone is fine, other errors are passed on', async () => {
+    const { tasks, adapter } = make();
+    await adapter.close('T-1');
+    expect(tasks.close).toHaveBeenCalledWith('T-1');
+    tasks.close.mockRejectedValue(new NotFoundException('Task T-1 not found'));
+    await expect(adapter.close('T-1')).resolves.toBeUndefined();
+    tasks.close.mockRejectedValue(new Error('docker'));
+    await expect(adapter.close('T-1')).rejects.toThrow('docker');
   });
 
   it('turns task changes and removals into task ids', () => {

@@ -6,8 +6,8 @@ import {
   BRIDGE_CLIENT_FACTORY, BridgeClient, AddSessionInput as BridgeAddSessionInput, AnswerInput, BridgeClientFactory, BridgeError, BridgeEvent, BridgeStatus,
   BridgeUnreachableError, waitForStatus,
 } from './bridge-client';
-import { TASK_LAUNCHER, TaskLauncher } from './task-launcher';
-import { RecordPatch, TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
+import { TASK_LAUNCHER, TaskLauncher, WORKTREE_FILE_MAX_BYTES } from './task-launcher';
+import { RecordPatch, TaskKind, TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
 import { repoNameOf } from '../../commons/repo-name';
 import { TaskCostService } from './cost/task-cost.service';
 import { TaskUpdates } from './task-updates';
@@ -15,6 +15,7 @@ import { hasSession, Live, MAIN_SESSION, mergeSessions, titleFrom, toView, TaskV
 
 
 export type { TaskView } from './task-view';
+export type { TaskKind } from '../repository/task-record.repository';
 
 export interface StartTaskInput {
   prompt: string;
@@ -24,6 +25,8 @@ export interface StartTaskInput {
   repoUrl?: string;
   repoRef?: string;
   model?: string;
+  // Set by code that starts tasks for a purpose; the public API does not accept it.
+  kind?: TaskKind;
 }
 
 export interface AddSessionInput {
@@ -277,6 +280,7 @@ export class TasksService {
     };
     if (input.repoRef !== undefined) record.repoRef = input.repoRef;
     if (input.model !== undefined) record.model = input.model;
+    if (input.kind !== undefined) record.kind = input.kind;
 
     // Record first: a crash between launch and save would orphan a container.
     await this.records.create(record);
@@ -383,6 +387,13 @@ export class TasksService {
     assertWorktreePaths(paths);
     const record = await this.require(id);
     return this.launcher.hasFiles(record.id, paths);
+  }
+
+  // Text of one worktree file or null when missing; larger than maxBytes (default 64 KB) is an error. Works on a stopped task.
+  async readFile(id: string, path: string, maxBytes: number = WORKTREE_FILE_MAX_BYTES): Promise<string | null> {
+    assertWorktreePaths([path]);
+    const record = await this.require(id);
+    return this.launcher.readFile(record.id, path, maxBytes);
   }
 
   private async require(id: string): Promise<TaskRecord> {

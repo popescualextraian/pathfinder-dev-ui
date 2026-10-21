@@ -12,6 +12,8 @@ export interface Route {
   workflow?: string;
   /** Workflows view, `new`: the definition to copy (`#/workflows/new?from=<id>`). */
   from?: string;
+  /** Workflows view, `new`: the generation whose draft to open (`#/workflows/new?generation=<id>`). */
+  generation?: string;
   /** Selected board item (`#/backlog?item=<id>`); absent when none. */
   item?: string;
 }
@@ -44,8 +46,11 @@ export function parseHash(hash: string): Route {
       } catch {
         return out;
       }
-      const from = q >= 0 ? new URLSearchParams(raw.slice(q + 1)).get('from') : null;
+      const params = new URLSearchParams(q >= 0 ? raw.slice(q + 1) : '');
+      const from = params.get('from');
+      const generation = params.get('generation');
       if (out.workflow === 'new' && from) out.from = from;
+      else if (out.workflow === 'new' && generation) out.generation = generation;
     }
     return out;
   }
@@ -72,7 +77,9 @@ export function buildHash(route: Route): string {
   if (route.view === 'workflows') {
     if (!route.workflow) return '#/workflows';
     const base = `#/workflows/${encodeURIComponent(route.workflow)}`;
-    return route.workflow === 'new' && route.from ? `${base}?from=${encodeURIComponent(route.from)}` : base;
+    if (route.workflow === 'new' && route.from) return `${base}?from=${encodeURIComponent(route.from)}`;
+    if (route.workflow === 'new' && route.generation) return `${base}?generation=${encodeURIComponent(route.generation)}`;
+    return base;
   }
   let hash = '#';
   if (route.repository) {
@@ -126,12 +133,18 @@ export function useRoute() {
   );
   const selectView = useCallback(
     (view: 'tasks' | 'backlog' | 'workflows') =>
-      navigate({ ...parseHash(window.location.hash), view, workflow: undefined, from: undefined }),
+      navigate({ ...parseHash(window.location.hash), view, workflow: undefined, from: undefined, generation: undefined }),
     [navigate],
   );
   const selectWorkflow = useCallback(
     (workflow: string | null, from?: string) =>
-      navigate({ ...parseHash(window.location.hash), view: 'workflows', workflow: workflow ?? undefined, from }),
+      navigate({
+        ...parseHash(window.location.hash),
+        view: 'workflows',
+        workflow: workflow ?? undefined,
+        from,
+        generation: undefined,
+      }),
     [navigate],
   );
 
@@ -153,6 +166,7 @@ export function useRoute() {
     selectWorkflow,
     workflow: route.workflow ?? null,
     from: route.from ?? null,
+    generation: route.generation ?? null,
   };
 }
 

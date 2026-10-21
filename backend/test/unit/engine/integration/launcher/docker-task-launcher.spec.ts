@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../../../src/commons/engine-config';
 import { DockerTaskLauncher } from '../../../../../src/engine/integration/launcher/docker-task-launcher';
 import { gitCredentialEnv } from '../../../../../src/engine/integration/launcher/git-credential-env';
-import { LEDGER_MAX_BYTES, LaunchSpec } from '../../../../../src/engine/service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchSpec, WorktreeFileTooLargeError } from '../../../../../src/engine/service/task-launcher';
 
 const OAUTH = 'made-up-oauth-token-xxxx';
 const GH = 'made-up-gh-token-yyyy';
@@ -260,11 +260,11 @@ describe('DockerTaskLauncher start, stop, remove, inspect, countRunning', () => 
 });
 
 // A tar of one file, as `docker cp` / getArchive returns it: 512-byte header, content padded to 512, two zero blocks.
-function tarOf(name: string, content: Buffer, declaredSize = content.length): Buffer {
+function tarOf(name: string, content: Buffer, declaredSize = content.length, flag = '0'): Buffer {
   const header = Buffer.alloc(512);
   header.write(name, 0, 'utf8');
   header.write(declaredSize.toString(8).padStart(11, '0') + '\0', 124, 'ascii');
-  header.write('0', 156, 'ascii');
+  header.write(flag, 156, 'ascii');
   const padding = Buffer.alloc((512 - (content.length % 512)) % 512);
   return Buffer.concat([header, content, padding, Buffer.alloc(1024)]);
 }
@@ -319,6 +319,54 @@ describe('DockerTaskLauncher.readLedger', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('T-1'));
     expect(stream.destroyed).toBe(true);
     warn.mockRestore();
+  });
+});
+
+describe('DockerTaskLauncher.readFile', () => {
+  const archive = (buffer: Buffer) => Readable.from([buffer.subarray(0, 700), buffer.subarray(700)]);
+
+  it('reads the file from the task worktree /work/.worktrees/<id>', async () => {
+    const { launcher, docker, container } = setup();
+    const text = 'name: x\n'.repeat(100);
+    container.getArchive.mockResolvedValue(archive(tarOf('workflow-draft.yaml', Buffer.from(text))));
+    await expect(launcher.readFile('T-1', 'workflow-draft.yaml', 65536)).resolves.toBe(text);
+    expect(docker.getContainer).toHaveBeenCalledWith('agentic-ui-task-T-1');
+    expect(container.getArchive).toHaveBeenCalledWith({ path: '/work/.worktrees/T-1/workflow-draft.yaml' });
+  });
+
+  it('returns null on 404 and rethrows other docker errors', async () => {
+    const { launcher, container } = setup();
+    container.getArchive.mockRejectedValue(dockerError(404));
+    await expect(launcher.readFile('T-1', 'a.yaml', 100)).resolves.toBeNull();
+    container.getArchive.mockRejectedValue(dockerError(500));
+    await expect(launcher.readFile('T-1', 'a.yaml', 100)).rejects.toThrow('docker 500');
+  });
+
+  it('throws when the file is over maxBytes, without reading it', async () => {
+    const { launcher, container } = setup();
+    const stream = archive(tarOf('a.yaml', Buffer.alloc(10), 101));
+    container.getArchive.mockResolvedValue(stream);
+    const error: unknown = await launcher.readFile('T-1', 'a.yaml', 100).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WorktreeFileTooLargeError);
+    expect((error as Error).message).toMatch(/over 100 bytes/);
+    expect(stream.destroyed).toBe(true);
+  });
+
+  it('refuses a directory or symlink as the first entry instead of returning an inner file', async () => {
+    const { launcher, container } = setup();
+    const dir = tarOf('plans/', Buffer.alloc(0), 0, '5').subarray(0, 512);
+    const inner = tarOf('plans/a.yaml', Buffer.from('x'));
+    container.getArchive.mockResolvedValue(archive(Buffer.concat([dir, inner])));
+    await expect(launcher.readFile('T-1', 'plans', 100)).rejects.toThrow('not a regular file');
+    container.getArchive.mockResolvedValue(archive(tarOf('link.yaml', Buffer.alloc(0), 0, '2')));
+    await expect(launcher.readFile('T-1', 'link.yaml', 100)).rejects.toThrow('not a regular file');
+  });
+
+  it('refuses .. and absolute paths before calling docker', async () => {
+    const { launcher, container } = setup();
+    await expect(launcher.readFile('T-1', '../etc/passwd', 100)).rejects.toThrow(BadRequestException);
+    await expect(launcher.readFile('T-1', '/etc/passwd', 100)).rejects.toThrow(BadRequestException);
+    expect(container.getArchive).not.toHaveBeenCalled();
   });
 });
 

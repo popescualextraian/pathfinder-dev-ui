@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { RefusedWorkflow, WorkflowSummary } from '../api/models';
 import { Button } from './Button';
 import { ConfirmDialog } from './Dialog';
@@ -15,11 +15,15 @@ interface Props {
   /** With the version the list loaded; resolves with null when deleted, else the error message. */
   onDelete: (id: string, version?: string) => Promise<string | null>;
   onDeleteRefused: (file: string, version: string) => Promise<string | null>;
+  /** Shown above the list (the AI generations; only given when the folder is writable). */
+  generations?: ReactNode;
 }
 
 type Pending = { kind: 'workflow'; id: string; title: string; version?: string } | { kind: 'file'; file: string; version: string };
 
-export function WorkflowList({ definitions, refused, writable, onNew, onEdit, onDuplicate, onDelete, onDeleteRefused }: Props) {
+export function WorkflowList({
+  definitions, refused, writable, onNew, onEdit, onDuplicate, onDelete, onDeleteRefused, generations,
+}: Props) {
   const [pending, setPending] = useState<Pending | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +55,7 @@ export function WorkflowList({ definitions, refused, writable, onNew, onEdit, on
           {error}
         </p>
       )}
+      {generations}
       {definitions.length === 0 && refused.length === 0 && <p className={styles.empty}>No workflows yet.</p>}
       <ul className={styles.rows}>
         {definitions.map((d) => (

@@ -26,7 +26,7 @@ test.afterEach(async ({ request }) => {
 
 test('a workflow with a continue step and a fork step, made in the editor, runs through', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Workflows' }).click();
+  await page.getByRole('button', { name: 'Workflows', exact: true }).click();
   await page.getByRole('button', { name: 'New workflow' }).click();
   await page.getByLabel('Workflow title').fill(title);
   await expect(page.getByLabel('Workflow id')).toHaveValue(id);

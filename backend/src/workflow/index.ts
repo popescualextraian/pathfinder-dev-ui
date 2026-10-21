@@ -9,7 +9,8 @@ export { WORK_ITEMS } from './service/work-items';
 export type { WorkItem, WorkItems } from './service/work-items';
 export { WORKFLOW_TASKS } from './service/workflow-tasks';
 export type {
-  TaskChanges, WorkflowSessionSnapshot, WorkflowSessionStart, WorkflowTaskSnapshot, WorkflowTaskStart, WorkflowTaskState, WorkflowTasks,
+  TaskChanges, WorkflowSessionSnapshot, WorkflowSessionStart, WorkflowTaskCost, WorkflowTaskQuestion, WorkflowTaskSnapshot, WorkflowTaskStart,
+  WorkflowTaskState, WorkflowTasks,
 } from './service/workflow-tasks';
 export { WORKFLOW_DEFINITION_REPOSITORY } from './service/workflow-definition.repository';
 export type { StoredWorkflow, WorkflowDefinitionRepository } from './service/workflow-definition.repository';
@@ -21,7 +22,9 @@ export type { RunPhase, RunSession, RunSessionStatus, RunState, WorkflowRun, Wor
 export { WORKFLOW_RUN_REPOSITORY } from './service/workflow-run.repository';
 export type { WorkflowRunRepository } from './service/workflow-run.repository';
 export { WorkflowRunFileRepository } from './repository/workflow-run-file.repository';
-export { WorkflowConflictError, WorkflowInvalidError, WorkflowNotFoundError, WorkflowReadOnlyError } from './service/workflow-errors';
+export {
+  WorkflowConflictError, WorkflowFileTooLargeError, WorkflowInvalidError, WorkflowNotFoundError, WorkflowReadOnlyError,
+} from './service/workflow-errors';
 export { WORKFLOW_RETRY_DELAYS, WorkflowRunner } from './service/workflow-runner';
 export type { RetryDelays } from './service/workflow-runner';
 export { WorkflowDefinitionsService } from './service/workflow-definitions.service';
@@ -29,3 +32,14 @@ export type { WorkflowDefinitionList, WorkflowValidationError } from './service/
 export { WorkflowRunUpdates } from './service/workflow-run-updates';
 export { WorkflowServiceModule } from './service/workflow-service.module';
 export type { WorkflowServiceModuleOptions } from './service/workflow-service.module';
+export { WorkflowGenerationFileRepository } from './repository/workflow-generation-file.repository';
+export { WORKFLOW_GENERATION_REPOSITORY } from './service/generator/workflow-generation.repository';
+export type { WorkflowGenerationRepository } from './service/generator/workflow-generation.repository';
+export { GENERATION_ID, isOpenGeneration, MAX_FIX_ATTEMPTS, OPEN_GENERATION_STATES } from './service/generator/workflow-generation';
+export type {
+  GenerationState, WorkflowGeneration, WorkflowGenerationSummary, WorkflowGenerationView,
+} from './service/generator/workflow-generation';
+export {
+  GENERATION_RETENTION_MS, MAX_DESCRIPTION_LENGTH, WORKFLOW_GENERATOR_CLOCK, WorkflowGenerator,
+} from './service/generator/workflow-generator';
+export { DRAFT_FILE } from './service/generator/generator-prompts';

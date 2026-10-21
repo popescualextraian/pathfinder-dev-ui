@@ -18,6 +18,8 @@ interface Props {
   leaving?: boolean;
   onLeave?: () => void;
   onStay?: () => void;
+  /** A line to show above the editor (e.g. a generation could not be closed after the save). */
+  notice?: string | null;
 }
 
 const PROMPT_LINE_MAX = 60;
@@ -28,7 +30,7 @@ export function promptLine(prompt: string): string {
   return line.length > PROMPT_LINE_MAX ? `${line.slice(0, PROMPT_LINE_MAX - 1).trimEnd()}…` : line;
 }
 
-export function WorkflowEditor({ editor, lanes, onClose, onSaved, leaving = false, onLeave, onStay }: Props) {
+export function WorkflowEditor({ editor, lanes, onClose, onSaved, leaving = false, onLeave, onStay, notice }: Props) {
   const { draft, validationError: error, readOnly } = editor;
   const [selected, setSelected] = useState<number | null>(0);
   const [asking, setAsking] = useState<'cancel' | 'delete-step' | null>(null);
@@ -82,6 +84,11 @@ export function WorkflowEditor({ editor, lanes, onClose, onSaved, leaving = fals
         </div>
       </header>
 
+      {notice && (
+        <p className={styles.notice} role="status" data-testid="editor-notice">
+          {notice}
+        </p>
+      )}
       {readOnly && (
         <p className={styles.notice} role="status">
           The workflows folder is read-only: this definition cannot be changed.

@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../commons/engine-config';
 import { assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from './git-credential-env';
-import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
 
 const BRIDGE_PORT = 8765;
 const STOP_TIMEOUT_SECONDS = 10;
@@ -33,6 +33,7 @@ async function firstTarFile(stream: Readable, maxBytes: number): Promise<Buffer 
       if (!(size <= maxBytes)) { stream.destroy(); return 'too-large'; }
       const flag = String.fromCharCode(buf[pos + 156] || 48);
       if (buf.length < pos + 512 + size) break;
+      if (flag === '5' || flag === '2' || flag === '1') throw new Error('not a regular file');
       if (flag === '0') return buf.subarray(pos + 512, pos + 512 + size);
       pos += 512 + Math.ceil(size / 512) * 512;
     }
@@ -154,6 +155,20 @@ export class DockerTaskLauncher implements TaskLauncher {
       }
     }
     return result;
+  }
+
+  async readFile(taskId: string, path: string, maxBytes: number): Promise<string | null> {
+    assertWorktreePaths([path]);
+    let file: Buffer | 'too-large';
+    try {
+      const stream = (await this.docker.getContainer(this.name(taskId)).getArchive({ path: `/work/.worktrees/${taskId}/${path}` })) as unknown as Readable;
+      file = await firstTarFile(stream, maxBytes);
+    } catch (error) {
+      if (hasStatus(error, 404)) return null;
+      throw error;
+    }
+    if (file === 'too-large') throw new WorktreeFileTooLargeError(path, taskId, maxBytes);
+    return file.toString('utf8');
   }
 
   private name(taskId: string): string {

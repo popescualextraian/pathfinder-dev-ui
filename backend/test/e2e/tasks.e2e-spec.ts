@@ -69,6 +69,12 @@ describe('tasks REST API (e2e)', () => {
       expect(bridge.requests[0].auth).toBe(`Bearer ${launcher.specs[0].taskToken}`);
     });
 
+    it('ignores a kind sent by a client', async () => {
+      const res = await start({ prompt: 'p', kind: 'workflow-generator' });
+      expect(res.status).toBe(201);
+      expect(res.body).not.toHaveProperty('kind');
+    });
+
     it('takes an explicit https repository', async () => {
       const res = await start({ prompt: 'p', repoUrl: 'https://github.com/other/repo.git' });
       expect(res.status).toBe(201);

@@ -27,3 +27,11 @@ export class WorkflowReadOnlyError extends Error {
     this.name = 'WorkflowReadOnlyError';
   }
 }
+
+/** A worktree file read through WorkflowTasks.readFile is larger than the cap (64 KB). */
+export class WorkflowFileTooLargeError extends Error {
+  constructor(message = 'The file is too large') {
+    super(message);
+    this.name = 'WorkflowFileTooLargeError';
+  }
+}

@@ -77,6 +77,13 @@ describe('toView', () => {
   });
 });
 
+describe('toView kind', () => {
+  it('carries the kind and omits it when absent', () => {
+    expect(toView(record({ kind: 'workflow-generator' })).kind).toBe('workflow-generator');
+    expect('kind' in toView(record())).toBe(false);
+  });
+});
+
 describe('toView sessions', () => {
   it('shows an older record as one main session built from the record', () => {
     const view = toView(record({ model: 'm', lastState: 'idle', lastMessage: 'hi', lastMessageAt: '2026-01-01T01:00:00.000Z' }));

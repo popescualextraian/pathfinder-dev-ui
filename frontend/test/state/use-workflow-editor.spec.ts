@@ -243,3 +243,67 @@ describe('useWorkflowEditor', () => {
     expect(result.current.draft.title).toBe('WF');
   });
 });
+
+describe('useWorkflowEditor: generated', () => {
+  const generation = (over: Record<string, unknown> = {}) => ({
+    id: 'G-1', taskId: 'T-1', description: 'd', state: 'ready', attempts: 0,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+    draft: { title: 'Plan and build', steps: [{ id: 'plan', title: 'Plan', gate: 'human', prompt: 'go' }] },
+    ...over,
+  });
+  const open = async (over: Record<string, unknown> = {}) => {
+    m(api.getGeneration).mockResolvedValue(generation(over));
+    const hook = renderHook(() => useWorkflowEditor({ kind: 'generated', id: 'G-1' }));
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    return hook;
+  };
+
+  it('opens a ready draft as a new, unsaved (dirty) workflow with the id proposed from the title', async () => {
+    const { result } = await open();
+    expect(api.getGeneration).toHaveBeenCalledWith('G-1');
+    expect(result.current).toMatchObject({ loadError: null, isNew: true, dirty: true, version: null, id: 'plan-and-build' });
+    expect(result.current.draft.steps).toEqual([{ id: 'plan', title: 'Plan', gate: 'human', prompt: 'go' }]);
+    act(() => result.current.setId('mine'));
+    expect(result.current.id).toBe('mine');
+  });
+
+  it('validates the loaded draft as usual', async () => {
+    m(api.validateWorkflow).mockResolvedValue([{ message: 'title is empty', field: 'title' }]);
+    const { result } = await open({ state: 'failed', draft: { steps: [{ title: 'Plan' }] } });
+    expect(result.current.draft).toEqual({ title: '', steps: [{ id: 'plan', title: 'Plan', gate: 'human', prompt: '' }] });
+    await waitFor(() => expect(result.current.validationError).toEqual({ message: 'title is empty', field: 'title' }));
+    expect(result.current.canSave).toBe(false);
+  });
+
+  it('save creates the workflow and leaves it clean', async () => {
+    m(api.createWorkflow).mockImplementation((id, definition) => Promise.resolve({ definition: { id, ...definition }, version: 'v1' }));
+    const { result } = await open();
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.save();
+    });
+    expect(ok).toBe(true);
+    expect(api.createWorkflow).toHaveBeenCalledWith('plan-and-build', {
+      title: 'Plan and build',
+      steps: [{ id: 'plan', title: 'Plan', gate: 'human', prompt: 'go' }],
+    });
+    expect(result.current).toMatchObject({ isNew: false, dirty: false, version: 'v1' });
+  });
+
+  it.each([
+    [{ state: 'writing', draft: undefined }, 'not ready yet'],
+    [{ state: 'failed', draft: undefined }, 'failed without a draft'],
+    [{ state: 'saved' }, 'already saved'],
+    [{ state: 'discarded' }, 'was discarded'],
+  ])('refuses a generation without a draft to open (%o)', async (over, text) => {
+    const { result } = await open(over);
+    expect(result.current.loadError).toContain(text);
+  });
+
+  it('an unknown generation is a clear load error', async () => {
+    m(api.getGeneration).mockRejectedValue(new ApiError(404, 'Generation G-9 not found'));
+    const { result } = renderHook(() => useWorkflowEditor({ kind: 'generated', id: 'G-9' }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.loadError).toBe('There is no generation G-9 (it may have been saved or discarded).');
+  });
+});

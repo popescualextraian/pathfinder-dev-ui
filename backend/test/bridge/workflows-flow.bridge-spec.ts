@@ -113,6 +113,8 @@ describeWithBridge('workflow run flow against the local launcher and the real br
     expect(r.sessions.main.status).toBe('done');
     expect(await lane(itemId)).toBe('review');
     expect(await launcher.hasFiles(started.taskId, [`plans/${itemId}.md`])).toEqual({ [`plans/${itemId}.md`]: true });
+    expect(await launcher.readFile(started.taskId, `plans/${itemId}.md`, 65536)).not.toBeNull();
+    expect(await launcher.readFile(started.taskId, 'no-such-file.md', 65536)).toBeNull();
     const view = (await api().get(`/api/tasks/${started.taskId}`).expect(200)).body;
     expect(view.sessions.map((s: { name: string }) => s.name)).toEqual(['main', 'review']);
 

@@ -3,6 +3,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { AdvanceRunDto } from '../../../../src/api/workflows/dto/advance-run.dto';
 import { RunsQueryDto } from '../../../../src/api/workflows/dto/runs-query.dto';
+import { StartGenerationDto } from '../../../../src/api/workflows/dto/workflow-generation.dto';
 import { StartRunDto } from '../../../../src/api/workflows/dto/start-run.dto';
 import { CreateWorkflowDto, UpdateWorkflowDto, ValidateWorkflowDto, VersionQueryDto } from '../../../../src/api/workflows/dto/workflow-definition.dto';
 
@@ -77,5 +78,15 @@ describe('workflow definition DTOs', () => {
     expect(await errorsOf(UpdateWorkflowDto, { definition })).toContain('version');
     expect(await errorsOf(VersionQueryDto, {})).toContain('version');
     expect(await errorsOf(VersionQueryDto, { version: 'v' })).toEqual([]);
+  });
+});
+
+describe('StartGenerationDto model', () => {
+  it.each([undefined, '', 'opus', 'claude-sonnet-4-5', 'x'.repeat(100)])('accepts model %p', async (model) => {
+    expect(await errorsOf(StartGenerationDto, { description: 'd', model })).toEqual([]);
+  });
+
+  it.each(['a b', 'm;x', '-x', 'x'.repeat(101), 5])('rejects model %p', async (model) => {
+    expect(await errorsOf(StartGenerationDto, { description: 'd', model })).toContain('model');
   });
 });

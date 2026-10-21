@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../api/http';
-import type { WorkflowDefinition, WorkflowValidationError } from '../api/models';
+import type { WorkflowDefinition, WorkflowGenerationView, WorkflowValidationError } from '../api/models';
 import {
   createWorkflow,
+  getGeneration,
   readWorkflow,
   updateWorkflow,
   validateWorkflow,
 } from '../api/workflows-api';
 import {
+  draftFromGenerated,
   duplicateDraft,
   isSameDefinition,
   newDraft,
@@ -17,18 +19,38 @@ import {
   toWire,
 } from './workflow-draft';
 
-export type EditorSource = { kind: 'new' } | { kind: 'edit'; id: string } | { kind: 'duplicate'; id: string };
+/** `generated`: the draft of a workflow generation (by its id), opened as a new workflow. */
+export type EditorSource =
+  | { kind: 'new' }
+  | { kind: 'edit'; id: string }
+  | { kind: 'duplicate'; id: string }
+  | { kind: 'generated'; id: string };
 
 export const VALIDATE_DELAY_MS = 400;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** Why a generation's draft cannot be opened; null when it can (ready, or failed with the last parsed file). */
+function generationRefusal(g: WorkflowGenerationView): string | null {
+  if (g.draft !== undefined && (g.state === 'ready' || g.state === 'failed')) return null;
+  switch (g.state) {
+    case 'saved':
+      return 'This generation was already saved.';
+    case 'discarded':
+      return 'This generation was discarded.';
+    case 'failed':
+      return 'This generation failed without a draft to open.';
+    default:
+      return 'The draft of this generation is not ready yet.';
+  }
+}
 
 export interface WorkflowEditor {
   /** The source is being read. */
   loading: boolean;
   loadError: string | null;
   draft: WorkflowDefinition;
-  /** Draft differs from what was loaded or last saved. */
+  /** Draft differs from what was loaded or last saved; a generated draft counts as changed until it is saved. */
   dirty: boolean;
   id: string;
   /** True until the first save of a new workflow; the id is editable only then. */
@@ -77,6 +99,8 @@ export function useWorkflowEditor(source: EditorSource, options: { writable?: bo
   const [readOnly, setReadOnly] = useState(options.writable === false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** A generated draft not saved yet: dirty whatever it holds. */
+  const [unsaved, setUnsaved] = useState(false);
   const validationRun = useRef(0);
 
   useEffect(() => setReadOnly(options.writable === false), [options.writable]);
@@ -103,6 +127,28 @@ export function useWorkflowEditor(source: EditorSource, options: { writable?: bo
       }
       setLoading(true);
       setLoadError(null);
+      if (source.kind === 'generated') {
+        try {
+          const generation = await getGeneration(source.id);
+          if (isCancelled()) return;
+          const refusal = generationRefusal(generation);
+          if (refusal) setLoadError(refusal);
+          else {
+            apply(draftFromGenerated(generation.draft), '', null, true);
+            setUnsaved(true);
+          }
+        } catch (e) {
+          if (isCancelled()) return;
+          setLoadError(
+            e instanceof ApiError && e.status === 404
+              ? `There is no generation ${source.id} (it may have been saved or discarded).`
+              : message(e),
+          );
+        } finally {
+          if (!isCancelled()) setLoading(false);
+        }
+        return;
+      }
       try {
         const stored = await readWorkflow(source.id);
         if (isCancelled()) return;
@@ -127,7 +173,7 @@ export function useWorkflowEditor(source: EditorSource, options: { writable?: bo
     };
   }, [load]);
 
-  const dirty = useMemo(() => !isSameDefinition(draft, initial), [draft, initial]);
+  const dirty = useMemo(() => unsaved || !isSameDefinition(draft, initial), [unsaved, draft, initial]);
 
   // A duplicate has no id yet: proposed from its title until the user types one.
   useEffect(() => {
@@ -180,6 +226,7 @@ export function useWorkflowEditor(source: EditorSource, options: { writable?: bo
         setInitial(isSameDefinition(saved, wire) ? draft : saved);
         setVersion(stored.version);
         setIsNew(false);
+        setUnsaved(false);
         setConflict(null);
         setValidationError(null);
         return true;

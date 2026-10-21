@@ -94,6 +94,13 @@ describe('TaskList sections', () => {
 });
 
 describe('TaskCard', () => {
+  it('labels a workflow generator task on its card and not others', () => {
+    const { rerender } = render(<TaskCard task={makeTask({ kind: 'workflow-generator' })} selected={false} onSelect={jest.fn()} />);
+    expect(screen.getByText('Workflow generator')).toBeTruthy();
+    rerender(<TaskCard task={makeTask()} selected={false} onSelect={jest.fn()} />);
+    expect(screen.queryByText('Workflow generator')).toBeNull();
+  });
+
   it('shows title, pill text, line, branch, age; selecting calls onSelect', () => {
     const onSelect = jest.fn();
     const now = Date.parse('2026-10-17T10:12:00Z');
