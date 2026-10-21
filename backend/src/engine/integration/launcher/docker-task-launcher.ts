@@ -2,9 +2,9 @@ import { Logger } from '@nestjs/common';
 import Docker from 'dockerode';
 import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../commons/engine-config';
-import { assertWorktreePaths } from '../../service/worktree-paths';
+import { TaskFileName, assertTaskFileName, assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from './git-credential-env';
-import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
+import { LEDGER_MAX_BYTES, TASK_FILE_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
 
 const BRIDGE_PORT = 8765;
 const STOP_TIMEOUT_SECONDS = 10;
@@ -171,6 +171,20 @@ export class DockerTaskLauncher implements TaskLauncher {
     return file.toString('utf8');
   }
 
+  async readTaskFile(taskId: string, name: TaskFileName): Promise<string | null> {
+    assertTaskFileName(name);
+    let file: Buffer | 'too-large';
+    try {
+      const stream = (await this.docker.getContainer(this.name(taskId)).getArchive({ path: `/task/${name}` })) as unknown as Readable;
+      file = await firstTarFile(stream, TASK_FILE_MAX_BYTES);
+    } catch (error) {
+      if (hasStatus(error, 404)) return null;
+      throw error;
+    }
+    if (file === 'too-large') throw new WorktreeFileTooLargeError(name, taskId, TASK_FILE_MAX_BYTES);
+    return file.toString('utf8');
+  }
+
   private name(taskId: string): string {
     return `agentic-ui-task-${taskId}`;
   }
@@ -200,6 +214,7 @@ export class DockerTaskLauncher implements TaskLauncher {
       AGENTIC_WORKTREE: '1',
       AGENTIC_BRANCH: spec.branch,
       AGENTIC_BRIDGE_HOSTS: name,
+      ...(spec.scheduled ? { AGENTIC_SCHEDULED: '1', AGENTIC_RUN_TIMEOUT: String(spec.scheduled.runTimeoutSeconds) } : {}),
       CLAUDE_CODE_OAUTH_TOKEN: this.config.claudeCodeOauthToken,
       GH_TOKEN: this.config.ghToken,
       GIT_AUTHOR_NAME: this.config.gitName,

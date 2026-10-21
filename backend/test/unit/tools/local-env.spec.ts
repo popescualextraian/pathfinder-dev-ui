@@ -45,6 +45,8 @@ describe('buildAppEnv', () => {
     const env = build({ BACKLOG_CONFIG: '/c.yaml', BACKLOG_DATA_DIR: '/d', WORKFLOWS_DIR: 'e2e/fixtures/workflows', WORKFLOWS_DATA_DIR: '/runs' });
     expect(env).toMatchObject({ BACKLOG_CONFIG: '/c.yaml', BACKLOG_DATA_DIR: '/d', WORKFLOWS_DIR: '/co/e2e/fixtures/workflows', WORKFLOWS_DATA_DIR: '/runs' });
     expect(build({ WORKFLOWS_DIR: '/w', WORKFLOWS_DATA_DIR: 'runs' }).WORKFLOWS_DATA_DIR).toBe('/co/runs');
+    expect(build({}).SCHEDULES_DATA_DIR).toBe('/co/.local/3100/schedules');
+    expect(build({ SCHEDULES_TIMEZONE: 'UTC', SCHEDULES_TICK_SECONDS: '2' })).toMatchObject({ SCHEDULES_TIMEZONE: 'UTC', SCHEDULES_TICK_SECONDS: '2' });
   });
 
   it('puts the backlog and workflow data under the data dir unless given', () => {

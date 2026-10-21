@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../../../src/commons/engine-config';
 import { DockerTaskLauncher } from '../../../../../src/engine/integration/launcher/docker-task-launcher';
 import { gitCredentialEnv } from '../../../../../src/engine/integration/launcher/git-credential-env';
-import { LEDGER_MAX_BYTES, LaunchSpec, WorktreeFileTooLargeError } from '../../../../../src/engine/service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchSpec, TASK_FILE_MAX_BYTES, WorktreeFileTooLargeError } from '../../../../../src/engine/service/task-launcher';
 
 const OAUTH = 'made-up-oauth-token-xxxx';
 const GH = 'made-up-gh-token-yyyy';
@@ -394,6 +394,57 @@ describe('DockerTaskLauncher.hasFiles', () => {
     const { launcher, container } = setup();
     await expect(launcher.hasFiles('T-1', ['ok', '../etc/passwd'])).rejects.toThrow(BadRequestException);
     await expect(launcher.hasFiles('T-1', ['/etc/passwd'])).rejects.toThrow(BadRequestException);
+    expect(container.getArchive).not.toHaveBeenCalled();
+  });
+});
+
+describe('DockerTaskLauncher scheduled env', () => {
+  it('sets AGENTIC_SCHEDULED and AGENTIC_RUN_TIMEOUT only for a scheduled task', async () => {
+    const { launcher, docker } = setup();
+    await launcher.launch({ ...spec, scheduled: { runTimeoutSeconds: 900 } });
+    const env = envOf(docker.createContainer.mock.calls[0][0]);
+    expect(env.AGENTIC_SCHEDULED).toBe('1');
+    expect(env.AGENTIC_RUN_TIMEOUT).toBe('900');
+    await launcher.launch(spec);
+    const plain = envOf(docker.createContainer.mock.calls[1][0]);
+    expect(plain.AGENTIC_SCHEDULED).toBeUndefined();
+    expect(plain.AGENTIC_RUN_TIMEOUT).toBeUndefined();
+  });
+});
+
+describe('DockerTaskLauncher.readTaskFile', () => {
+  const archive = (buffer: Buffer) => Readable.from([buffer.subarray(0, 700), buffer.subarray(700)]);
+
+  it.each(['result.md', 'state.json'] as const)('reads /task/%s from the container archive', async (name) => {
+    const { launcher, docker, container } = setup();
+    const text = 'x'.repeat(1000);
+    container.getArchive.mockResolvedValue(archive(tarOf(name, Buffer.from(text))));
+    await expect(launcher.readTaskFile('T-1', name)).resolves.toBe(text);
+    expect(docker.getContainer).toHaveBeenCalledWith('agentic-ui-task-T-1');
+    expect(container.getArchive).toHaveBeenCalledWith({ path: `/task/${name}` });
+  });
+
+  it('returns null on 404 and rethrows other docker errors', async () => {
+    const { launcher, container } = setup();
+    container.getArchive.mockRejectedValue(dockerError(404));
+    await expect(launcher.readTaskFile('T-1', 'result.md')).resolves.toBeNull();
+    container.getArchive.mockRejectedValue(dockerError(500));
+    await expect(launcher.readTaskFile('T-1', 'result.md')).rejects.toThrow('docker 500');
+  });
+
+  it('throws when the file is over 64 KB, without reading it', async () => {
+    const { launcher, container } = setup();
+    const stream = archive(tarOf('result.md', Buffer.alloc(10), TASK_FILE_MAX_BYTES + 1));
+    container.getArchive.mockResolvedValue(stream);
+    await expect(launcher.readTaskFile('T-1', 'result.md')).rejects.toBeInstanceOf(WorktreeFileTooLargeError);
+    expect(stream.destroyed).toBe(true);
+  });
+
+  it('refuses any other name before calling docker', async () => {
+    const { launcher, container } = setup();
+    for (const name of ['ledger.jsonl', '../x', 'a/result.md']) {
+      await expect(launcher.readTaskFile('T-1', name as 'result.md')).rejects.toThrow(BadRequestException);
+    }
     expect(container.getArchive).not.toHaveBeenCalled();
   });
 });

@@ -38,6 +38,13 @@ describe('TaskView kind', () => {
   it('has no label for an ordinary task', () => {
     view();
     expect(screen.queryByText('Workflow generator')).toBeNull();
+    expect(screen.queryByTestId('task-schedule')).toBeNull();
+  });
+  it('a scheduled task links its schedule in the header', () => {
+    view(makeTask({ scheduleId: 'nightly', scheduleTitle: 'Nightly deps' }));
+    const chip = screen.getByTestId('task-schedule');
+    expect(chip.getAttribute('href')).toBe('#/schedules/nightly');
+    expect(chip.textContent).toContain('Nightly deps');
   });
 });
 

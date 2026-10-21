@@ -6,7 +6,9 @@ import {
   BRIDGE_CLIENT_FACTORY, BridgeClient, AddSessionInput as BridgeAddSessionInput, AnswerInput, BridgeClientFactory, BridgeError, BridgeEvent, BridgeStatus,
   BridgeUnreachableError, waitForStatus,
 } from './bridge-client';
-import { TASK_LAUNCHER, TaskLauncher, WORKTREE_FILE_MAX_BYTES } from './task-launcher';
+import { TASK_LAUNCHER, TaskFileName, TaskInspection, TaskLauncher, WORKTREE_FILE_MAX_BYTES } from './task-launcher';
+import { assertTaskFileName } from './worktree-paths';
+import { needsSummaryLine, readSummaryLine, recordedLive, recordGoneEnd, scheduledRunEnded } from './task-end';
 import { RecordPatch, TaskKind, TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
 import { repoNameOf } from '../../commons/repo-name';
 import { TaskCostService } from './cost/task-cost.service';
@@ -27,7 +29,17 @@ export interface StartTaskInput {
   model?: string;
   // Set by code that starts tasks for a purpose; the public API does not accept it.
   kind?: TaskKind;
+  // A scheduled run (set by the schedules, not the public API): the bridge works unattended, asks for a
+  // summary (result.md) when the agent ends its turn or at the timeout, stops the task and exits.
+  // runTimeoutSeconds: whole seconds, 60..86400 (what the bridge accepts).
+  scheduled?: { runTimeoutSeconds: number };
+  // The schedule that started the task, kept on the record and shown in the view.
+  scheduleId?: string;
+  scheduleTitle?: string;
 }
+
+export const MIN_RUN_TIMEOUT_SECONDS = 60;
+export const MAX_RUN_TIMEOUT_SECONDS = 86_400;
 
 export interface AddSessionInput {
   name: string;
@@ -71,6 +83,12 @@ export class TasksService {
   }
 
   async start(input: StartTaskInput): Promise<TaskView> {
+    if (input.scheduled !== undefined) {
+      const seconds = input.scheduled.runTimeoutSeconds;
+      if (!Number.isInteger(seconds) || seconds < MIN_RUN_TIMEOUT_SECONDS || seconds > MAX_RUN_TIMEOUT_SECONDS) {
+        throw new BadRequestException(`The run timeout of a scheduled task must be whole seconds from ${MIN_RUN_TIMEOUT_SECONDS} to ${MAX_RUN_TIMEOUT_SECONDS}`);
+      }
+    }
     if (input.repoUrl !== undefined && input.repository !== undefined) {
       throw new BadRequestException('Give either repository or repoUrl, not both');
     }
@@ -84,7 +102,15 @@ export class TasksService {
     const created = await this.exclusive(() => this.launchNew({ ...input, repoUrl }));
     // If the bridge never answers we keep record and container (so the user can stop and remove
     // the task) and report 502; the task then shows up in the list as 'starting'.
-    return this.observe(created, await this.waitFor(created, `Task ${created.id} was created but its bridge did not become ready`));
+    let status: BridgeStatus;
+    try {
+      status = await this.waitFor(created, `Task ${created.id} was created but its bridge did not become ready`);
+    } catch (error) {
+      // A scheduled run that was over before we saw its bridge: the poller (marked by launchNew) records its end.
+      if (error instanceof RunAlreadyEndedError) return toView(created);
+      throw error;
+    }
+    return this.observe(created, status);
   }
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -112,10 +138,15 @@ export class TasksService {
       .map((record) => toView(record));
   }
 
+  // A scheduled run recorded as live whose container (or bridge process) no longer runs has ended: its end is
+  // recorded from state.json (as the poller does), so a read never shows such a run as suspended.
   async get(id: string): Promise<TaskView> {
     const record = await this.require(id);
     if (record.closed) return toView(record);
     const inspection = await this.launcher.inspect(id);
+    if (record.scheduled !== undefined && recordedLive(record) && !(inspection.exists && inspection.running)) {
+      return toView(await this.recordEnd(record, inspection));
+    }
     if (!inspection.exists) return toView(record, { state: 'stopped', reason: 'container is gone' });
     if (!inspection.running) {
       const state = record.lastState === 'stopped' ? 'stopped' : 'suspended';
@@ -210,9 +241,12 @@ export class TasksService {
       await this.launcher.stop(id);
     }
     await this.refreshCost(record); // the container must still exist; a failed read never blocks the close
+    // A scheduled run's summary line, read while the container still exists.
+    const summary = needsSummaryLine({ ...record, closed: true }) ? { summaryLine: await readSummaryLine(this.launcher, id) } : {};
     await this.launcher.remove(id);
     this.updates.clearActed(id);
     return this.persist(record, {
+      ...summary,
       closed: true, closedAt: new Date().toISOString(), lastState: 'stopped',
       lastStatus: { ...(record.lastStatus as object | undefined), state: 'stopped', reason: 'closed', questions: [] },
     });
@@ -281,12 +315,16 @@ export class TasksService {
     if (input.repoRef !== undefined) record.repoRef = input.repoRef;
     if (input.model !== undefined) record.model = input.model;
     if (input.kind !== undefined) record.kind = input.kind;
+    if (input.scheduled !== undefined) record.scheduled = { runTimeoutSeconds: input.scheduled.runTimeoutSeconds };
+    if (input.scheduleId !== undefined) record.scheduleId = input.scheduleId;
+    if (input.scheduleTitle !== undefined) record.scheduleTitle = input.scheduleTitle;
 
     // Record first: a crash between launch and save would orphan a container.
     await this.records.create(record);
     try {
       const { bridgeUrl } = await this.launcher.launch({
         taskId: id, taskToken, agentToken, prompt: input.prompt, repoUrl, repoRef: input.repoRef, model: input.model, branch,
+        ...(record.scheduled ? { scheduled: record.scheduled } : {}),
       });
       const launched = await this.records.update(id, { bridgeUrl });
       // The first poll catches up with the events from the beginning, whatever the state is by then.
@@ -307,8 +345,15 @@ export class TasksService {
   private async wake(id: string): Promise<TaskRecord> {
     const record = await this.require(id);
     if (record.closed) throw closedConflict(id);
+    if (scheduledRunEnded(record)) throw scheduledConflict(id);
     if (record.lastState === 'stopped') throw stoppedConflict(id);
     const inspection = await this.launcher.inspect(id);
+    // A scheduled run has no idle suspension: a container that is not running (or gone) is a run that is over;
+    // its end is recorded from state.json before the refusal, so the record does not stay live.
+    if (record.scheduled !== undefined && !(inspection.exists && inspection.running)) {
+      await this.recordEnd(record, inspection);
+      throw scheduledConflict(id);
+    }
     if (!inspection.exists) {
       throw new ConflictException(`Task ${id} has no container any more; it cannot be woken`);
     }
@@ -320,8 +365,8 @@ export class TasksService {
         live = undefined; // not answering now: the verb itself reports what goes wrong
       }
       if (live?.state === 'stopped') {
-        await this.records.update(id, { lastState: 'stopped', lastStatus: live });
-        throw stoppedConflict(id);
+        await this.persist(record, { lastState: 'stopped', lastStatus: live });
+        throw record.scheduled !== undefined ? scheduledConflict(id) : stoppedConflict(id);
       }
       return record;
     }
@@ -341,13 +386,29 @@ export class TasksService {
     return record;
   }
 
+  // The end of a task whose container is not running, from its state.json (a stop or close meanwhile wins), announced.
+  private async recordEnd(record: TaskRecord, inspection: TaskInspection): Promise<TaskRecord> {
+    const gone = await recordGoneEnd(this.records, this.launcher, () => this.costs.armRecheck(), record.id, inspection);
+    if (gone === undefined) return record;
+    if (viewsDiffer(toView(gone.before), toView(gone.updated))) this.updates.changed(toView(gone.updated));
+    return gone.updated;
+  }
+
   private async waitFor(record: TaskRecord, message: string): Promise<BridgeStatus> {
+    const client = this.bridgeFor(record) as BridgeClient;
+    // The bridge of a scheduled run exits by itself when the run is over: once its container stops, waiting is pointless.
+    const status = record.scheduled === undefined ? () => client.status() : async (): Promise<BridgeStatus> => {
+      try {
+        return await client.status();
+      } catch (error) {
+        if (error instanceof BridgeUnreachableError && !(await this.launcher.inspect(record.id)).running) throw new RunAlreadyEndedError();
+        throw error;
+      }
+    };
     try {
-      return await waitForStatus(this.bridgeFor(record) as BridgeClient, {
-        timeoutMs: this.waitTimeoutMs, intervalMs: this.waitIntervalMs,
-      });
+      return await waitForStatus({ status }, { timeoutMs: this.waitTimeoutMs, intervalMs: this.waitIntervalMs });
     } catch (error) {
-      if (error instanceof BridgeError) throw error;
+      if (error instanceof BridgeError || error instanceof RunAlreadyEndedError) throw error;
       throw new BadGatewayException(`${message}: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
   }
@@ -374,9 +435,14 @@ export class TasksService {
     if (view) this.updates.changed(view);
   }
 
-  // Writes the patch and announces the task on the status stream when its view changed.
+  // Writes the patch and announces the task on the status stream when its view changed. A scheduled run
+  // that has just ended gets its summary line (result.md) in the same go.
   private async persist(record: TaskRecord, patch: RecordPatch, live: Live = {}): Promise<TaskView> {
-    const updated = await this.records.update(record.id, patch);
+    let updated = await this.records.update(record.id, patch);
+    if (needsSummaryLine(updated)) {
+      const summaryLine = await readSummaryLine(this.launcher, record.id);
+      updated = await this.records.update(record.id, (current) => (current.summaryLine === undefined ? { summaryLine } : undefined));
+    }
     const view = toView(updated, live);
     if (viewsDiffer(toView(record), view)) this.updates.changed(view);
     return view;
@@ -394,6 +460,14 @@ export class TasksService {
     assertWorktreePaths([path]);
     const record = await this.require(id);
     return this.launcher.readFile(record.id, path, maxBytes);
+  }
+
+  // Text of result.md or state.json in the task's /task folder, or null when missing; works on a stopped task
+  // (Docker: also on an exited container). 400 for another name; WorktreeFileTooLargeError over 64 KB.
+  async readTaskFile(id: string, name: TaskFileName): Promise<string | null> {
+    assertTaskFileName(name);
+    const record = await this.require(id);
+    return this.launcher.readTaskFile(record.id, name);
   }
 
   private async require(id: string): Promise<TaskRecord> {
@@ -425,6 +499,13 @@ function closedConflict(id: string): ConflictException {
 
 function stoppedConflict(id: string): ConflictException {
   return new ConflictException(`Task ${id} takes no prompts or answers: task is stopped`);
+}
+
+// waitFor of a scheduled run whose bridge is already gone (the run ended before it was seen).
+class RunAlreadyEndedError extends Error {}
+
+function scheduledConflict(id: string): ConflictException {
+  return new ConflictException(`Task ${id} takes no prompts, answers or sessions: its scheduled run has ended`);
 }
 
 function token(): string {

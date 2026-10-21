@@ -38,6 +38,11 @@ export interface TaskView {
   repoRef?: string;
   model?: string;
   kind?: TaskKind;
+  // Set when a schedule started the task.
+  scheduleId?: string;
+  scheduleTitle?: string;
+  // A scheduled run that ended: the first line of its result.md.
+  summaryLine?: string;
   branch: string;
   createdAt: string;
   updatedAt: string;
@@ -74,6 +79,14 @@ export function titleFrom(prompt: string, given?: string): string {
   const source = given?.trim() || prompt.split('\n').find((line) => line.trim() !== '')?.trim() || '';
   const line = source.replace(/\s+/g, ' ');
   return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1).trimEnd()}…`;
+}
+
+export const MAX_SUMMARY_LINE_LENGTH = 200;
+
+// The first non-blank line of a scheduled run's result.md, trimmed, at most 200 characters ('' when none).
+export function summaryLineOf(text: string): string {
+  const line = text.split('\n').find((l) => l.trim() !== '')?.trim() ?? '';
+  return line.length <= MAX_SUMMARY_LINE_LENGTH ? line : `${line.slice(0, MAX_SUMMARY_LINE_LENGTH - 1).trimEnd()}…`;
 }
 
 // True when two views differ in anything but the time of the last write.
@@ -137,6 +150,9 @@ export function toView(record: TaskRecord, live: Live = {}): TaskView {
   if (record.repoRef !== undefined) view.repoRef = record.repoRef;
   if (record.model !== undefined) view.model = record.model;
   if (record.kind !== undefined) view.kind = record.kind;
+  if (record.scheduleId !== undefined) view.scheduleId = record.scheduleId;
+  if (record.scheduleTitle !== undefined) view.scheduleTitle = record.scheduleTitle;
+  if (record.summaryLine) view.summaryLine = record.summaryLine;
   const reason = live.reason ?? last.reason;
   if (reason !== undefined) view.reason = reason;
   const summary = live.summary ?? last.summary;

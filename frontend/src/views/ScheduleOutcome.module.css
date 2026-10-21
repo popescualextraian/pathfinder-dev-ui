@@ -1,0 +1,5 @@
+.pill { display: inline-flex; align-items: center; border-radius: var(--radius-pill); padding: 2px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.running { background: var(--state-working-bg); color: var(--state-working-text); }
+.done { background: var(--state-review-bg); color: var(--state-review-text); }
+.timeout, .skipped, .missed { background: var(--state-needs-bg); color: var(--state-needs-text); }
+.failed, .refused { background: var(--paper-soft); color: var(--msg-red); border: 1px solid var(--msg-red); }

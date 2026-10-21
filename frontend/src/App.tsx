@@ -17,6 +17,7 @@ import { TaskList } from './views/TaskList';
 import { WorkflowList } from './views/WorkflowList';
 import { WorkflowEditorPage } from './WorkflowEditorPage';
 import { WorkflowGenerationsSection } from './WorkflowGenerationsSection';
+import { SchedulesPage } from './SchedulesPage';
 
 export function App() {
   const route = useRoute();
@@ -62,7 +63,14 @@ export function App() {
           />
         }
         board={
-          route.view === 'workflows' && workflowsOn ? (
+          route.view === 'schedules' ? (
+            <SchedulesPage
+              schedule={route.schedule}
+              edit={route.scheduleEdit}
+              repositories={repositories}
+              onSelect={route.selectSchedule}
+            />
+          ) : route.view === 'workflows' && workflowsOn ? (
             route.workflow ? (
               <WorkflowEditorPage
                 key={`${route.workflow}:${route.from ?? ''}:${route.generation ?? ''}`}

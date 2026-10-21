@@ -139,7 +139,7 @@ describe('loadEngineConfig', () => {
     it.each(['AGENTIC_TASK_TOKEN', 'AGENTIC_AGENT_TOKEN', 'AGENTIC_TASK_ID', 'AGENTIC_BRIDGE_HOSTS', 'AGENTIC_TASK_DIR',
       'GH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'AGENTIC_BRANCH', 'AGENTIC_WORKTREE', 'AGENTIC_ALLOWED_ACTIONS',
       'GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL',
-      'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_3', 'GIT_CONFIG_KEY_12'])(
+      'AGENTIC_SCHEDULED', 'AGENTIC_RUN_TIMEOUT', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_3', 'GIT_CONFIG_KEY_12'])(
       'refuses the engine-managed key %s', (key) => {
         const error = errorOf({ ...validEnv(), ENGINE_TASK_EXTRA_ENV: JSON.stringify({ [key]: 'v-secret' }) });
         expect(error.message).toContain(key);

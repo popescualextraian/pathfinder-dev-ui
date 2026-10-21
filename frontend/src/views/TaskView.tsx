@@ -3,6 +3,7 @@ import type { SessionView, Task, WorkflowRun } from '../api/models';
 import { MAIN_SESSION, resolveSession } from '../state/use-route';
 import { useTaskActions } from '../state/use-task-actions';
 import { AddSessionDialog } from './AddSessionDialog';
+import { ScheduleChip } from './ScheduleChip';
 import { SessionTabs } from './SessionTabs';
 import { Button } from './Button';
 import { FullRun } from './FullRun';
@@ -95,6 +96,7 @@ function TaskDetail({ task, onDeleted, onTask, session, onSelectSession, workflo
       <header className={styles.header}>
         <h2 className={styles.title}>{task.title}</h2>
         {task.kind === 'workflow-generator' && <span className={styles.kind}>Workflow generator</span>}
+        {task.scheduleId && <ScheduleChip id={task.scheduleId} title={task.scheduleTitle} testId="task-schedule" />}
         <StatePill state={task.state} section={task.section} label={closed ? 'closed' : undefined} />
         <div className={styles.actions}>
           {task.section !== 'working' && !closed && (

@@ -23,16 +23,28 @@ describe('Sidebar', () => {
     const headings = screen.getAllByRole('heading').map((h) => h.textContent);
     expect(headings).toEqual(['Work', 'Automate']);
     const names = screen.getAllByRole('button').map((b) => b.textContent ?? '');
-    const order = ['Backlog', 'Tasks', 'Workflows'].map((n) => names.findIndex((x) => x.startsWith(n)));
+    const order = ['Backlog', 'Tasks', 'Workflows', 'Schedules'].map((n) => names.findIndex((x) => x.startsWith(n)));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  it('backlog and workflows off: only Tasks under Work', () => {
+  it('backlog and workflows off: Tasks under Work, Schedules (always on) under Automate', () => {
     setup();
-    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['Work']);
+    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['Work', 'Automate']);
     expect(screen.getByRole('button', { name: 'Tasks' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Schedules' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Backlog' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Workflows' })).toBeNull();
+  });
+
+  it('Schedules selects its view and is marked current there, with a clock icon', () => {
+    const p = setup({ view: 'schedules' });
+    const entry = screen.getByRole('button', { name: 'Schedules' });
+    expect(entry.getAttribute('aria-current')).toBe('true');
+    expect(entry.querySelector('svg')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /All repositories/ })).toBeNull();
+    fireEvent.click(entry);
+    expect(p.onSelectView).toHaveBeenCalledWith('schedules');
   });
 
   it('backlog off, workflows on: Automate shown, no Backlog', () => {
@@ -78,9 +90,11 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: /All repositories/ })).toBeTruthy();
   });
 
-  it('backlog on, workflows off: no Automate heading', () => {
+  it('backlog on, workflows off: Automate holds only Schedules', () => {
     setup({ backlogEnabled: true });
-    expect(screen.queryByRole('heading', { name: 'Automate' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Automate' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Workflows' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Schedules' })).toBeTruthy();
   });
 
   it('marks the current view', () => {

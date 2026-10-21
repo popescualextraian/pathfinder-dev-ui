@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, sy
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { bridgeEnv, cloneEnv, findFakeAgent, LocalTaskLauncher } from '../../../../../src/engine/integration/launcher/local-task-launcher';
-import { LEDGER_MAX_BYTES, LaunchSpec, WorktreeFileTooLargeError } from '../../../../../src/engine/service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchSpec, TASK_FILE_MAX_BYTES, WorktreeFileTooLargeError } from '../../../../../src/engine/service/task-launcher';
 
 const OAUTH = 'made-up-oauth-token-111';
 const GH = 'made-up-gh-token-222';
@@ -288,6 +288,52 @@ describe('LocalTaskLauncher', () => {
     await l.remove('T-1');
   });
 
+  describe('the end of a scheduled run', () => {
+    // A bridge that ends like a scheduled run: final state.json, then exit with the given code.
+    const ending = (code: number, state = 'stopped') =>
+      script('bridge.sh', `printf '{"state":"${state}","reason":"scheduled-done"}' > "$AGENTIC_TASK_DIR/state.json"\nexit ${code}`);
+    const make = (bridge: string) => new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { bridgeCommand: bridge, agenticDir: NO_IMAGE });
+
+    it('does not respawn the bridge of a scheduled task that exited normally with a final state', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      const l = make(ending(0));
+      await l.launch({ ...spec, repoUrl: origin, scheduled: { runTimeoutSeconds: 60 } });
+      await waitFor('bridge exit', () => existsSync(join(l.root, 'T-1', 'task', 'state.json')));
+      for (let i = 0; i < 100 && (await l.inspect('T-1')).running; i++) await new Promise((r) => setTimeout(r, 20));
+      expect(await l.inspect('T-1')).toMatchObject({ exists: true, running: false });
+      await expect(l.start('T-1')).rejects.toThrow(/scheduled run of task T-1 has ended/);
+      expect(await l.countRunning()).toBe(0);
+      // A normal end: no warning that it exited unexpectedly, a plain log line.
+      expect(warn.mock.calls.map((c) => String(c[0]))).not.toContainEqual(expect.stringContaining('exited unexpectedly'));
+      expect(log.mock.calls.map((c) => String(c[0]))).toContainEqual(expect.stringMatching(/T-1 exited after its scheduled run ended/));
+      await l.remove('T-1');
+      jest.restoreAllMocks();
+    });
+
+    it('respawns an ordinary task whose bridge exited the same way', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const l = make(ending(0));
+      await l.launch({ ...spec, repoUrl: origin });
+      await waitFor('bridge exit', () => existsSync(join(l.root, 'T-1', 'task', 'state.json')));
+      for (let i = 0; i < 100 && (await l.inspect('T-1')).running; i++) await new Promise((r) => setTimeout(r, 20));
+      await expect(l.start('T-1')).resolves.toBeUndefined();
+      await l.remove('T-1');
+      jest.restoreAllMocks();
+    });
+
+    it('respawns a scheduled task whose bridge crashed (non-zero exit)', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const l = make(ending(3, 'running'));
+      await l.launch({ ...spec, repoUrl: origin, scheduled: { runTimeoutSeconds: 60 } });
+      await waitFor('bridge exit', () => existsSync(join(l.root, 'T-1', 'task', 'state.json')));
+      for (let i = 0; i < 100 && (await l.inspect('T-1')).running; i++) await new Promise((r) => setTimeout(r, 20));
+      await expect(l.start('T-1')).resolves.toBeUndefined();
+      await l.remove('T-1');
+      jest.restoreAllMocks();
+    });
+  });
+
   it('warns, without output, when a bridge exits unexpectedly', async () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const bridge = script('bridge.sh', 'echo secret-output\nexit 3');
@@ -400,5 +446,43 @@ describe('LocalTaskLauncher.hasFiles', () => {
   it('refuses .. and absolute paths itself', async () => {
     await expect(launcher().hasFiles('T-1', ['../secret.txt'])).rejects.toThrow(BadRequestException);
     await expect(launcher().hasFiles('T-1', [join(dataDir, 'local-tasks', 'T-1', 'secret.txt')])).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('bridgeEnv scheduled', () => {
+  it('sets AGENTIC_SCHEDULED=1 and AGENTIC_RUN_TIMEOUT only for a scheduled task', () => {
+    const env = bridgeEnv(input({}, { ...spec, scheduled: { runTimeoutSeconds: 900 } }));
+    expect(env.AGENTIC_SCHEDULED).toBe('1');
+    expect(env.AGENTIC_RUN_TIMEOUT).toBe('900');
+    const plain = bridgeEnv(input({}));
+    expect(plain.AGENTIC_SCHEDULED).toBeUndefined();
+    expect(plain.AGENTIC_RUN_TIMEOUT).toBeUndefined();
+  });
+});
+
+describe('LocalTaskLauncher.readTaskFile', () => {
+  let tmp: string;
+  beforeEach(() => { tmp = mkdtempSync(join(tmpdir(), 'ltf-')); mkdirSync(join(tmp, 'local-tasks', 'T-1', 'task'), { recursive: true }); });
+  afterEach(() => rmSync(tmp, { recursive: true, force: true }));
+  const launcher = () => new LocalTaskLauncher({ ...base, dataDir: tmp, localAgent: 'fake' });
+  const put = (name: string, text: string) => writeFileSync(join(tmp, 'local-tasks', 'T-1', 'task', name), text);
+
+  it.each(['result.md', 'state.json'] as const)('reads %s from the task dir', async (name) => {
+    put(name, 'hello');
+    await expect(launcher().readTaskFile('T-1', name)).resolves.toBe('hello');
+  });
+
+  it('returns null when the file or the task folder is absent', async () => {
+    await expect(launcher().readTaskFile('T-1', 'result.md')).resolves.toBeNull();
+    await expect(launcher().readTaskFile('T-9', 'state.json')).resolves.toBeNull();
+  });
+
+  it('throws over 64 KB and refuses other names and symlinks', async () => {
+    put('result.md', 'x'.repeat(TASK_FILE_MAX_BYTES + 1));
+    await expect(launcher().readTaskFile('T-1', 'result.md')).rejects.toBeInstanceOf(WorktreeFileTooLargeError);
+    await expect(launcher().readTaskFile('T-1', 'ledger.jsonl' as 'result.md')).rejects.toThrow(BadRequestException);
+    writeFileSync(join(tmp, 'secret'), 's');
+    symlinkSync(join(tmp, 'secret'), join(tmp, 'local-tasks', 'T-1', 'task', 'state.json'));
+    await expect(launcher().readTaskFile('T-1', 'state.json')).rejects.toThrow('not a regular file');
   });
 });

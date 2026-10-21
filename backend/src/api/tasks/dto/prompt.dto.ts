@@ -1,7 +1,8 @@
 import { OptionalSessionName } from './session-name';
 import { IsNotEmpty, IsString, MaxLength, Matches } from 'class-validator';
+import { MAX_TEXT_LENGTH } from '../../../commons/task-input-rules';
 
-export const MAX_TEXT_LENGTH = 20_000;
+export { MAX_TEXT_LENGTH } from '../../../commons/task-input-rules';
 
 export class PromptDto {
   @IsString()

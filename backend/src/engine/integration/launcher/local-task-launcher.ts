@@ -1,12 +1,12 @@
-import { Logger } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import { ChildProcess, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { lstat, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { EngineConfig } from '../../../commons/engine-config';
-import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
-import { assertWorktreePaths } from '../../service/worktree-paths';
+import { LEDGER_MAX_BYTES, TASK_FILE_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
+import { TaskFileName, assertTaskFileName, assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from './git-credential-env';
 
 type LauncherConfig = Pick<
@@ -68,6 +68,7 @@ export function bridgeEnv({ config, spec, taskDir, workDir, port, path, fakeAgen
     // On whatever the entrypoint's default is: a local task never runs unguarded.
     AGENTIC_GATE: '1',
   };
+  if (spec.scheduled) Object.assign(env, { AGENTIC_SCHEDULED: '1', AGENTIC_RUN_TIMEOUT: String(spec.scheduled.runTimeoutSeconds) });
   if (spec.model) env.AGENTIC_MODEL = spec.model;
   if (config.localAgent === 'fake') {
     env.AGENTIC_ACP_CMD = JSON.stringify(['node', fakeAgent]);
@@ -122,7 +123,12 @@ interface LocalTask {
   closed?: Promise<void>;
   // While a launch or respawn waits for the bridge: an early exit is reported by that wait.
   awaitingUp?: boolean;
+  // A scheduled run (AGENTIC_SCHEDULED): its bridge exits by itself when the run is over.
+  scheduled: boolean;
 }
+
+// The bridge's own final states in state.json: a scheduled run that reached one is over.
+const FINAL_STATES = new Set(['stopped', 'failed']);
 
 function freePort(): Promise<number> {
   return new Promise((resolvePort, reject) => {
@@ -179,7 +185,7 @@ export class LocalTaskLauncher implements TaskLauncher {
     let finish: () => void = () => undefined;
     // Registered before the clone, so a stop or remove during the launch finds the task.
     const task: LocalTask = {
-      port: 0, dir, env: {}, log: '', launching: true, cancelled: false, stopping: false,
+      port: 0, dir, env: {}, log: '', launching: true, cancelled: false, stopping: false, scheduled: spec.scheduled !== undefined,
       launchDone: new Promise<void>((resolveDone) => { finish = resolveDone; }),
     };
     this.tasks.set(spec.taskId, task);
@@ -209,9 +215,13 @@ export class LocalTaskLauncher implements TaskLauncher {
   }
 
   // Respawns the bridge on the same port, so the bridge URL the service keeps stays valid.
+  // Not the bridge of a scheduled run that ended normally (exit 0 after a final state): that run is over.
   async start(taskId: string): Promise<void> {
     const task = this.must(taskId);
     if (task.launching || this.alive(task)) return;
+    if (task.scheduled && task.child?.exitCode === 0 && (await this.finalState(taskId))) {
+      throw new ConflictException(`The scheduled run of task ${taskId} has ended; its bridge is not started again`);
+    }
     const child = this.spawnBridge(taskId, task);
     if (this.entrypoint()) await this.awaitUp(task, child);
   }
@@ -255,6 +265,21 @@ export class LocalTaskLauncher implements TaskLauncher {
     }
   }
 
+  async readTaskFile(taskId: string, name: TaskFileName): Promise<string | null> {
+    assertTaskFileName(name);
+    const file = join(this.root, taskId, 'task', name);
+    try {
+      const info = await lstat(file);
+      if (!info.isFile()) throw new Error(`${name} is not a regular file`);
+      if (info.size > TASK_FILE_MAX_BYTES) throw new WorktreeFileTooLargeError(name, taskId, TASK_FILE_MAX_BYTES);
+      return await readFile(file, 'utf8');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return null;
+      throw error;
+    }
+  }
+
   // The agent's /work is <task dir>/work here; the bridge (AGENTIC_WORKTREE=1) runs it in the task's own worktree
   // <work>/.worktrees/<task id> (the image's task/worktree.sh), so that is where the files are.
   async hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>> {
@@ -286,6 +311,16 @@ export class LocalTaskLauncher implements TaskLauncher {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'ENOENT' || code === 'ENOTDIR') return null;
       throw error;
+    }
+  }
+
+  // Whether the bridge's state.json holds a final state (an unreadable or absent one does not).
+  private async finalState(taskId: string): Promise<boolean> {
+    try {
+      const state = (JSON.parse((await this.readTaskFile(taskId, 'state.json')) ?? '{}') as { state?: unknown }).state;
+      return typeof state === 'string' && FINAL_STATES.has(state);
+    } catch {
+      return false;
     }
   }
 
@@ -418,6 +453,11 @@ export class LocalTaskLauncher implements TaskLauncher {
     child.on('error', (error) => { task.log = (task.log + `spawn failed: ${error.message}\n`).slice(-LOG_LIMIT); });
     child.on('exit', (code, signal) => {
       if (task.stopping || task.awaitingUp || task.child !== child) return;
+      // The bridge of a scheduled run exits by itself (code 0) once the run is over: that is its normal end.
+      if (task.scheduled && code === 0) {
+        this.logger.log(`The bridge of task ${taskId} exited after its scheduled run ended`);
+        return;
+      }
       this.logger.warn(`The bridge of task ${taskId} exited unexpectedly (${signal ? `signal ${signal}` : `code ${code}`})`);
     });
     task.closed = new Promise<void>((done) => { child.once('close', () => done()); });

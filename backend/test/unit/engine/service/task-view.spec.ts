@@ -1,4 +1,4 @@
-import { sectionOf, titleFrom, toView } from '../../../../src/engine/service/task-view';
+import { sectionOf, summaryLineOf, titleFrom, toView } from '../../../../src/engine/service/task-view';
 import { AGENT_TOKEN, TASK_TOKEN, record } from './helpers';
 
 describe('sectionOf', () => {
@@ -74,6 +74,24 @@ describe('toView', () => {
 
   it('section follows the live state', () => {
     expect(toView(record({ lastState: 'idle' }), { state: 'running' }).section).toBe('working');
+  });
+});
+
+describe('toView schedule', () => {
+  it('carries scheduleId and scheduleTitle, and summaryLine only when not empty; never the run timeout', () => {
+    const view = toView(record({ scheduled: { runTimeoutSeconds: 600 }, scheduleId: 'nightly', scheduleTitle: 'Nightly', summaryLine: 'Did it', lastState: 'stopped' }));
+    expect(view).toMatchObject({ scheduleId: 'nightly', scheduleTitle: 'Nightly', summaryLine: 'Did it' });
+    expect(view).not.toHaveProperty('scheduled');
+    expect(toView(record({ scheduleId: 'nightly', summaryLine: '' }))).not.toHaveProperty('summaryLine');
+  });
+});
+
+describe('summaryLineOf', () => {
+  it('is the first non-blank line, trimmed, at most 200 characters', () => {
+    expect(summaryLineOf('\n  \n  First line  \nsecond')).toBe('First line');
+    expect(summaryLineOf('x'.repeat(300))).toHaveLength(200);
+    expect(summaryLineOf('x'.repeat(300)).endsWith('…')).toBe(true);
+    expect(summaryLineOf('\n \n')).toBe('');
   });
 });
 

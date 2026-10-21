@@ -75,6 +75,14 @@ describe('tasks REST API (e2e)', () => {
       expect(res.body).not.toHaveProperty('kind');
     });
 
+    it('ignores scheduled, scheduleId and scheduleTitle sent by a client', async () => {
+      const res = await start({ prompt: 'p', scheduled: { runTimeoutSeconds: 60 }, scheduleId: 's', scheduleTitle: 'S' });
+      expect(res.status).toBe(201);
+      expect(res.body).not.toHaveProperty('scheduleId');
+      expect(res.body).not.toHaveProperty('scheduleTitle');
+      expect(launcher.specs.at(-1)!.scheduled).toBeUndefined();
+    });
+
     it('takes an explicit https repository', async () => {
       const res = await start({ prompt: 'p', repoUrl: 'https://github.com/other/repo.git' });
       expect(res.status).toBe(201);
