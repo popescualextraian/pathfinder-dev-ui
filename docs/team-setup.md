@@ -181,6 +181,8 @@ ENGINE_GIT_NAME=Your Name
 ENGINE_GIT_EMAIL=you@example.com
 UI_PORT=3000
 ENGINE_MAX_RUNNING=2
+# time zone of schedules (cron lines, one-off times); without it the container's UTC
+SCHEDULES_TIMEZONE=Europe/Berlin
 # Claude subscription token: claude setup-token
 CLAUDE_CODE_OAUTH_TOKEN=
 # GitLab personal access token: tasks clone and push the project with it
@@ -203,6 +205,7 @@ Then fill in the two tokens with an editor (`nano ~/pathfinder/pathfinder.env`):
 | `ENGINE_GIT_NAME`, `ENGINE_GIT_EMAIL` | the author of the tasks' commits |
 | `UI_PORT` | where the UI listens, on 127.0.0.1 |
 | `ENGINE_MAX_RUNNING` | how many tasks run at once |
+| `SCHEDULES_TIMEZONE` | your IANA time zone for scheduled runs (Automate, Schedules), for example `Europe/Bucharest` |
 | `DOCKER_GID` | group of the Docker socket, written by the `stat` line above |
 
 More repositories in one UI: `ENGINE_REPOS` (pathfinder-dev-ui README, Configuration).
