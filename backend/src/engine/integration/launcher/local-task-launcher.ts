@@ -5,7 +5,7 @@ import { mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { EngineConfig } from '../../../commons/engine-config';
-import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
 import { assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from './git-credential-env';
 
@@ -278,7 +278,7 @@ export class LocalTaskLauncher implements TaskLauncher {
     assertWorktreePaths([path]);
     const file = join(this.root, taskId, 'work', '.worktrees', taskId, path);
     try {
-      if ((await stat(file)).size > maxBytes) throw new Error(`File ${JSON.stringify(path)} of task ${taskId} is over ${maxBytes} bytes`);
+      if ((await stat(file)).size > maxBytes) throw new WorktreeFileTooLargeError(path, taskId, maxBytes);
       return await readFile(file, 'utf8');
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;

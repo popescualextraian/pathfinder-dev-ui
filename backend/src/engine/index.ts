@@ -7,4 +7,5 @@ export type { SessionView, ViewQuestion } from './service/task-view';
 export { TaskEventsService } from './service/task-events.service';
 export { TaskUpdates } from './service/task-updates';
 export { BridgeError, BridgeUnreachableError } from './service/bridge-client';
+export { WorktreeFileTooLargeError } from './service/task-launcher';
 export type { BridgeEvent as TaskEvent } from './service/bridge-client';

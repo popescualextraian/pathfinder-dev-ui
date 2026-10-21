@@ -1,8 +1,9 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { map, Observable } from 'rxjs';
-import { AddSessionInput, TasksService, TaskUpdates, TaskView } from '../../engine';
+import { AddSessionInput, TasksService, TaskUpdates, TaskView, WorktreeFileTooLargeError } from '../../engine';
+import { WorkflowFileTooLargeError } from '../../workflow';
 import type {
-  WorkflowSessionStart, WorkflowTaskSnapshot, WorkflowTaskStart, WorkflowTasks, WorkflowTaskState,
+  WorkflowSessionStart, WorkflowTaskCost, WorkflowTaskSnapshot, WorkflowTaskStart, WorkflowTasks, WorkflowTaskState,
 } from '../../workflow';
 
 const KNOWN_STATES: readonly WorkflowTaskState[] = ['starting', 'running', 'waiting', 'idle', 'suspended', 'stopped', 'failed', 'interrupted'];
@@ -85,9 +86,17 @@ export class EngineWorkflowTasks implements WorkflowTasks {
         state: view.closed ? 'stopped' : stateOf(s.state),
         openQuestions: s.questions,
         ...(s.lastMessageAt !== undefined && { lastMessageAt: s.lastMessageAt }),
+        ...(s.lastMessage !== undefined && { lastMessage: s.lastMessage }),
       })),
     };
     if (view.branch) snapshot.branch = view.branch;
+    if (view.questions.length > 0) {
+      snapshot.questions = [...view.questions].sort((a, b) => a.asked.localeCompare(b.asked)).map((q) => ({
+        id: q.id, session: q.session, text: q.text, options: [...q.options], asked: q.asked,
+        ...(q.recommendation !== null && q.recommendation !== undefined && { recommendation: q.recommendation }),
+      }));
+    }
+    if (view.cost !== undefined) snapshot.cost = costOf(view.cost);
     if (view.reason !== undefined && ['failed', 'stopped'].includes(snapshot.state)) snapshot.failureReason = view.reason;
     return snapshot;
   }
@@ -96,7 +105,31 @@ export class EngineWorkflowTasks implements WorkflowTasks {
     return this.tasks.hasFiles(taskId, paths);
   }
 
-  readFile(taskId: string, path: string): Promise<string | null> {
-    return this.tasks.readFile(taskId, path);
+  async readFile(taskId: string, path: string): Promise<string | null> {
+    try {
+      return await this.tasks.readFile(taskId, path);
+    } catch (error) {
+      if (error instanceof WorktreeFileTooLargeError) throw new WorkflowFileTooLargeError(`${path} is larger than ${error.maxBytes / 1024} KB`);
+      throw error;
+    }
   }
+
+  // A task that is gone is as good as closed.
+  async close(taskId: string): Promise<void> {
+    try {
+      await this.tasks.close(taskId);
+    } catch (error) {
+      if (error instanceof NotFoundException) return;
+      throw error;
+    }
+  }
+}
+
+// Field by field: only the figures, not the engine's bookkeeping (snapshot and read times).
+function costOf(cost: NonNullable<TaskView['cost']>): WorkflowTaskCost {
+  const usd: WorkflowTaskCost['usd'] = {};
+  if (cost.usd.estimate !== undefined) usd.estimate = cost.usd.estimate;
+  if (cost.usd.billedCredits !== undefined) usd.billedCredits = cost.usd.billedCredits;
+  if (cost.usd.unknown !== undefined) usd.unknown = cost.usd.unknown;
+  return { input: cost.input, output: cost.output, cacheRead: cost.cacheRead, cacheWrite: cost.cacheWrite, usd };
 }

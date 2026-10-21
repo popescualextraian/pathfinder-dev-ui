@@ -31,6 +31,7 @@ export class FakeWorkflowTasks implements WorkflowTasks {
 
   // Like the real engine right after a prompt: the session may still read idle for a moment.
   async prompt(taskId: string, session: string, text: string): Promise<void> {
+    if (this.promptFailure) throw this.promptFailure;
     this.task(taskId);
     this.prompts.push({ taskId, session, text });
   }
@@ -48,9 +49,28 @@ export class FakeWorkflowTasks implements WorkflowTasks {
   /** Contents by path, for readFile (missing: null). */
   readonly fileContents = new Map<string, string>();
   readonly readFileCalls: string[] = [];
+  /** When set, readFile rejects with it. */
+  readFileFailure?: Error;
   async readFile(_taskId: string, path: string): Promise<string | null> {
     this.readFileCalls.push(path);
+    if (this.readFileFailure) throw this.readFileFailure;
     return this.fileContents.get(path) ?? null;
+  }
+
+  readonly closed: string[] = [];
+  /** When set, close rejects with it. */
+  closeFailure?: Error;
+  /** When set, prompt rejects with it. */
+  promptFailure?: Error;
+  // Like the engine: a closed task reads as stopped; a task that is gone is fine.
+  async close(taskId: string): Promise<void> {
+    if (this.closeFailure) throw this.closeFailure;
+    this.closed.push(taskId);
+    const t = this.tasks.get(taskId);
+    if (!t) return;
+    t.state = 'stopped';
+    for (const s of t.sessions) s.state = 'stopped';
+    delete t.questions;
   }
 
   task(taskId: string): WorkflowTaskSnapshot {

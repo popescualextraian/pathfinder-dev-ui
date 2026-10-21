@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { bridgeEnv, cloneEnv, findFakeAgent, LocalTaskLauncher } from '../../../../../src/engine/integration/launcher/local-task-launcher';
-import { LEDGER_MAX_BYTES, LaunchSpec } from '../../../../../src/engine/service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchSpec, WorktreeFileTooLargeError } from '../../../../../src/engine/service/task-launcher';
 
 const OAUTH = 'made-up-oauth-token-111';
 const GH = 'made-up-gh-token-222';
@@ -353,7 +353,9 @@ describe('LocalTaskLauncher.readFile', () => {
   });
 
   it('throws when the file is over maxBytes', async () => {
-    await expect(launcher().readFile('T-1', 'plans/big.md', 100)).rejects.toThrow(/over 100 bytes/);
+    const error: unknown = await launcher().readFile('T-1', 'plans/big.md', 100).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WorktreeFileTooLargeError);
+    expect((error as Error).message).toMatch(/over 100 bytes/);
   });
 
   it('refuses .. and absolute paths itself', async () => {

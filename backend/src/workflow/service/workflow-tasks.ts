@@ -8,6 +8,28 @@ export interface WorkflowSessionSnapshot {
   openQuestions: number;
   /** Time of the session's last final agent message, if any. */
   lastMessageAt?: string;
+  /** The session's last final agent message, if any. */
+  lastMessage?: string;
+}
+
+/** An open question of a task, with the session that asked it. */
+export interface WorkflowTaskQuestion {
+  id: string;
+  session: string;
+  text: string;
+  options: string[];
+  recommendation?: string;
+  /** When it was asked. */
+  asked: string;
+}
+
+/** What a task cost so far (the engine's figures: tokens, and USD by source). */
+export interface WorkflowTaskCost {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  usd: { estimate?: number; billedCredits?: number; unknown?: number };
 }
 
 export interface WorkflowTaskSnapshot {
@@ -18,6 +40,9 @@ export interface WorkflowTaskSnapshot {
   sessions: WorkflowSessionSnapshot[];
   /** Set when the task failed. */
   failureReason?: string;
+  /** Open questions, oldest first (absent: none known). */
+  questions?: WorkflowTaskQuestion[];
+  cost?: WorkflowTaskCost;
 }
 
 export interface WorkflowTaskStart {
@@ -49,8 +74,10 @@ export interface WorkflowTasks {
   get(taskId: string): Promise<WorkflowTaskSnapshot | undefined | null>;
   /** Path (relative to the task's worktree) -> whether it exists. */
   hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>>;
-  /** Text of a file in the task's worktree, null when missing; throws when over 64 KB. */
+  /** Text of a file in the task's worktree, null when missing; throws WorkflowFileTooLargeError when over 64 KB. */
   readFile(taskId: string, path: string): Promise<string | null>;
+  /** Stops the task and removes its container; resolves for a task that is already closed or gone. */
+  close(taskId: string): Promise<void>;
   readonly changes: TaskChanges;
 }
 

@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../commons/engine-config';
 import { assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from './git-credential-env';
-import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher } from '../../service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
 
 const BRIDGE_PORT = 8765;
 const STOP_TIMEOUT_SECONDS = 10;
@@ -166,7 +166,7 @@ export class DockerTaskLauncher implements TaskLauncher {
       if (hasStatus(error, 404)) return null;
       throw error;
     }
-    if (file === 'too-large') throw new Error(`File ${JSON.stringify(path)} of task ${taskId} is over ${maxBytes} bytes`);
+    if (file === 'too-large') throw new WorktreeFileTooLargeError(path, taskId, maxBytes);
     return file.toString('utf8');
   }
 

@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../../../src/commons/engine-config';
 import { DockerTaskLauncher } from '../../../../../src/engine/integration/launcher/docker-task-launcher';
 import { gitCredentialEnv } from '../../../../../src/engine/integration/launcher/git-credential-env';
-import { LEDGER_MAX_BYTES, LaunchSpec } from '../../../../../src/engine/service/task-launcher';
+import { LEDGER_MAX_BYTES, LaunchSpec, WorktreeFileTooLargeError } from '../../../../../src/engine/service/task-launcher';
 
 const OAUTH = 'made-up-oauth-token-xxxx';
 const GH = 'made-up-gh-token-yyyy';
@@ -346,7 +346,9 @@ describe('DockerTaskLauncher.readFile', () => {
     const { launcher, container } = setup();
     const stream = archive(tarOf('a.yaml', Buffer.alloc(10), 101));
     container.getArchive.mockResolvedValue(stream);
-    await expect(launcher.readFile('T-1', 'a.yaml', 100)).rejects.toThrow(/over 100 bytes/);
+    const error: unknown = await launcher.readFile('T-1', 'a.yaml', 100).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WorktreeFileTooLargeError);
+    expect((error as Error).message).toMatch(/over 100 bytes/);
     expect(stream.destroyed).toBe(true);
   });
 
