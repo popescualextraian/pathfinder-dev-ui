@@ -1,8 +1,9 @@
+import type { ComponentProps } from 'react';
 import { useWorkflowGenerations } from './state/use-workflow-generations';
 import { WorkflowGenerations } from './views/WorkflowGenerations';
 
 /** Wires the open generations (polled while one is active) to their view; mounted only when the folder is writable. */
-export function WorkflowGenerationsSection() {
+export function WorkflowGenerationsSection({ children }: Pick<ComponentProps<typeof WorkflowGenerations>, 'children'>) {
   const g = useWorkflowGenerations();
   return (
     <WorkflowGenerations
@@ -14,6 +15,8 @@ export function WorkflowGenerationsSection() {
       requestChanges={g.requestChanges}
       discard={g.discard}
       answer={g.answer}
-    />
+    >
+      {children}
+    </WorkflowGenerations>
   );
 }

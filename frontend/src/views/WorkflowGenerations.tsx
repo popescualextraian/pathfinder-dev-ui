@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { WorkflowGenerationSummary } from '../api/models';
 import type { GenerationActionState } from '../state/use-workflow-generations';
 import { Button } from './Button';
@@ -22,18 +22,17 @@ interface Props {
   requestChanges: (id: string, text: string) => Result;
   discard: (id: string) => Result;
   answer: (generation: WorkflowGenerationSummary, text: string) => Result;
+  /** Places the button (the list header) and the panels (above the list); the dialog state stays here. */
+  children: (slots: { button: ReactNode; panels: ReactNode }) => ReactNode;
 }
 
-/** "Generate with AI" and one panel per open generation (above the workflow list; only when the folder is writable). */
-export function WorkflowGenerations({ generations, error, startState, actionState, start, requestChanges, discard, answer }: Props) {
+/** The "Generate with AI" button and one panel per open generation (only mounted when the folder is writable). */
+export function WorkflowGenerations({ generations, error, startState, actionState, start, requestChanges, discard, answer, children }: Props) {
   const [open, setOpen] = useState(false);
 
-  return (
+  const button = <Button onClick={() => setOpen(true)}>Generate with AI</Button>;
+  const panels = (
     <section className={styles.section} aria-label="Generations">
-      <div className={styles.bar}>
-        <Button onClick={() => setOpen(true)}>Generate with AI</Button>
-        <span className={styles.note}>{COST_NOTE}</span>
-      </div>
       {error && (
         <p className={styles.error} role="alert">
           {error}
@@ -64,6 +63,7 @@ export function WorkflowGenerations({ generations, error, startState, actionStat
       )}
     </section>
   );
+  return <>{children({ button, panels })}</>;
 }
 
 interface DialogProps {
