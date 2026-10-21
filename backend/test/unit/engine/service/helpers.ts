@@ -63,6 +63,7 @@ export function fakeLauncher(over: Partial<Record<keyof TaskLauncher, unknown>> 
     hasFiles: jest.fn(async (): Promise<Record<string, boolean>> => ({})),
     readFile: jest.fn(async (): Promise<string | null> => null),
     readLedger: jest.fn(async (): Promise<string | undefined> => undefined),
+    readTaskFile: jest.fn(async (): Promise<string | null> => null),
   };
   return Object.assign(base, over);
 }

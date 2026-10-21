@@ -1,8 +1,10 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 import { SessionRecord, TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
-import { BRIDGE_CLIENT_FACTORY, BridgeClientFactory, BridgeEvent, BridgeQuestion, BridgeStatus } from './bridge-client';
+import { BRIDGE_CLIENT_FACTORY, BridgeClientFactory, BridgeEvent, BridgeQuestion, BridgeStatus, BridgeUnreachableError } from './bridge-client';
 import { TaskCostService } from './cost/task-cost.service';
+import { endedState, needsSummaryLine, readSummaryLine } from './task-end';
+import { TASK_LAUNCHER, TaskLauncher } from './task-launcher';
 import { TaskUpdates } from './task-updates';
 import { MAIN_SESSION, toView, viewsDiffer } from './task-view';
 
@@ -18,7 +20,10 @@ const QUIET_STATES = new Set(['idle', 'suspended', 'stopped', 'failed', 'interru
 // Reads the status view of the event stream of every starting or running task (and of a task right
 // after one of our own actions) and keeps the record up to date: state, open questions, the whole
 // last agent message and the cursor. Idle, suspended, stopped and closed tasks change only through
-// our actions and are not polled. A failed poll is logged and retried in the next round.
+// our actions and are not polled. A failed poll is logged and retried in the next round, except when the
+// bridge is unreachable because the task ended (container exited, local bridge process gone): then the
+// bridge's state.json says how it ended (a scheduled run: stopped, scheduled-done or timeout) and the
+// record moves there, announced like any other change; a scheduled run also gets its summary line.
 @Injectable()
 export class TaskPoller implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TaskPoller.name);
@@ -31,6 +36,7 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
     private readonly updates: TaskUpdates,
     @Inject(ENGINE_CONFIG) private readonly config: Pick<EngineConfig, 'pollSeconds'>,
     private readonly costs: TaskCostService,
+    @Inject(TASK_LAUNCHER) private readonly launcher: Pick<TaskLauncher, 'inspect' | 'readTaskFile'>,
   ) {}
 
   onModuleInit(): void {
@@ -76,11 +82,16 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
     const client = this.bridgeFor(polled);
     const events: BridgeEvent[] = [];
     let since = polled.lastSeq ?? 0;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const batch = await client.events(since, PAGE, 'status');
-      events.push(...batch);
-      if (batch.length < PAGE) break;
-      since = Math.max(...batch.map((e) => e.seq));
+    try {
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const batch = await client.events(since, PAGE, 'status');
+        events.push(...batch);
+        if (batch.length < PAGE) break;
+        since = Math.max(...batch.map((e) => e.seq));
+      }
+    } catch (error) {
+      if (!(error instanceof BridgeUnreachableError) || !(await this.endIfGone(polled))) throw error;
+      return;
     }
     if (events.length === 0) return;
 
@@ -94,6 +105,39 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
       const ended = POLLED_STATES.has(current.lastState ?? 'starting') && patch?.lastState !== undefined && !POLLED_STATES.has(patch.lastState);
       return ended ? { ...patch, ...this.costs.armRecheck() } : patch;
     });
+    this.announce(before, await this.withSummaryLine(updated));
+  }
+
+  // The bridge did not answer: when the container (or local bridge process) is no longer running the task
+  // has ended, with the state its state.json gives. False when it still runs (the poll is then retried).
+  private async endIfGone(polled: TaskRecord): Promise<boolean> {
+    const inspection = await this.launcher.inspect(polled.id);
+    if (inspection.exists && inspection.running) return false;
+    const end = await endedState(this.launcher, polled.id, inspection.exists);
+    let before: TaskRecord | undefined;
+    const updated = await this.records.update(polled.id, (current) => {
+      before = current;
+      // A stop, close or anything that moved the task out of the polled states meanwhile wins.
+      if (current.closed || !POLLED_STATES.has(current.lastState ?? 'starting')) return undefined;
+      return {
+        lastState: end.state,
+        lastStatus: { ...(current.lastStatus as object | undefined), state: end.state, reason: end.reason, questions: [] },
+        ...this.costs.armRecheck(),
+      };
+    });
+    this.logger.log(`Task ${polled.id} ended while its bridge was gone: ${end.state}${end.reason ? ` (${end.reason})` : ''}`);
+    this.announce(before, await this.withSummaryLine(updated));
+    return true;
+  }
+
+  // A scheduled run that just ended: its result.md is read once for the summary line.
+  private async withSummaryLine(record: TaskRecord): Promise<TaskRecord> {
+    if (!needsSummaryLine(record)) return record;
+    const summaryLine = await readSummaryLine(this.launcher, record.id);
+    return this.records.update(record.id, (current) => (current.summaryLine === undefined ? { summaryLine } : undefined));
+  }
+
+  private announce(before: TaskRecord | undefined, updated: TaskRecord): void {
     if (before && updated !== before && viewsDiffer(toView(before), toView(updated))) this.updates.changed(toView(updated));
   }
 }

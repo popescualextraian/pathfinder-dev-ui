@@ -45,6 +45,13 @@ export interface TaskRecord {
   model?: string;
   // What the task is for; absent for ordinary tasks.
   kind?: TaskKind;
+  // A scheduled run (the bridge's AGENTIC_SCHEDULED mode): it ends by itself and is never woken again.
+  scheduled?: { runTimeoutSeconds: number };
+  // The schedule that started the task, as the starter named it.
+  scheduleId?: string;
+  scheduleTitle?: string;
+  // First line of the run's result.md, read once when the run ended ('' when there was none).
+  summaryLine?: string;
   branch: string;
   containerName: string;
   bridgeUrl?: string;

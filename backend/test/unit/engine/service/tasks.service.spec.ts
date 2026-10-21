@@ -659,3 +659,111 @@ describe('TasksService.hasFiles', () => {
     await expect(service.hasFiles('T-nope', ['a'])).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe('TasksService scheduled runs', () => {
+  const scheduledRecord = (over: Partial<ReturnType<typeof record>> = {}) =>
+    record({ scheduled: { runTimeoutSeconds: 600 }, scheduleId: 'nightly', scheduleTitle: 'Nightly deps', ...over });
+
+  it('passes scheduled to the launcher and keeps scheduleId and scheduleTitle on record and view', async () => {
+    const { service, records, launcher } = setup({ records: [] });
+    const view = await service.start({ prompt: 'p', scheduled: { runTimeoutSeconds: 600 }, scheduleId: 'nightly', scheduleTitle: 'Nightly deps' });
+    const spec = (launcher.launch.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect(spec.scheduled).toEqual({ runTimeoutSeconds: 600 });
+    expect(records.map.get(view.id)).toMatchObject({ scheduled: { runTimeoutSeconds: 600 }, scheduleId: 'nightly', scheduleTitle: 'Nightly deps' });
+    expect(view).toMatchObject({ scheduleId: 'nightly', scheduleTitle: 'Nightly deps' });
+  });
+
+  it('returns the starting task at once when the scheduled run was over before its bridge was seen; the poller takes it from there', async () => {
+    const { service, updates } = setup({
+      records: [], launcher: notRunning,
+      bridge: { status: jest.fn(async () => { throw new BridgeUnreachableError('ECONNREFUSED'); }) },
+    });
+    const view = await service.start({ prompt: 'p', scheduled: { runTimeoutSeconds: 60 } });
+    expect(view.state).toBe('starting');
+    expect(updates.actedIds().has(view.id)).toBe(true);
+  });
+
+  it('an ordinary task has no scheduled launch option and no schedule fields', async () => {
+    const { service, launcher } = setup({ records: [] });
+    const view = await service.start({ prompt: 'p' });
+    expect((launcher.launch.mock.calls[0] as unknown as [Record<string, unknown>])[0].scheduled).toBeUndefined();
+    expect(view).not.toHaveProperty('scheduleId');
+    expect(view).not.toHaveProperty('scheduleTitle');
+    expect(view).not.toHaveProperty('summaryLine');
+  });
+
+  it.each([59, 86401, 90.5, Number.NaN])('refuses a run timeout of %p seconds (60..86400 whole seconds) with 400', async (seconds) => {
+    const { service, launcher } = setup({ records: [] });
+    await expect(service.start({ prompt: 'p', scheduled: { runTimeoutSeconds: seconds } })).rejects.toBeInstanceOf(BadRequestException);
+    expect(launcher.launch).not.toHaveBeenCalled();
+  });
+
+  it.each(['stopped', 'failed'])('refuses prompt, answer and a new session on an ended (%s) scheduled task with 409, without starting it', async (state) => {
+    const { service, launcher, bridge } = setup({ records: [scheduledRecord({ lastState: state })], launcher: notRunning });
+    for (const call of [
+      () => service.prompt(ID, 'more'),
+      () => service.answer(ID, { text: 'yes' }),
+      () => service.addSession(ID, { name: 'other' }),
+    ]) {
+      const error = await call().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as Error).message).toMatch(/scheduled run.*has ended/);
+    }
+    expect(launcher.start).not.toHaveBeenCalled();
+    expect(bridge.prompt).not.toHaveBeenCalled();
+  });
+
+  it('never starts the container of a scheduled task again, whatever the record last said', async () => {
+    const { service, launcher } = setup({ records: [scheduledRecord({ lastState: 'running' })], launcher: notRunning });
+    await expect(service.prompt(ID, 'more')).rejects.toThrow(/scheduled run.*has ended/);
+    expect(launcher.start).not.toHaveBeenCalled();
+  });
+
+  it('a running scheduled task still takes a prompt', async () => {
+    const { service, bridge } = setup({ records: [scheduledRecord({ lastState: 'running' })], bridge: { status: jest.fn(async () => status({ state: 'running' })) } });
+    await service.prompt(ID, 'more');
+    expect(bridge.prompt).toHaveBeenCalled();
+  });
+
+  it('keeps the first line of result.md as summaryLine when it sees the run stopped', async () => {
+    const readTaskFile = jest.fn(async () => '\n\n  # Updated three deps  \nmore');
+    const { service, records } = setup({
+      records: [scheduledRecord({ lastState: 'running' })], launcher: { readTaskFile },
+      bridge: { status: jest.fn(async () => status({ state: 'stopped', reason: 'scheduled-done' })) },
+    });
+    const view = await service.get(ID);
+    expect(readTaskFile).toHaveBeenCalledWith(ID, 'result.md');
+    expect(view).toMatchObject({ state: 'stopped', reason: 'scheduled-done', summaryLine: '# Updated three deps' });
+    expect(records.map.get(ID)!.summaryLine).toBe('# Updated three deps');
+    await service.get(ID);
+    expect(readTaskFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads result.md of a scheduled task before its close removes the container', async () => {
+    const readTaskFile = jest.fn(async () => 'Summary line');
+    const { service, launcher } = setup({ records: [scheduledRecord({ lastState: 'running' })], launcher: { readTaskFile } });
+    const view = await service.close(ID);
+    expect(view.summaryLine).toBe('Summary line');
+    expect(readTaskFile.mock.invocationCallOrder[0]).toBeLessThan(launcher.remove.mock.invocationCallOrder[0]);
+  });
+
+  it('never reads result.md of an ordinary task', async () => {
+    const { service, launcher } = setup({ bridge: { status: jest.fn(async () => status({ state: 'stopped' })) } });
+    await service.get(ID);
+    await service.close(ID);
+    expect(launcher.readTaskFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('TasksService.readTaskFile', () => {
+  it('delegates to the launcher, also for a stopped task', async () => {
+    const readTaskFile = jest.fn(async () => 'the summary');
+    const { service } = setup({ records: [record({ lastState: 'stopped' })], launcher: { readTaskFile } });
+    await expect(service.readTaskFile(ID, 'result.md')).resolves.toBe('the summary');
+    expect(readTaskFile).toHaveBeenCalledWith(ID, 'result.md');
+  });
+  it('is 404 for an unknown task', async () => {
+    const { service } = setup({ records: [] });
+    await expect(service.readTaskFile('T-20260101-nope', 'result.md')).rejects.toBeInstanceOf(NotFoundException);
+  });
+});

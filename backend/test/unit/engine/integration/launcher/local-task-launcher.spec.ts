@@ -288,6 +288,48 @@ describe('LocalTaskLauncher', () => {
     await l.remove('T-1');
   });
 
+  describe('the end of a scheduled run', () => {
+    // A bridge that ends like a scheduled run: final state.json, then exit with the given code.
+    const ending = (code: number, state = 'stopped') =>
+      script('bridge.sh', `printf '{"state":"${state}","reason":"scheduled-done"}' > "$AGENTIC_TASK_DIR/state.json"\nexit ${code}`);
+    const make = (bridge: string) => new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { bridgeCommand: bridge, agenticDir: NO_IMAGE });
+
+    it('does not respawn the bridge of a scheduled task that exited normally with a final state', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const l = make(ending(0));
+      await l.launch({ ...spec, repoUrl: origin, scheduled: { runTimeoutSeconds: 60 } });
+      await waitFor('bridge exit', () => existsSync(join(l.root, 'T-1', 'task', 'state.json')));
+      for (let i = 0; i < 100 && (await l.inspect('T-1')).running; i++) await new Promise((r) => setTimeout(r, 20));
+      expect(await l.inspect('T-1')).toMatchObject({ exists: true, running: false });
+      await expect(l.start('T-1')).rejects.toThrow(/scheduled run of task T-1 has ended/);
+      expect(await l.countRunning()).toBe(0);
+      await l.remove('T-1');
+      jest.restoreAllMocks();
+    });
+
+    it('respawns an ordinary task whose bridge exited the same way', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const l = make(ending(0));
+      await l.launch({ ...spec, repoUrl: origin });
+      await waitFor('bridge exit', () => existsSync(join(l.root, 'T-1', 'task', 'state.json')));
+      for (let i = 0; i < 100 && (await l.inspect('T-1')).running; i++) await new Promise((r) => setTimeout(r, 20));
+      await expect(l.start('T-1')).resolves.toBeUndefined();
+      await l.remove('T-1');
+      jest.restoreAllMocks();
+    });
+
+    it('respawns a scheduled task whose bridge crashed (non-zero exit)', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const l = make(ending(3, 'running'));
+      await l.launch({ ...spec, repoUrl: origin, scheduled: { runTimeoutSeconds: 60 } });
+      await waitFor('bridge exit', () => existsSync(join(l.root, 'T-1', 'task', 'state.json')));
+      for (let i = 0; i < 100 && (await l.inspect('T-1')).running; i++) await new Promise((r) => setTimeout(r, 20));
+      await expect(l.start('T-1')).resolves.toBeUndefined();
+      await l.remove('T-1');
+      jest.restoreAllMocks();
+    });
+  });
+
   it('warns, without output, when a bridge exits unexpectedly', async () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const bridge = script('bridge.sh', 'echo secret-output\nexit 3');

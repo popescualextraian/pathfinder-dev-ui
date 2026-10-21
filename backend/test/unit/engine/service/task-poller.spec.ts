@@ -45,8 +45,9 @@ function setup(states: Record<string, Partial<ReturnType<typeof record>>>, pollS
   updates.changes.subscribe((c) => published.push(c as never));
   const costs = new TaskCostService(records as never, fakeLauncher() as never);
   jest.spyOn(costs, 'refresh').mockResolvedValue(undefined);
-  const poller = new TaskPoller(records as never, factory as never, updates, { pollSeconds }, costs as never);
-  return { poller, records, bridges, updates, published, factory, clients, costs };
+  const launcher = fakeLauncher();
+  const poller = new TaskPoller(records as never, factory as never, updates, { pollSeconds }, costs as never, launcher as never);
+  return { poller, records, bridges, updates, published, factory, clients, costs, launcher };
 }
 
 describe('TaskPoller cost', () => {
@@ -341,7 +342,7 @@ describe('TaskPoller', () => {
       const updates = new TaskUpdates();
       const published: unknown[] = [];
       updates.changes.subscribe((c) => published.push(c));
-      const restarted = new TaskPoller(records as never, (() => b.client()) as never, updates, { pollSeconds: 15 }, first.costs as never);
+      const restarted = new TaskPoller(records as never, (() => b.client()) as never, updates, { pollSeconds: 15 }, first.costs as never, first.launcher as never);
       b.push('state', { state: 'waiting', reason: 'question Q1' });
       await restarted.tick();
       expect(b.calls[b.calls.length - 1].since).toBe(1);
@@ -473,3 +474,101 @@ describe('applyEvents sessions', () => {
   });
 });
 
+
+describe('TaskPoller: a task whose bridge is gone', () => {
+  const id = ids[0];
+  const gone = { inspect: async () => ({ exists: true, running: false, bridgeUrl: '' }) };
+  let warn: jest.SpyInstance;
+  beforeEach(() => { warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(); });
+  afterEach(() => jest.restoreAllMocks());
+
+  const files = (map: Record<string, string>) => async (_id: string, name: string) => map[name] ?? null;
+
+  function ended(over: Partial<ReturnType<typeof record>>, launcher: Record<string, unknown>) {
+    const s = setup({ [id]: { lastState: 'running', lastStatus: { state: 'running', reason: '', questions: [{ id: 'Q1' }] }, ...over } });
+    Object.assign(s.launcher, launcher);
+    s.bridges.get(id)!.failWith = new BridgeUnreachableError('ECONNREFUSED');
+    return s;
+  }
+
+  it('moves a scheduled run to the state and reason of state.json, keeps the summary line, announces it, and stops polling it', async () => {
+    const readTaskFile = jest.fn(files({ 'state.json': JSON.stringify({ state: 'stopped', reason: 'scheduled-done' }), 'result.md': 'Bumped two deps.\n\nMore.' }));
+    const { poller, records, published, bridges } = ended({ scheduled: { runTimeoutSeconds: 600 }, scheduleId: 's' }, { ...gone, readTaskFile });
+    await poller.tick();
+    expect(records.map.get(id)).toMatchObject({ lastState: 'stopped', summaryLine: 'Bumped two deps.' });
+    expect(records.map.get(id)!.lastStatus).toMatchObject({ state: 'stopped', reason: 'scheduled-done', questions: [] });
+    expect(published).toEqual([expect.objectContaining({ kind: 'task', task: expect.objectContaining({ id, state: 'stopped', section: 'done', reason: 'scheduled-done', summaryLine: 'Bumped two deps.' }) })]);
+    expect(warn).not.toHaveBeenCalled();
+    const calls = bridges.get(id)!.calls.length;
+    await poller.tick();
+    await poller.tick();
+    expect(bridges.get(id)!.calls).toHaveLength(calls);
+    expect(published).toHaveLength(1);
+  });
+
+  it('takes the timeout reason', async () => {
+    const readTaskFile = files({ 'state.json': JSON.stringify({ state: 'stopped', reason: 'timeout' }), 'result.md': 'No summary: the run timed out.' });
+    const { poller, records } = ended({ scheduled: { runTimeoutSeconds: 60 } }, { ...gone, readTaskFile });
+    await poller.tick();
+    expect(records.map.get(id)).toMatchObject({ lastState: 'stopped', lastStatus: { reason: 'timeout' }, summaryLine: 'No summary: the run timed out.' });
+  });
+
+  it('applies to an ordinary task too, without reading result.md', async () => {
+    const readTaskFile = jest.fn(files({ 'state.json': JSON.stringify({ state: 'failed', reason: 'agent exited' }) }));
+    const { poller, records } = ended({}, { ...gone, readTaskFile });
+    await poller.tick();
+    expect(records.map.get(id)).toMatchObject({ lastState: 'failed', lastStatus: { reason: 'agent exited' } });
+    expect(readTaskFile).toHaveBeenCalledTimes(1);
+    expect(readTaskFile).toHaveBeenCalledWith(id, 'state.json');
+  });
+
+  it('without state.json the task failed, with a clear reason', async () => {
+    const { poller, records } = ended({}, { ...gone, readTaskFile: files({}) });
+    await poller.tick();
+    expect(records.map.get(id)!.lastState).toBe('failed');
+    expect((records.map.get(id)!.lastStatus as { reason: string }).reason).toMatch(/ended without a state.*state\.json/);
+  });
+
+  it('a container that is gone: failed, with a clear reason', async () => {
+    const { poller, records } = ended({}, { inspect: async () => ({ exists: false, running: false, bridgeUrl: '' }), readTaskFile: files({}) });
+    await poller.tick();
+    expect(records.map.get(id)!.lastState).toBe('failed');
+    expect((records.map.get(id)!.lastStatus as { reason: string }).reason).toMatch(/container is gone/);
+  });
+
+  it('a live state left in state.json (the bridge was killed): interrupted, as the bridge itself would call it, naming that state', async () => {
+    const { poller, records } = ended({}, { ...gone, readTaskFile: files({ 'state.json': JSON.stringify({ state: 'running', reason: '' }) }) });
+    await poller.tick();
+    expect(records.map.get(id)!.lastState).toBe('interrupted');
+    expect((records.map.get(id)!.lastStatus as { reason: string }).reason).toMatch(/bridge ended while the task was running/);
+  });
+
+  it('a running container whose bridge does not answer is left alone and retried', async () => {
+    const readTaskFile = jest.fn(files({}));
+    const { poller, records } = ended({}, { readTaskFile });
+    await poller.tick();
+    expect(records.map.get(id)!.lastState).toBe('running');
+    expect(readTaskFile).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(id));
+  });
+
+  it('does not undo a stop that came in meanwhile', async () => {
+    const { poller, records, launcher } = ended({}, { readTaskFile: files({}) });
+    launcher.inspect = jest.fn(async () => {
+      records.map.set(id, { ...records.map.get(id)!, lastState: 'stopped' });
+      return { exists: true, running: false, bridgeUrl: '' };
+    });
+    await poller.tick();
+    expect(records.map.get(id)!.lastState).toBe('stopped');
+  });
+
+  it('keeps the summary line when the poll itself sees a scheduled run stop', async () => {
+    const readTaskFile = jest.fn(files({ 'result.md': 'Done it' }));
+    const { poller, records, bridges, launcher, published } = setup({ [id]: { lastState: 'running', scheduled: { runTimeoutSeconds: 600 } } });
+    Object.assign(launcher, { readTaskFile });
+    bridges.get(id)!.push('state', { state: 'stopped', reason: 'scheduled-done' });
+    await poller.tick();
+    expect(records.map.get(id)).toMatchObject({ lastState: 'stopped', summaryLine: 'Done it' });
+    expect(published.at(-1)!.task).toMatchObject({ state: 'stopped', summaryLine: 'Done it' });
+  });
+});

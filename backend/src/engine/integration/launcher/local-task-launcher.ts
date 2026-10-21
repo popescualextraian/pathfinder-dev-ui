@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import { ChildProcess, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { lstat, mkdir, readFile, rm, stat } from 'node:fs/promises';
@@ -123,7 +123,12 @@ interface LocalTask {
   closed?: Promise<void>;
   // While a launch or respawn waits for the bridge: an early exit is reported by that wait.
   awaitingUp?: boolean;
+  // A scheduled run (AGENTIC_SCHEDULED): its bridge exits by itself when the run is over.
+  scheduled: boolean;
 }
+
+// The bridge's own final states in state.json: a scheduled run that reached one is over.
+const FINAL_STATES = new Set(['stopped', 'failed']);
 
 function freePort(): Promise<number> {
   return new Promise((resolvePort, reject) => {
@@ -180,7 +185,7 @@ export class LocalTaskLauncher implements TaskLauncher {
     let finish: () => void = () => undefined;
     // Registered before the clone, so a stop or remove during the launch finds the task.
     const task: LocalTask = {
-      port: 0, dir, env: {}, log: '', launching: true, cancelled: false, stopping: false,
+      port: 0, dir, env: {}, log: '', launching: true, cancelled: false, stopping: false, scheduled: spec.scheduled !== undefined,
       launchDone: new Promise<void>((resolveDone) => { finish = resolveDone; }),
     };
     this.tasks.set(spec.taskId, task);
@@ -210,9 +215,13 @@ export class LocalTaskLauncher implements TaskLauncher {
   }
 
   // Respawns the bridge on the same port, so the bridge URL the service keeps stays valid.
+  // Not the bridge of a scheduled run that ended normally (exit 0 after a final state): that run is over.
   async start(taskId: string): Promise<void> {
     const task = this.must(taskId);
     if (task.launching || this.alive(task)) return;
+    if (task.scheduled && task.child?.exitCode === 0 && (await this.finalState(taskId))) {
+      throw new ConflictException(`The scheduled run of task ${taskId} has ended; its bridge is not started again`);
+    }
     const child = this.spawnBridge(taskId, task);
     if (this.entrypoint()) await this.awaitUp(task, child);
   }
@@ -302,6 +311,16 @@ export class LocalTaskLauncher implements TaskLauncher {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'ENOENT' || code === 'ENOTDIR') return null;
       throw error;
+    }
+  }
+
+  // Whether the bridge's state.json holds a final state (an unreadable or absent one does not).
+  private async finalState(taskId: string): Promise<boolean> {
+    try {
+      const state = (JSON.parse((await this.readTaskFile(taskId, 'state.json')) ?? '{}') as { state?: unknown }).state;
+      return typeof state === 'string' && FINAL_STATES.has(state);
+    } catch {
+      return false;
     }
   }
 
