@@ -23,6 +23,8 @@ drive (`/mnt/c`): containers read the Linux file system many times faster, and s
   (no rebuilds, no re-clones). Before each step say in one line what you check and what you will do.
 - **Ask first** for: anything run as root (say what, once per step), deleting anything, `wsl --terminate`,
   `docker compose down -v` (deletes task records), pushing, committing to the project, changing its `.agentic/`.
+- Every `docker compose` command, in `~/pathfinder/pathfinder-dev-ui`, takes `--env-file ~/pathfinder/pathfinder.env`
+  (compose needs `DOCKER_GID` from it even to stop or read logs).
 - Never touch other containers, images, folders or distros of the user. Pathfinder's are `agentic-*`,
   `agentic-ui-task-*`, the compose project `agentic-pathfinder-dev-ui` and `~/pathfinder`.
 - Builds take long (base image about 15 minutes). Run them as a background command of your own and check its output;
@@ -74,8 +76,8 @@ Ask first which project (its https URL on GitLab or GitHub) unless they said it.
 | 5 | `~/pathfinder/pathfinder.env` exists, mode 600, with `ENGINE_IMAGE`, `ENGINE_REPO_URL`, `ENGINE_PROJECT`, `ENGINE_GIT_NAME`, `ENGINE_GIT_EMAIL`, `DOCKER_GID`, `UI_PORT` set, and both tokens set (count check) | write it without the tokens (guide step 5); then the user adds `CLAUDE_CODE_OAUTH_TOKEN` (they run `claude setup-token`, in Windows or Ubuntu, and paste the printed token) and `GH_TOKEN` (a GitLab or GitHub token for the repository: guide, Tokens). Check the repository token: `git ls-remote <url>` with it (next row's helper) answers |
 | 6 | the project is cloned at `~/pathfinder/projects/<name>` with `.agentic/agentic.yaml` | clone it with the token from the settings file, never typed and never stored: `git -c credential.helper= -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$(sed -n "s/^GH_TOKEN=//p" ~/pathfinder/pathfinder.env)"; }; f' clone <url>`, and set the same helper in the clone (`git config credential.helper ...`) so later pulls work. No `.agentic/`: offer `agentic init` (and `agentic setup` if they want); committing it is the user's call |
 | 7 | `docker image inspect agentic-<project>:local`; `agentic doctor` in the project does not say the config changed | `~/.local/bin/agentic build` in the project (background) |
-| 8 | `docker compose ps` in `~/pathfinder/pathfinder-dev-ui` shows `ui` and `docker-filter` healthy; `curl -fsS localhost:<UI_PORT>/api/health` | `tools/deploy.sh ~/pathfinder/pathfinder.env` (needs the checkout on a clean `main`). A restarting `ui` logs `Invalid engine configuration: X is required`: fix X in the settings file, deploy again |
-| 9 | the user started a task in the UI (`http://localhost:<UI_PORT>`) and it answered | read `docker compose logs ui --tail 100` and the task; fix from the guide's Troubleshooting |
+| 8 | `docker compose --env-file ~/pathfinder/pathfinder.env ps` in `~/pathfinder/pathfinder-dev-ui` shows `ui` and `docker-filter` healthy; `curl -fsS localhost:<UI_PORT>/api/health` | `tools/deploy.sh ~/pathfinder/pathfinder.env` (needs the checkout on a clean `main`). A restarting `ui` logs `Invalid engine configuration: X is required`: fix X in the settings file, deploy again |
+| 9 | the user started a task in the UI (`http://localhost:<UI_PORT>`) and it answered | read `docker compose --env-file ~/pathfinder/pathfinder.env logs ui --tail 100` and the task; fix from the guide's Troubleshooting |
 | 10 (optional, ask) | `GET /api/backlog/lanes` answers 200 and `GET /api/workflows` lists definitions | guide step 7: lanes file, workflows folder, `BACKLOG_CONFIG_FILE`, `WORKFLOWS_DIR_HOST`, an empty `GITLAB_TOKEN=` for the user (a project access token, Developer, scope `api`); check it with the guide's curl lines (scopes and status code only); 403 means the wrong kind of token; deploy again |
 
 Finish with: the URL, where the settings file is (`\\wsl.localhost\<D>\home\<user>\pathfinder\pathfinder.env` from

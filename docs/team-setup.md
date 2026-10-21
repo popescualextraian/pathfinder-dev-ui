@@ -211,11 +211,14 @@ With apps declared, the task view lists them with **Start**, **Open**, **Logs** 
 | | Command (in `~/pathfinder/pathfinder-dev-ui`) |
 |---|---|
 | Update | `git pull`, then `tools/deploy.sh ~/pathfinder/pathfinder.env` (tasks and their records survive) |
-| Stop the UI | `docker compose stop` |
-| Start it again | `docker compose start` (it also restarts with Docker) |
-| UI logs | `docker compose logs -f ui` |
+| Stop the UI | `docker compose --env-file ~/pathfinder/pathfinder.env stop` |
+| Start it again | `docker compose --env-file ~/pathfinder/pathfinder.env start` (it also restarts with Docker) |
+| UI logs | `docker compose --env-file ~/pathfinder/pathfinder.env logs -f ui` |
 | After changing `.agentic/` of the project | `agentic build` in the project; new tasks use the new image |
 | After changing `pathfinder.env` | `tools/deploy.sh ~/pathfinder/pathfinder.env` |
+
+Every `docker compose` command needs `--env-file ~/pathfinder/pathfinder.env`: without it compose stops with
+`required variable DOCKER_GID is missing a value`.
 
 ## 7. Optional: the GitLab backlog board and workflows
 
@@ -282,9 +285,10 @@ and `GH_TOKEN` in its environment; the UI has no login, so it listens on 127.0.0
 | `agentic: command not found` | a new terminal, or `export PATH=$HOME/.local/bin:$PATH` |
 | deploy: `the task image ... does not exist locally` | `agentic build` in the project (step 4); `ENGINE_IMAGE` must match its name |
 | deploy: `set DOCKER_GID` | the `stat` line of step 5 |
+| `docker compose ...`: `required variable DOCKER_GID is missing a value` | add `--env-file ~/pathfinder/pathfinder.env` (every compose command needs it) |
 | a task fails with `could not clone` | `GH_TOKEN` missing, expired or without read access; `ENGINE_REPO_URL` without credentials |
 | a task cannot push | the token lacks write access, or the task was not allowed to push |
-| the UI does not open | `docker compose ps` (both services healthy?), `docker compose logs ui` |
+| the UI does not open | `docker compose --env-file ~/pathfinder/pathfinder.env ps` (both services healthy?), `docker compose --env-file ~/pathfinder/pathfinder.env logs ui` |
 | the UI keeps restarting, log says `Invalid engine configuration: X is required` | set X in `pathfinder.env`, deploy again |
 | a task shows no apps | `apps:` is not in the `.agentic/agentic.yaml` the task cloned (committed and pushed?), or the image was built before it (`agentic build`, then a new task) |
 | an app has no link | the task was started before the image had the app's port: start a new task |
