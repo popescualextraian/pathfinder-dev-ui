@@ -2,7 +2,8 @@ import { request } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import WebSocket from 'ws';
 import {
-  AddSessionInput, AnswerInput, BridgeClient, BridgeError, BridgeEvent, BridgeSession, BridgeStatus, BridgeUnreachableError,
+  AddSessionInput, AnswerInput, AppAction, BridgeApp, BridgeClient, BridgeError, BridgeEvent, BridgeSession, BridgeStatus,
+  BridgeUnreachableError,
 } from '../../service/bridge-client';
 
 // Client of the bridge HTTP/WebSocket API v1. Uses node:http (not fetch) so the Host header can be
@@ -18,6 +19,8 @@ export interface BridgeClientOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+// An app's prepare step (npm ci) can take about 11 minutes.
+const APP_START_TIMEOUT_MS = 12 * 60_000;
 
 export class HttpBridgeClient implements BridgeClient {
   private readonly url: URL;
@@ -68,6 +71,30 @@ export class HttpBridgeClient implements BridgeClient {
 
   status(): Promise<BridgeStatus> {
     return this.json('GET', '/status');
+  }
+
+  async apps(): Promise<BridgeApp[]> {
+    const text = await this.send('GET', '/apps');
+    return parseJson<BridgeApp[]>(() => {
+      const apps = JSON.parse(text) as unknown;
+      if (!Array.isArray(apps)) throw new Error('not a list');
+      return apps as BridgeApp[];
+    });
+  }
+
+  async appAction(name: string, action: AppAction): Promise<BridgeApp> {
+    const timeout = action === 'stop' ? this.timeoutMs : APP_START_TIMEOUT_MS;
+    const text = await this.send('POST', `/apps/${encodeURIComponent(name)}/${action}`, undefined, timeout);
+    return parseJson<BridgeApp>(() => JSON.parse(text) as BridgeApp);
+  }
+
+  async appLogs(name: string, lines: number): Promise<string[]> {
+    const text = await this.send('GET', `/apps/${encodeURIComponent(name)}/logs?lines=${lines}`);
+    return parseJson<string[]>(() => {
+      const body = JSON.parse(text) as { lines?: unknown };
+      if (!Array.isArray(body.lines)) throw new Error('no lines');
+      return body.lines.map(String);
+    });
   }
 
   async events(since: number, limit?: number, view?: 'full' | 'status', session?: string): Promise<BridgeEvent[]> {
@@ -142,7 +169,7 @@ export class HttpBridgeClient implements BridgeClient {
     return parseJson<BridgeStatus>(() => JSON.parse(text) as BridgeStatus);
   }
 
-  private send(method: string, path: string, body?: unknown): Promise<string> {
+  private send(method: string, path: string, body?: unknown, timeoutMs = this.timeoutMs): Promise<string> {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const open = this.url.protocol === 'https:' ? httpsRequest : request;
     return new Promise((resolve, reject) => {
@@ -173,7 +200,7 @@ export class HttpBridgeClient implements BridgeClient {
           });
         },
       );
-      const timer = setTimeout(() => req.destroy(new Error('timeout')), this.timeoutMs);
+      const timer = setTimeout(() => req.destroy(new Error('timeout')), timeoutMs);
       req.on('error', (error) => {
         clearTimeout(timer);
         reject(new BridgeUnreachableError(describe(error)));

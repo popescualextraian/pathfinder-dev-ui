@@ -2,11 +2,15 @@ import {
   Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Query, Sse, UseFilters, UseGuards, MessageEvent,
 } from '@nestjs/common';
 import { catchError, interval, map, merge, Observable, throwError } from 'rxjs';
-import { BridgeError, BridgeUnreachableError, SessionView, TaskEvent, TaskEventsService, TasksService, TaskUpdates, TaskView } from '../../engine';
+import {
+  AppView, BridgeError, BridgeUnreachableError, SessionView, TaskEvent, TaskEventsService, TasksService, TaskUpdates, TaskView,
+} from '../../engine';
 import { BridgeErrorFilter, describeBridgeError } from './bridge-error.filter';
 import { AddSessionDto } from './dto/add-session.dto';
 import { AnswerDto } from './dto/answer.dto';
+import { AppParamsDto } from './dto/app-params.dto';
 import { CancelDto } from './dto/cancel.dto';
+import { LinesQueryDto } from './dto/lines-query.dto';
 import { PromptDto } from './dto/prompt.dto';
 import { SinceQueryDto } from './dto/since-query.dto';
 import { StartTaskDto } from './dto/start-task.dto';
@@ -104,6 +108,35 @@ export class TasksController {
   @Get(':id/events')
   eventList(@Param('id') id: string, @Query() query: SinceQueryDto): Promise<TaskEvent[]> {
     return this.tasks.events(id, query.since ?? 0, query.session ?? undefined);
+  }
+
+  // Apps of the task's container (Docker launcher only). Actions answer 202 with the app, as the bridge does.
+  @Get(':id/apps')
+  apps(@Param('id') id: string): Promise<AppView[]> {
+    return this.tasks.apps(id);
+  }
+
+  @Post(':id/apps/:name/start')
+  @HttpCode(202)
+  startApp(@Param() p: AppParamsDto): Promise<AppView> {
+    return this.tasks.appAction(p.id, p.name, 'start');
+  }
+
+  @Post(':id/apps/:name/stop')
+  @HttpCode(202)
+  stopApp(@Param() p: AppParamsDto): Promise<AppView> {
+    return this.tasks.appAction(p.id, p.name, 'stop');
+  }
+
+  @Post(':id/apps/:name/restart')
+  @HttpCode(202)
+  restartApp(@Param() p: AppParamsDto): Promise<AppView> {
+    return this.tasks.appAction(p.id, p.name, 'restart');
+  }
+
+  @Get(':id/apps/:name/logs')
+  appLogs(@Param() p: AppParamsDto, @Query() query: LinesQueryDto): Promise<{ lines: string[] }> {
+    return this.tasks.appLogs(p.id, p.name, query.lines ?? 200);
   }
 
   // Backlog after Last-Event-ID (which EventSource sends on reconnect) or else `since`, then live.

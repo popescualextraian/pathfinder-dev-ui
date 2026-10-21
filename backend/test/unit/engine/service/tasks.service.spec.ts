@@ -814,3 +814,54 @@ describe('TasksService.readTaskFile', () => {
     await expect(service.readTaskFile('T-20260101-nope', 'result.md')).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe('TasksService apps', () => {
+  const web = { name: 'web', state: 'running', ports: [3000], url: '/ui', since: 'x' };
+  const withApps = (over: Partial<ReturnType<typeof record>> = {}, bridgeOver: Record<string, unknown> = {}) =>
+    setup({ records: [record({ appPorts: { web: { '3000': 49153 } }, ...over })], bridge: { apps: jest.fn(async () => [web]), ...bridgeOver } });
+
+  it('lists the apps with the link of the first port', async () => {
+    const { service } = withApps();
+    expect(await service.apps(ID)).toEqual([{ ...web, link: 'http://localhost:49153/ui' }]);
+  });
+
+  it('has no link without a recorded host port (a task from before the change)', async () => {
+    const { service } = withApps({ appPorts: undefined });
+    expect((await service.apps(ID))[0].link).toBeNull();
+  });
+
+  it('relays an action and returns the app with its link', async () => {
+    const appAction = jest.fn(async () => web);
+    const { service } = withApps({}, { appAction });
+    expect(await service.appAction(ID, 'web', 'restart')).toMatchObject({ name: 'web', link: 'http://localhost:49153/ui' });
+    expect(appAction).toHaveBeenCalledWith('web', 'restart');
+  });
+
+  it('relays the logs', async () => {
+    const appLogs = jest.fn(async () => ['l1']);
+    const { service } = withApps({}, { appLogs });
+    expect(await service.appLogs(ID, 'web', 20)).toEqual({ lines: ['l1'] });
+    expect(appLogs).toHaveBeenCalledWith('web', 20);
+  });
+
+  it('refuses a task stopped via /stop, a closed task and a stopped container with 409', async () => {
+    await expect(withApps({ lastState: 'stopped' }).service.apps(ID)).rejects.toBeInstanceOf(ConflictException);
+    await expect(withApps({ closed: true }).service.apps(ID)).rejects.toBeInstanceOf(ConflictException);
+    const down = setup({ records: [record()], launcher: notRunning });
+    await expect(down.service.apps(ID)).rejects.toBeInstanceOf(ConflictException);
+    expect(down.bridge.apps).not.toHaveBeenCalled();
+  });
+
+  it('refuses with the Docker-launcher message under the local launcher', async () => {
+    const { records, launcher, factory } = setup({ records: [record()] });
+    const local = new TasksService(
+      records as never, launcher as never, factory as never, { ...config, launcher: 'local' } as never,
+      new TaskUpdates(), new TaskCostService(records as never, launcher as never),
+    );
+    await expect(local.apps(ID)).rejects.toThrow('Apps need the Docker launcher');
+  });
+
+  it('is 404 for an unknown task', async () => {
+    await expect(withApps().service.apps('T-nope')).rejects.toBeInstanceOf(NotFoundException);
+  });
+});

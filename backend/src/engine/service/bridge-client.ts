@@ -72,6 +72,19 @@ export interface AnswerInput {
   session?: string;
 }
 
+export type BridgeAppState = 'starting' | 'running' | 'stopped' | 'failed';
+export type AppAction = 'start' | 'stop' | 'restart';
+
+// An app of the task container as the bridge reports it; `ports` are container ports.
+export interface BridgeApp {
+  name: string;
+  state: BridgeAppState;
+  ports: number[];
+  url: string;
+  since: string;
+  exit_code?: number;
+}
+
 export class BridgeError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
     super(message);
@@ -97,6 +110,10 @@ export interface BridgeClient {
   status(): Promise<BridgeStatus>;
   // `view` 'status' keeps only state, question, answer, error and final messages (same seq numbers, with gaps).
   events(since: number, limit?: number, view?: 'full' | 'status', session?: string): Promise<BridgeEvent[]>;
+  apps(): Promise<BridgeApp[]>;
+  // start and restart may take minutes (the app's prepare step); stop is quick.
+  appAction(name: string, action: AppAction): Promise<BridgeApp>;
+  appLogs(name: string, lines: number): Promise<string[]>;
   // Backlog after `since`, then live events; ends when the bridge closes or the signal aborts.
   eventStream(since: number, signal?: AbortSignal): AsyncGenerator<BridgeEvent>;
 }

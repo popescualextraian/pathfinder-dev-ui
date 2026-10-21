@@ -3,8 +3,8 @@ import { assertWorktreePaths } from './worktree-paths';
 import { randomBytes, randomInt } from 'node:crypto';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 import {
-  BRIDGE_CLIENT_FACTORY, BridgeClient, AddSessionInput as BridgeAddSessionInput, AnswerInput, BridgeClientFactory, BridgeError, BridgeEvent, BridgeStatus,
-  BridgeUnreachableError, waitForStatus,
+  AppAction, BRIDGE_CLIENT_FACTORY, BridgeApp, BridgeClient, AddSessionInput as BridgeAddSessionInput, AnswerInput, BridgeClientFactory,
+  BridgeError, BridgeEvent, BridgeStatus, BridgeUnreachableError, waitForStatus,
 } from './bridge-client';
 import { AppPorts, TASK_LAUNCHER, TaskFileName, TaskInspection, TaskLauncher, WORKTREE_FILE_MAX_BYTES } from './task-launcher';
 import { assertTaskFileName } from './worktree-paths';
@@ -18,6 +18,11 @@ import { hasSession, Live, MAIN_SESSION, mergeSessions, titleFrom, toView, TaskV
 
 export type { TaskView } from './task-view';
 export type { TaskKind } from '../repository/task-record.repository';
+
+// An app of a task as the API shows it; `link` is the host URL of the first port, null without a host port.
+export interface AppView extends BridgeApp {
+  link: string | null;
+}
 
 export interface StartTaskInput {
   prompt: string;
@@ -295,6 +300,34 @@ export class TasksService {
     }
   }
 
+  async apps(id: string): Promise<AppView[]> {
+    const { client, record } = await this.appsOf(id);
+    return (await client.apps()).map((app) => toAppView(record, app));
+  }
+
+  async appAction(id: string, name: string, action: AppAction): Promise<AppView> {
+    const { client, record } = await this.appsOf(id);
+    return toAppView(record, await client.appAction(name, action));
+  }
+
+  async appLogs(id: string, name: string, lines: number): Promise<{ lines: string[] }> {
+    const { client } = await this.appsOf(id);
+    return { lines: await client.appLogs(name, lines) };
+  }
+
+  // Apps need the Docker launcher's published ports and a running container that was not stopped for good.
+  private async appsOf(id: string): Promise<{ client: BridgeClient; record: TaskRecord }> {
+    const record = await this.require(id);
+    if (this.config.launcher === 'local') throw new ConflictException('Apps need the Docker launcher');
+    if (record.closed) throw closedConflict(id);
+    if (record.lastState === 'stopped') throw new ConflictException(`Task ${id} is stopped; its apps are not available`);
+    const inspection = await this.launcher.inspect(id);
+    if (!inspection.exists || !inspection.running) {
+      throw new ConflictException(`Task ${id} is not running; its apps are not available`);
+    }
+    return { client: this.bridgeFor(record), record };
+  }
+
   // Under the launch lock: cap check, record, container. Does not wait for the bridge.
   private async launchNew(input: StartTaskInput): Promise<TaskRecord> {
     if ((await this.launcher.countRunning()) >= this.config.maxRunning) {
@@ -494,6 +527,11 @@ export class TasksService {
       if (!(await this.records.get(id))) return id;
     }
   }
+}
+
+function toAppView(record: TaskRecord, app: BridgeApp): AppView {
+  const hostPort = app.ports.length ? record.appPorts?.[app.name]?.[String(app.ports[0])] : undefined;
+  return { ...app, link: hostPort === undefined ? null : `http://localhost:${hostPort}${app.url}` };
 }
 
 function closedConflict(id: string): ConflictException {

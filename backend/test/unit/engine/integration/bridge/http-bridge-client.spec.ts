@@ -248,6 +248,47 @@ describe('HttpBridgeClient', () => {
     await expect(client().status()).rejects.toBeInstanceOf(BridgeUnreachableError);
   });
 
+  describe('apps', () => {
+    const app = { name: 'web', state: 'running', ports: [3000], url: '/', since: '2026-10-20T10:00:00Z' };
+
+    it('lists the apps', async () => {
+      reply = () => ({ status: 200, body: [app] });
+      expect(await client().apps()).toEqual([app]);
+      expect(seen[0]).toMatchObject({ method: 'GET', url: '/apps' });
+      expect(seen[0].headers.authorization).toBe(`Bearer ${TOKEN}`);
+    });
+
+    it('relays start, stop and restart and returns the app', async () => {
+      reply = () => ({ status: 202, body: app });
+      for (const action of ['start', 'stop', 'restart'] as const) {
+        expect(await client().appAction('web', action)).toEqual(app);
+      }
+      expect(seen.map((r) => `${r.method} ${r.url}`)).toEqual(['POST /apps/web/start', 'POST /apps/web/stop', 'POST /apps/web/restart']);
+    });
+
+    it('reads the logs as lines', async () => {
+      reply = () => ({ status: 200, body: { lines: ['a', 'b'] } });
+      expect(await client().appLogs('web', 50)).toEqual(['a', 'b']);
+      expect(seen[0]).toMatchObject({ method: 'GET', url: '/apps/web/logs?lines=50' });
+    });
+
+    it('waits long for start and restart, briefly for stop and the reads', async () => {
+      reply = () => ({ status: 202, body: app, delayMs: 200 });
+      await expect(client({ timeoutMs: 50 }).appAction('web', 'start')).resolves.toEqual(app);
+      await expect(client({ timeoutMs: 50 }).appAction('web', 'restart')).resolves.toEqual(app);
+      await expect(client({ timeoutMs: 50 }).appAction('web', 'stop')).rejects.toBeInstanceOf(BridgeUnreachableError);
+      await expect(client({ timeoutMs: 50 }).apps()).rejects.toBeInstanceOf(BridgeUnreachableError);
+    });
+
+    it('maps bridge errors and malformed bodies', async () => {
+      reply = () => ({ status: 404, body: { error: { code: 'not_found', message: 'No app x' } } });
+      await expect(client().appAction('x', 'start')).rejects.toMatchObject({ status: 404, code: 'not_found' });
+      reply = () => ({ status: 200, body: { nope: 1 } });
+      await expect(client().apps()).rejects.toBeInstanceOf(BridgeUnreachableError);
+      await expect(client().appLogs('web', 5)).rejects.toBeInstanceOf(BridgeUnreachableError);
+    });
+  });
+
   describe('eventStream', () => {
     it('yields backlog then live events and ends on close', async () => {
       liveFrames = [event(12)];

@@ -1,4 +1,4 @@
-import { LaunchResult, LaunchSpec, TaskInspection, TASK_FILE_MAX_BYTES, TaskFileName, TaskLauncher, WorktreeFileTooLargeError } from '../../src/engine/service/task-launcher';
+import { AppPorts, LaunchResult, LaunchSpec, TaskInspection, TASK_FILE_MAX_BYTES, TaskFileName, TaskLauncher, WorktreeFileTooLargeError } from '../../src/engine/service/task-launcher';
 import { assertTaskFileName, assertWorktreePaths } from '../../src/engine/service/worktree-paths';
 
 // In-memory TaskLauncher: "containers" are map entries; every task's bridge is at `bridgeUrl`.
@@ -7,17 +7,19 @@ export class FakeLauncher implements TaskLauncher {
   specs: LaunchSpec[] = [];
   // What readLedger returns (undefined: no ledger).
   ledger: string | undefined;
+  // Host ports the "containers" publish for their apps.
+  appPorts: AppPorts | undefined;
 
   constructor(public bridgeUrl = 'http://127.0.0.1:1') {}
 
   async launch(spec: LaunchSpec): Promise<LaunchResult> {
     this.specs.push(spec);
     this.containers.set(spec.taskId, { running: true });
-    return { bridgeUrl: this.bridgeUrl };
+    return this.appPorts ? { bridgeUrl: this.bridgeUrl, appPorts: this.appPorts } : { bridgeUrl: this.bridgeUrl };
   }
-  async start(taskId: string): Promise<undefined> {
+  async start(taskId: string): Promise<AppPorts | undefined> {
     this.containers.get(taskId)!.running = true;
-    return undefined;
+    return this.appPorts;
   }
   async stop(taskId: string): Promise<void> {
     const c = this.containers.get(taskId);
