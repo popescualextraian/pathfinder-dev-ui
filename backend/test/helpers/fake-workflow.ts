@@ -36,7 +36,10 @@ export class FakeWorkflowTasks implements WorkflowTasks {
     this.prompts.push({ taskId, session, text });
   }
 
+  /** When set, get rejects with it. */
+  getFailure?: Error;
   async get(taskId: string): Promise<WorkflowTaskSnapshot | undefined> {
+    if (this.getFailure) throw this.getFailure;
     const t = this.tasks.get(taskId);
     return t && structuredClone(t);
   }

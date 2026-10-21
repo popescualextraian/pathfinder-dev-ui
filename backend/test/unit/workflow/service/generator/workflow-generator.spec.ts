@@ -109,6 +109,32 @@ describe('WorkflowGenerator', () => {
       expect(tasks.starts).toHaveLength(0);
     });
 
+    it('closes the new task and rethrows when the generation cannot be stored', async () => {
+      const repo = new WorkflowGenerationFileRepository(dir);
+      generator.onModuleDestroy();
+      generator = new WorkflowGenerator(tasks, items, repo, undefined, clock);
+      await generator.onModuleInit();
+      repo.save = async () => { throw new Error('disk full'); };
+      await expect(generator.start('Do it')).rejects.toThrow('disk full');
+      expect(tasks.closed).toEqual(['T-20261020-0001']);
+    });
+
+    it('a folder that cannot be listed at startup is logged, not fatal', async () => {
+      const repo = new WorkflowGenerationFileRepository(dir);
+      repo.list = async () => { throw new Error('EACCES'); };
+      generator.onModuleDestroy();
+      generator = new WorkflowGenerator(tasks, items, repo, undefined, clock);
+      await expect(generator.onModuleInit()).resolves.toBeUndefined();
+    });
+
+    it('without known stages, any stage passes the check (as in the editor)', async () => {
+      items = { get: async () => undefined, moveTo: async () => undefined };
+      generator.onModuleDestroy();
+      generator = await make();
+      const { taskId } = await generator.start('Do it');
+      expect((await turnEnds(taskId, BAD_STAGE)).state).toBe('ready');
+    });
+
     it('passes a failed task start on and records nothing', async () => {
       tasks.start = async () => { throw new Error('At most 2 tasks'); };
       await expect(generator.start('Do it')).rejects.toThrow('At most 2 tasks');
@@ -227,13 +253,105 @@ describe('WorkflowGenerator', () => {
       const { id, taskId } = await generator.start('Do it');
       tasks.promptFailure = new Error('bridge 503');
       const g = await turnEnds(taskId, BAD_STAGE);
-      expect(g).toMatchObject({ state: 'writing', attempts: 0, warning: 'could not send the errors to the agent: bridge 503' });
+      expect(g).toMatchObject({ state: 'fixing', attempts: 1, warning: 'could not send the errors to the agent: bridge 503' });
+      // Another change while the send keeps failing: still fix 1, the draft is not checked again.
+      tasks.emit(taskId);
+      await generator.settled();
+      expect(await viewOf(id)).toMatchObject({ state: 'fixing', attempts: 1 });
+      expect(tasks.readFileCalls).toHaveLength(1);
       tasks.promptFailure = undefined;
-      for (let i = 0; i < 50 && (await viewOf(id)).state !== 'fixing'; i++) await new Promise((r) => setTimeout(r, 5));
+      for (let i = 0; i < 50 && (await viewOf(id)).warning !== undefined; i++) await new Promise((r) => setTimeout(r, 5));
       await generator.settled();
       expect(await viewOf(id)).toMatchObject({ state: 'fixing', attempts: 1 });
       expect((await viewOf(id)).warning).toBeUndefined();
       expect(tasks.prompts).toHaveLength(1);
+      expect(tasks.prompts[0].text).toContain('fix 1 of 2');
+      expect(tasks.readFileCalls).toHaveLength(1);
+    });
+  });
+
+  describe('recording before sending', () => {
+    // The generation as stored when the prompt goes out.
+    const storedAtSend = (): Array<{ state: string; attempts: number }> => {
+      const seen: Array<{ state: string; attempts: number }> = [];
+      const send = tasks.prompt.bind(tasks);
+      tasks.prompt = async (taskId, session, text) => {
+        const [g] = await new WorkflowGenerationFileRepository(dir).list();
+        seen.push({ state: g.state, attempts: g.attempts });
+        return send(taskId, session, text);
+      };
+      return seen;
+    };
+
+    it('stores the fix (attempt and state) before sending its prompt', async () => {
+      const { taskId } = await generator.start('Do it');
+      const seen = storedAtSend();
+      await turnEnds(taskId, BAD_STAGE);
+      expect(seen).toEqual([{ state: 'fixing', attempts: 1 }]);
+    });
+
+    it('stores the change request before sending it', async () => {
+      const { id, taskId } = await generator.start('Do it');
+      await turnEnds(taskId, VALID);
+      const seen = storedAtSend();
+      await generator.requestChanges(id, 'More');
+      expect(seen).toEqual([{ state: 'writing', attempts: 0 }]);
+    });
+
+    it('a restart between storing and sending sends the prompt once, without a second check', async () => {
+      const { id, taskId } = await generator.start('Do it');
+      tasks.promptFailure = new Error('bridge 503');
+      await turnEnds(taskId, BAD_STAGE);
+      generator.onModuleDestroy();
+      tasks.promptFailure = undefined;
+      generator = await make();
+      await generator.settled();
+      expect(tasks.prompts).toHaveLength(1);
+      expect(tasks.prompts[0].text).toContain('fix 1 of 2');
+      expect(tasks.readFileCalls).toHaveLength(1);
+      expect(await viewOf(id)).toMatchObject({ state: 'fixing', attempts: 1 });
+      // Its turn is followed as usual.
+      expect((await turnEnds(taskId, VALID)).state).toBe('ready');
+    });
+
+    it('a prompt the agent already took up before a restart is not sent again', async () => {
+      const { id, taskId } = await generator.start('Do it');
+      tasks.promptFailure = new Error('timeout');
+      await turnEnds(taskId, BAD_STAGE);
+      generator.onModuleDestroy();
+      tasks.promptFailure = undefined;
+      // It went out after all: the agent is working on it.
+      tasks.setSession(taskId, 'main', { state: 'running' });
+      generator = await make();
+      await generator.settled();
+      expect(tasks.prompts).toHaveLength(0);
+      expect(await viewOf(id)).toMatchObject({ state: 'fixing', attempts: 1 });
+      tasks.fileContents.set(DRAFT, VALID);
+      tasks.finishTurn(taskId, 'main');
+      tasks.emit(taskId);
+      await generator.settled();
+      expect((await viewOf(id)).state).toBe('ready');
+    });
+
+    it('checks only when the session is idle without a question at check time', async () => {
+      const { id, taskId } = await generator.start('Do it');
+      tasks.readFileFailure = new Error('docker 500');
+      await turnEnds(taskId, VALID); // turn done, check failed: retried
+      tasks.readFileFailure = undefined;
+      const reads = tasks.readFileCalls.length;
+
+      // The agent works again (e.g. prompted from the task view): no check of a half-written draft.
+      tasks.setSession(taskId, 'main', { state: 'running' });
+      await changed(taskId);
+      expect(tasks.readFileCalls).toHaveLength(reads);
+      tasks.setSession(taskId, 'main', { state: 'waiting', openQuestions: 1 });
+      expect((await changed(taskId)).state).toBe('asking');
+      expect(tasks.readFileCalls).toHaveLength(reads);
+
+      tasks.setSession(taskId, 'main', { state: 'idle', openQuestions: 0 });
+      await changed(taskId);
+      expect(tasks.readFileCalls).toHaveLength(reads + 1);
+      expect((await viewOf(id)).state).toBe('ready');
     });
   });
 
@@ -289,6 +407,32 @@ describe('WorkflowGenerator', () => {
       if (reason) tasks.task(taskId).failureReason = reason;
       await changed(taskId);
       expect(await viewOf(id)).toMatchObject({ state: 'failed', failureReason: message });
+    });
+
+    it.each(['failed', 'interrupted'] as const)('a %s agent session fails the generation; the task stays open', async (state) => {
+      const { id, taskId } = await generator.start('Do it');
+      await turnEnds(taskId, BAD_STAGE);
+      tasks.setSession(taskId, 'main', { state });
+      await changed(taskId);
+      expect(await viewOf(id)).toMatchObject({ state: 'failed', failureReason: `the agent's session is ${state}` });
+      expect(tasks.closed).toEqual([]);
+    });
+
+    it('a failure to read the task is a warning, retried on a timer', async () => {
+      generator.onModuleDestroy();
+      generator = await make({ initialMs: 5, maxMs: 10 });
+      const { id, taskId } = await generator.start('Do it');
+      tasks.fileContents.set(DRAFT, VALID);
+      tasks.finishTurn(taskId, 'main');
+      tasks.getFailure = new Error('engine down');
+      tasks.emit(taskId);
+      await generator.settled();
+      expect(await viewOf(id)).toMatchObject({ state: 'writing', warning: 'could not read the task: engine down' });
+      tasks.getFailure = undefined;
+      for (let i = 0; i < 50 && (await viewOf(id)).state !== 'ready'; i++) await new Promise((r) => setTimeout(r, 5));
+      await generator.settled();
+      expect((await viewOf(id)).state).toBe('ready');
+      expect((await viewOf(id)).warning).toBeUndefined();
     });
 
     it('a task that is gone fails the generation', async () => {
@@ -386,14 +530,36 @@ describe('WorkflowGenerator', () => {
       expect(await generator.list()).toEqual([]);
     });
 
-    it('a failed close is logged, not fatal; a task that is already gone is fine', async () => {
+    it('discard closes the task first: a failed close is returned and the generation stays open', async () => {
       const a = await generator.start('Do it');
       tasks.closeFailure = new Error('docker down');
-      expect((await generator.discard(a.id)).state).toBe('discarded');
+      await expect(generator.discard(a.id)).rejects.toThrow('docker down');
+      expect((await viewOf(a.id)).state).toBe('writing');
       tasks.closeFailure = undefined;
       const b = await generator.start('Do it again');
-      tasks.tasks.delete(b.taskId);
+      tasks.tasks.delete(b.taskId); // already gone: fine
       expect((await generator.discard(b.id)).state).toBe('discarded');
+    });
+
+    it('saved stores first: a failed close is logged, not fatal', async () => {
+      const { id, taskId } = await generator.start('Do it');
+      await turnEnds(taskId, VALID);
+      tasks.closeFailure = new Error('docker down');
+      expect((await generator.saved(id)).state).toBe('saved');
+      expect((await viewOf(id)).state).toBe('saved');
+    });
+
+    it('a failure to remove expired generations does not fail saved or discard', async () => {
+      const repo = new WorkflowGenerationFileRepository(dir);
+      generator.onModuleDestroy();
+      generator = new WorkflowGenerator(tasks, items, repo, undefined, clock);
+      await generator.onModuleInit();
+      const a = await generator.start('A');
+      const b = await generator.start('B');
+      await turnEnds(b.taskId, VALID);
+      repo.list = async () => { throw new Error('disk'); };
+      expect((await generator.discard(a.id)).state).toBe('discarded');
+      expect((await generator.saved(b.id)).state).toBe('saved');
     });
   });
 

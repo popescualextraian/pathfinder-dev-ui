@@ -53,7 +53,7 @@ export interface WorkflowGenerationView {
 /** What the list shows: everything but the draft, and whether there is one. */
 export type WorkflowGenerationSummary = Omit<WorkflowGenerationView, 'draft'> & { hasDraft: boolean };
 
-/** The stored generation: the view plus how the current turn of the agent is followed. */
+/** The stored generation: the view plus how the current turn of the agent is followed and a prompt still to send. */
 export interface WorkflowGeneration extends WorkflowGenerationView {
   turn: {
     /** running: the agent has a prompt to work on; done: its turn ended and the draft is still to be checked. */
@@ -63,6 +63,12 @@ export interface WorkflowGeneration extends WorkflowGenerationView {
     /** Seen busy (running/waiting) since the prompt was sent. */
     sawBusy?: boolean;
   };
+  /**
+   * A prompt recorded but not known to be sent yet (stored before sending, so a crash or a failed send never counts
+   * an attempt twice). `baseline`: the session's lastMessageAt when it was recorded; a busy session or a different
+   * value later means the agent took it up after all.
+   */
+  outbox?: { text: string; baseline?: string };
 }
 
 export const GENERATION_ID = /^G-\d{8}-[a-z0-9]{8}$/;
@@ -75,7 +81,7 @@ export function newGenerationId(now = new Date()): string {
 }
 
 export function toGenerationView(g: WorkflowGeneration): WorkflowGenerationView {
-  const { turn: _internal, ...view } = structuredClone(g); // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { turn: _turn, outbox: _outbox, ...view } = structuredClone(g); // eslint-disable-line @typescript-eslint/no-unused-vars
   return view;
 }
 

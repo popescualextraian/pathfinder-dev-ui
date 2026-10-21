@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } f
 import { WorkflowConflictError, WorkflowFileTooLargeError, WorkflowInvalidError, WorkflowNotFoundError } from '../workflow-errors';
 import { WORKFLOW_RETRY_DELAYS } from '../workflow-runner';
 import type { RetryDelays } from '../workflow-runner';
-import { WORKFLOW_TASKS, WorkflowTasks, WorkflowTaskSnapshot, WorkflowTaskState } from '../workflow-tasks';
+import { WORKFLOW_TASKS, WorkflowSessionSnapshot, WorkflowTasks, WorkflowTaskSnapshot, WorkflowTaskState } from '../workflow-tasks';
 import { WORK_ITEMS, WorkItems } from '../work-items';
 import { checkDraft, DraftCheck } from './check-draft';
 import { changesPrompt, DRAFT_FILE, fixPrompt } from './generator-prompts';
@@ -25,6 +25,8 @@ export const WORKFLOW_GENERATOR_CLOCK = Symbol('WORKFLOW_GENERATOR_CLOCK');
 // The runner's turn rule: busy is evidence that a turn ran; only idle (not suspended) ends one.
 const BUSY: ReadonlySet<WorkflowTaskState> = new Set(['running', 'waiting']);
 const IDLE: ReadonlySet<WorkflowTaskState> = new Set(['idle']);
+// The agent's session stopped with an error: the generation fails (the runner shows these as needs-you).
+const BROKEN: ReadonlySet<WorkflowTaskState> = new Set(['failed', 'interrupted']);
 
 // An action on the task failed (reading the draft, sending a prompt): the generation keeps what it was, shows the
 // message as a warning and is retried on the next change of the task or by the timer.
@@ -57,7 +59,14 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
   // Drop expired ones, reload the open ones and reconcile them with their tasks, then follow changes.
   async onModuleInit(): Promise<void> {
     this.subscription = this.tasks.changes.subscribe((taskId) => { void this.onTaskChanged(taskId); });
-    const all = await this.prune(await this.generations.list());
+    let all: WorkflowGeneration[];
+    try {
+      all = await this.prune(await this.generations.list());
+    } catch (error) {
+      // The app starts anyway; list() reports the problem to clients.
+      this.logger.error(`Workflow generations could not be read at startup: ${messageOf(error)}`);
+      return;
+    }
     const open = all.filter(isOpenGeneration);
     for (const g of open) this.byTask.set(g.taskId, g.id);
     await Promise.all(open.map((g) => this.syncLogged(g.id)));
@@ -81,7 +90,7 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
       throw new WorkflowInvalidError(`The description must have 1 to ${MAX_DESCRIPTION_LENGTH} characters`);
     }
     const chosen = model?.trim() || undefined;
-    const prompt = fillSkill({ description: text, stages: await this.stages() });
+    const prompt = fillSkill({ description: text, stages: (await this.stages()) ?? [] });
     const firstLine = text.split('\n')[0].trim();
     const taskId = await this.tasks.start({
       title: `Workflow generator: ${firstLine}`, prompt, kind: 'workflow-generator', ...(chosen !== undefined && { model: chosen }),
@@ -93,7 +102,15 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
     };
     // Hold its queue so change events of the new task wait until it is recorded, then catch up with them.
     return this.exclusive(g.id, async () => {
-      await this.generations.save(g);
+      try {
+        await this.generations.save(g);
+      } catch (error) {
+        // Nothing would follow the task: close it rather than leave an agent working for nobody.
+        await this.tasks.close(taskId).catch((closeError: unknown) => {
+          this.logger.warn(`Workflow generator task ${taskId} could not be closed: ${messageOf(closeError)}`);
+        });
+        throw error;
+      }
       this.byTask.set(taskId, g.id);
       await this.sync(g.id);
       return toGenerationView(await this.load(g.id));
@@ -117,16 +134,25 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
       const g = await this.load(id);
       if (g.state !== 'ready') throw new WorkflowConflictError(`The generation is ${g.state}; changes can be requested only for a ready draft`);
       if (text.trim() === '') throw new WorkflowInvalidError('The change request is empty');
-      // A failure (e.g. the task was stopped: the engine's 409) goes to the caller; the generation stays ready.
-      await this.tasks.prompt(g.taskId, SESSION, changesPrompt(text));
       const n = structuredClone(g);
       n.state = 'writing';
       n.attempts = 0;
       delete n.draft;
       delete n.errors;
       delete n.warning;
-      n.turn = { status: 'running', ...await this.baselineOf(n.taskId) };
-      return toGenerationView(await this.persist(n, g));
+      n.turn = { status: 'running' };
+      n.outbox = { text: changesPrompt(text), ...await this.baselineOf(n.taskId) };
+      // Recorded first: a restart before the send sends it then.
+      const recorded = await this.persist(n, g);
+      const sent = structuredClone(recorded);
+      try {
+        await this.deliver(sent);
+      } catch (error) {
+        // E.g. the task was stopped (the engine's 409): the caller gets it and the generation is ready again.
+        await this.persist(structuredClone(g), recorded);
+        throw error;
+      }
+      return toGenerationView(await this.persist(sent, recorded));
     });
   }
 
@@ -147,24 +173,32 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
     if (id !== undefined) await this.syncLogged(id);
   }
 
+  // saved: stored first (the workflow is saved already), then the task is closed, a failure only logged (the task
+  // stays in the task list). discard: the task is closed first; when that fails the caller gets the error and the
+  // generation stays open (WorkflowTasks.close resolves for a task that is gone).
   private end(id: string, state: 'saved' | 'discarded', allowed: (g: WorkflowGeneration) => boolean): Promise<WorkflowGenerationView> {
     return this.exclusive(id, async () => {
       const g = await this.load(id);
       if (!allowed(g)) throw new WorkflowConflictError(`The generation is ${g.state}; it cannot be marked ${state}`);
+      if (state === 'discarded') await this.tasks.close(g.taskId);
       const n = structuredClone(g);
       n.state = state;
       n.finishedAt = this.now();
       delete n.warning;
+      delete n.outbox;
       const ended = await this.persist(n, g);
-      // The generation has ended either way; a task that stays open shows in the task list and can be closed there.
-      try {
-        await this.tasks.close(n.taskId);
-      } catch (error) {
-        this.logger.warn(`Workflow generation ${id}: could not close task ${n.taskId}: ${messageOf(error)}`);
+      if (state === 'saved') {
+        try {
+          await this.tasks.close(n.taskId);
+        } catch (error) {
+          this.logger.warn(`Workflow generation ${id}: could not close task ${n.taskId}: ${messageOf(error)}`);
+        }
       }
-      await this.prune(await this.generations.list()).catch((error: unknown) => {
+      try {
+        await this.prune(await this.generations.list());
+      } catch (error) {
         this.logger.warn(`Workflow generations: could not remove expired ones: ${messageOf(error)}`);
-      });
+      }
       return toGenerationView(ended);
     });
   }
@@ -181,41 +215,86 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  // Look at the task: keep its question, last message and cost; while the agent works, end its turn, check the draft.
+  // Look at the task: keep its question, last message and cost; while the agent works, send a recorded prompt, end
+  // its turn, check the draft. Failed actions keep the generation as recorded with a warning and are retried.
   private async sync(id: string): Promise<void> {
     const g = await this.generations.get(id);
     if (!g || !isOpenGeneration(g)) return;
     let n = structuredClone(g);
-    const snap = await this.tasks.get(n.taskId);
     let failed = false;
+    let snap: WorkflowTaskSnapshot | null | undefined;
+    try {
+      snap = await this.tasks.get(n.taskId);
+    } catch (error) {
+      n.warning = `could not read the task: ${messageOf(error)}`;
+      await this.persist(n, g);
+      if (isWorking(n)) this.scheduleRetry(id);
+      return;
+    }
+    delete n.warning;
     if (!snap) {
       delete n.question;
       // A ready or failed generation keeps what it has: the draft can still be opened.
       if (isWorking(n)) this.fail(n, `task ${n.taskId} no longer exists`);
     } else {
       this.observeTask(n, snap);
-      if (isWorking(n) && (snap.state === 'failed' || snap.state === 'stopped')) {
-        const why = snap.state === 'failed' ? 'task failed' : 'task was stopped';
-        this.fail(n, snap.failureReason ? `${why}: ${snap.failureReason}` : why);
+      const problem = isWorking(n) ? problemOf(snap) : undefined;
+      if (problem !== undefined) {
+        this.fail(n, problem);
       } else if (isWorking(n)) {
-        this.observeTurn(n, snap);
-        const observed = structuredClone(n);
-        try {
-          if (n.turn.status === 'done') await this.check(n);
-          delete n.warning;
-        } catch (error) {
-          if (!(error instanceof GenerationFailure)) throw error;
-          // Keep the turn done and unchecked; retried on the next change or by the timer.
-          n = observed;
-          n.warning = error.message;
-          failed = true;
+        if (n.outbox) this.takenUp(n, snap);
+        if (!n.outbox) {
+          this.observeTurn(n, snap);
+          const main = snap.sessions.find((s) => s.name === SESSION);
+          // Checked only while the agent is idle with no question: never a half-written draft.
+          if (n.turn.status === 'done' && main && IDLE.has(main.state) && main.openQuestions === 0) {
+            const before = structuredClone(n);
+            try {
+              await this.check(n, main);
+            } catch (error) {
+              if (!(error instanceof GenerationFailure)) throw error;
+              n = before;
+              n.warning = error.message;
+              failed = true;
+            }
+          }
         }
       }
     }
     this.deriveState(n, snap);
-    await this.persist(n, g);
+    n = await this.persist(n, g);
+    // A prompt recorded (now or before a restart or a failed send) goes out after it is stored.
+    if (n.outbox && isWorking(n)) {
+      const sent = structuredClone(n);
+      try {
+        await this.deliver(sent);
+      } catch (error) {
+        sent.warning = `${n.attempts > 0 ? 'could not send the errors to the agent' : 'could not send the prompt to the agent'}: ${messageOf(error)}`;
+        failed = true;
+      }
+      n = await this.persist(sent, n);
+    }
     if (failed && isWorking(n)) this.scheduleRetry(id);
     else this.clearRetry(id);
+  }
+
+  // Sends the recorded prompt; then its turn is followed from a baseline read after sending. Throws what the port threw.
+  private async deliver(n: WorkflowGeneration): Promise<void> {
+    if (!n.outbox) return;
+    await this.tasks.prompt(n.taskId, SESSION, n.outbox.text);
+    delete n.outbox;
+    n.turn = { status: 'running', ...await this.baselineOf(n.taskId) };
+  }
+
+  // A recorded prompt whose send failed (or was cut by a restart) may have reached the agent after all: busy, or a
+  // new last message since it was recorded. Then it is not sent again and its turn is followed from the recording.
+  private takenUp(n: WorkflowGeneration, snap: WorkflowTaskSnapshot): void {
+    const main = snap.sessions.find((s) => s.name === SESSION);
+    if (!n.outbox || !main) return;
+    const busy = BUSY.has(main.state);
+    if (!busy && main.lastMessageAt === n.outbox.baseline) return;
+    n.turn = { status: 'running', ...(n.outbox.baseline !== undefined && { baseline: n.outbox.baseline }), ...(busy && { sawBusy: true }) };
+    delete n.outbox;
   }
 
   private observeTask(n: WorkflowGeneration, snap: WorkflowTaskSnapshot): void {
@@ -227,17 +306,22 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
   }
 
   // The runner's rule: idle without an open question after the prompt, seen busy since or with a new last message.
+  // A turn that ended but was not checked yet starts again when the agent works again (e.g. prompted by hand).
   private observeTurn(n: WorkflowGeneration, snap: WorkflowTaskSnapshot): void {
     const main = snap.sessions.find((s) => s.name === SESSION);
-    if (!main || n.turn.status !== 'running') return;
+    if (!main) return;
+    if (n.turn.status === 'done') {
+      if (BUSY.has(main.state)) n.turn = { status: 'running', sawBusy: true };
+      return;
+    }
     if (BUSY.has(main.state)) n.turn.sawBusy = true;
     else if (IDLE.has(main.state) && main.openQuestions === 0 && (n.turn.sawBusy === true || main.lastMessageAt !== n.turn.baseline)) {
       n.turn = { status: 'done' };
     }
   }
 
-  // The turn ended: read and check the draft; valid -> ready, else the errors go back to the agent or it fails.
-  private async check(n: WorkflowGeneration): Promise<void> {
+  // The turn ended: read and check the draft; valid -> ready, else the errors are recorded for the agent or it fails.
+  private async check(n: WorkflowGeneration, main: WorkflowSessionSnapshot): Promise<void> {
     const result = await this.readAndCheck(n.taskId);
     if (result.valid) {
       n.state = 'ready';
@@ -252,16 +336,15 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`Workflow generation ${n.id} failed: the draft still has errors after ${MAX_FIX_ATTEMPTS} fixes`);
       return;
     }
-    const attempt = n.attempts + 1;
-    try {
-      await this.tasks.prompt(n.taskId, SESSION, fixPrompt(result.errors, attempt, MAX_FIX_ATTEMPTS));
-    } catch (error) {
-      throw new GenerationFailure(`could not send the errors to the agent: ${messageOf(error)}`);
-    }
-    n.attempts = attempt;
+    // Recorded here, sent by sync() once stored.
+    n.attempts += 1;
     n.errors = result.errors;
     delete n.draft;
-    n.turn = { status: 'running', ...await this.baselineOf(n.taskId) };
+    n.turn = { status: 'running' };
+    n.outbox = {
+      text: fixPrompt(result.errors, n.attempts, MAX_FIX_ATTEMPTS),
+      ...(main.lastMessageAt !== undefined && { baseline: main.lastMessageAt }),
+    };
   }
 
   // A file over the cap is the agent's to fix, like a missing one; any other read error is retried.
@@ -273,7 +356,7 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
       if (error instanceof WorkflowFileTooLargeError) return { valid: false, errors: [{ message: error.message }] };
       throw new GenerationFailure(`could not read ${DRAFT_FILE}: ${messageOf(error)}`);
     }
-    let stages: string[];
+    let stages: string[] | undefined;
     try {
       stages = await this.stages();
     } catch (error) {
@@ -282,8 +365,9 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
     return checkDraft(text, stages);
   }
 
-  private async stages(): Promise<string[]> {
-    return this.items.stages ? [...await this.items.stages()] : [];
+  // Without stages from the work items any stage passes, as in the editor's validate.
+  private async stages(): Promise<string[] | undefined> {
+    return this.items.stages ? [...await this.items.stages()] : undefined;
   }
 
   // Read after sending: the engine's last message may lag behind and only show the previous turn now.
@@ -305,6 +389,7 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
     n.state = 'failed';
     n.failureReason = reason;
     delete n.question;
+    delete n.outbox;
     this.logger.warn(`Workflow generation ${n.id} failed: ${reason}`);
   }
 
@@ -365,6 +450,15 @@ export class WorkflowGenerator implements OnModuleInit, OnModuleDestroy {
     });
     return result;
   }
+}
+
+// Why the agent cannot go on: the task failed or was stopped, or its session failed or was interrupted.
+function problemOf(snap: WorkflowTaskSnapshot): string | undefined {
+  if (snap.state === 'failed') return snap.failureReason ? `task failed: ${snap.failureReason}` : 'task failed';
+  if (snap.state === 'stopped') return snap.failureReason ? `task was stopped: ${snap.failureReason}` : 'task was stopped';
+  const main = snap.sessions.find((s) => s.name === SESSION);
+  if (main && BROKEN.has(main.state)) return `the agent's session is ${main.state}`;
+  return undefined;
 }
 
 function messageOf(error: unknown): string {
