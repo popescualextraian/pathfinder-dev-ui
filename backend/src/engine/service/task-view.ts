@@ -1,6 +1,6 @@
 import { repoNameOf } from '../../commons/repo-name';
 import { SessionRecord, TaskRecord } from '../repository/task-record.repository';
-import type { TaskCost } from '../repository/task-record.repository';
+import type { TaskCost, TaskKind } from '../repository/task-record.repository';
 import { BridgeQuestion, BridgeSession, BridgeStatus } from './bridge-client';
 
 // What clients see of a task: the record without the tokens, plus state from the bridge.
@@ -37,6 +37,7 @@ export interface TaskView {
   repoUrl: string;
   repoRef?: string;
   model?: string;
+  kind?: TaskKind;
   branch: string;
   createdAt: string;
   updatedAt: string;
@@ -135,6 +136,7 @@ export function toView(record: TaskRecord, live: Live = {}): TaskView {
   if (record.lastMessageAt !== undefined) view.lastMessageAt = record.lastMessageAt;
   if (record.repoRef !== undefined) view.repoRef = record.repoRef;
   if (record.model !== undefined) view.model = record.model;
+  if (record.kind !== undefined) view.kind = record.kind;
   const reason = live.reason ?? last.reason;
   if (reason !== undefined) view.reason = reason;
   const summary = live.summary ?? last.summary;

@@ -34,6 +34,12 @@ describe('EngineWorkflowTasks', () => {
     expect(tasks.start).toHaveBeenCalledWith({ title: '#7 Fix it', prompt: 'Plan #7', model: 'sonnet' });
   });
 
+  it('passes the kind to the engine when given', async () => {
+    const { tasks, adapter } = make();
+    await adapter.start({ title: 't', prompt: 'p', kind: 'workflow-generator' });
+    expect(tasks.start).toHaveBeenCalledWith({ title: 't', prompt: 'p', kind: 'workflow-generator' });
+  });
+
   it('leaves the model out when none is given', async () => {
     const { tasks, adapter } = make();
     await adapter.start({ title: 't', prompt: 'p' });

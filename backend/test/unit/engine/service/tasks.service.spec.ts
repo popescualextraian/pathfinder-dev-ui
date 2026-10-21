@@ -91,6 +91,14 @@ describe('TasksService.start', () => {
     expect((await service.start({ prompt: 'p', repoUrl: 'https://github.com/x/other.git' })).repository).toBe('other');
   });
 
+  it('records the kind given at start and shows it in the view; none by default', async () => {
+    const { service, records } = setup({ records: [] });
+    const view = await service.start({ prompt: 'p', kind: 'workflow-generator' });
+    expect(view.kind).toBe('workflow-generator');
+    expect(records.map.get(view.id)?.kind).toBe('workflow-generator');
+    expect('kind' in (await service.start({ prompt: 'q' }))).toBe(false);
+  });
+
   it('passes repoUrl, repoRef and model through', async () => {
     const { service, launcher } = setup({ records: [] });
     const view = await service.start({ prompt: 'p', repoUrl: 'https://github.com/x/y.git', repoRef: 'dev', model: 'm' });

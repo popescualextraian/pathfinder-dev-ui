@@ -9,4 +9,5 @@
 .branch { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .age { flex: none; }
 .sessions { flex: none; }
+.kind { flex: none; color: var(--msg-red); font-weight: 600; }
 .asking { flex: none; color: var(--state-needs-text); font-weight: 600; }

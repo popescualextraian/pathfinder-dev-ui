@@ -35,6 +35,7 @@ export function TaskCard({ task, selected, onSelect, now }: Props) {
       <span className={styles.line}>{cardLine(task)}</span>
       <span className={styles.meta}>
         <span className={styles.branch}>{task.branch}</span>
+        {task.kind === 'workflow-generator' && <span className={styles.kind}>Workflow generator</span>}
         {task.sessions.length > 1 && <span className={styles.sessions}>{task.sessions.length} sessions</span>}
         {askingSession(task) && (
           <span className={styles.asking} data-testid="card-asking">

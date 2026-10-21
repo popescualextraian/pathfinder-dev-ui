@@ -46,7 +46,7 @@ export class EngineWorkflowTasks implements WorkflowTasks {
       if (created === undefined && change.kind === 'task' && ours(change.task)) created = change.task.id;
     });
     try {
-      const view = await this.tasks.start({ title: input.title, prompt: input.prompt, ...(input.model !== undefined && { model: input.model }) });
+      const view = await this.tasks.start({ title: input.title, prompt: input.prompt, ...(input.model !== undefined && { model: input.model }), ...(input.kind !== undefined && { kind: input.kind }) });
       return view.id;
     } catch (error) {
       if (created === undefined) throw error;

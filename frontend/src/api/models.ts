@@ -58,6 +58,8 @@ export interface Task {
   repoUrl: string;
   repoRef?: string;
   model?: string;
+  /** What the task is for; absent for ordinary tasks. */
+  kind?: TaskKind;
   branch: string;
   state: TaskState;
   reason?: string;
@@ -73,6 +75,8 @@ export interface Task {
   closedAt?: string;
   cost?: TaskCost;
 }
+
+export type TaskKind = 'workflow-generator';
 
 export interface StartTaskRequest {
   prompt: string;

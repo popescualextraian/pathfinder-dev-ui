@@ -94,6 +94,7 @@ function TaskDetail({ task, onDeleted, onTask, session, onSelectSession, workflo
     <article className={styles.view} aria-label={task.title}>
       <header className={styles.header}>
         <h2 className={styles.title}>{task.title}</h2>
+        {task.kind === 'workflow-generator' && <span className={styles.kind}>Workflow generator</span>}
         <StatePill state={task.state} section={task.section} label={closed ? 'closed' : undefined} />
         <div className={styles.actions}>
           {task.section !== 'working' && !closed && (

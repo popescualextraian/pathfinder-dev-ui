@@ -24,6 +24,8 @@ export interface WorkflowTaskStart {
   title: string;
   prompt: string;
   model?: string;
+  /** What the task is for; the engine records and shows it. */
+  kind?: 'workflow-generator';
 }
 
 export interface WorkflowSessionStart {

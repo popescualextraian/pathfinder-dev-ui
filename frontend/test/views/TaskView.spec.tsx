@@ -30,6 +30,17 @@ beforeEach(() => {
   FakeEventSource.install();
 });
 
+describe('TaskView kind', () => {
+  it('labels a workflow generator task in the header', () => {
+    view(makeTask({ kind: 'workflow-generator' }));
+    expect(screen.getByText('Workflow generator')).toBeTruthy();
+  });
+  it('has no label for an ordinary task', () => {
+    view();
+    expect(screen.queryByText('Workflow generator')).toBeNull();
+  });
+});
+
 describe('TaskView header', () => {
   it('working: Cancel turn, no Close; cancel pending and error', async () => {
     let reject!: (e: Error) => void;

@@ -17,6 +17,12 @@
   flex: 1;
   overflow-wrap: anywhere;
 }
+.kind {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--msg-red);
+}
 .actions {
   display: flex;
   gap: 8px;
