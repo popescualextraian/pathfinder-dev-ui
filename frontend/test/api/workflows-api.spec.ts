@@ -1,6 +1,7 @@
 import {
   advanceRun, createWorkflow, deleteRefusedWorkflow, deleteWorkflow, listRuns, listWorkflows, readWorkflow, startRun,
-  stopRun, updateWorkflow, validateWorkflow,
+  stopRun, updateWorkflow, validateWorkflow, startGeneration, listGenerations, getGeneration, requestGenerationChanges,
+  discardGeneration, markGenerationSaved,
 } from '../../src/api/workflows-api';
 import { ApiError } from '../../src/api/http';
 import type { WorkflowDefinition } from '../../src/api/models';
@@ -116,5 +117,42 @@ describe('workflows-api', () => {
       fetchMock.mockReturnValue(json(409, { message: 'changed' }));
       await expect(updateWorkflow('wf', def, 'v1')).rejects.toMatchObject({ status: 409, location: undefined });
     });
+  });
+});
+
+describe('workflows-api generations', () => {
+  let fetchMock: jest.Mock;
+  beforeEach(() => {
+    fetchMock = jest.fn().mockReturnValue(json(200, { id: 'G-1' }));
+    global.fetch = fetchMock;
+  });
+  const body = () => JSON.parse(fetchMock.mock.calls[0][1].body);
+
+  it('startGeneration posts description, model only when given', async () => {
+    await startGeneration('make one', 'opus');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/workflows/generations');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(body()).toEqual({ description: 'make one', model: 'opus' });
+    fetchMock.mockClear();
+    await startGeneration('x');
+    expect(body()).toEqual({ description: 'x' });
+  });
+
+  it('list and get', async () => {
+    await listGenerations();
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/workflows/generations', undefined);
+    await getGeneration('G 1');
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/workflows/generations/G%201', undefined);
+  });
+
+  it('changes, discard and saved post to the generation', async () => {
+    await requestGenerationChanges('G-1', 'more');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/workflows/generations/G-1/changes');
+    expect(body()).toEqual({ text: 'more' });
+    await discardGeneration('G-1');
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/workflows/generations/G-1/discard');
+    expect(fetchMock.mock.calls[1][1].method).toBe('POST');
+    await markGenerationSaved('G-1');
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/workflows/generations/G-1/saved');
   });
 });
