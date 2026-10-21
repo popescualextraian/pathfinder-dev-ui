@@ -498,6 +498,13 @@ describe('DockerTaskLauncher app ports', () => {
     ['not base64 json', '%%%secret-value%%%'],
     ['json that is not an object', labelOf([1, 2])],
     ['a port that is not an integer', labelOf({ web: { ports: ['x'], url: '/', autostart: true } })],
+    ['a null app entry', labelOf({ web: null })],
+    ['a duplicate port', labelOf({ web: { ports: [3000, 3000], url: '/', autostart: true } })],
+    ['a bad app name', labelOf({ 'Web App': { ports: [3000], url: '/', autostart: true } })],
+    ['the name __proto__', Buffer.from('{"__proto__":{"ports":[3000]}}').toString('base64')],
+    ['more than 32 apps', labelOf(Object.fromEntries(Array.from({ length: 33 }, (_v, i) => [`app${i}`, { ports: [3000 + i], url: '/', autostart: false }])))],
+    ['more than 16 ports in an app', labelOf({ web: { ports: Array.from({ length: 17 }, (_v, i) => 3000 + i), url: '/', autostart: false } })],
+    ['a huge label', labelOf({ web: { ports: Array.from({ length: 50000 }, (_v, i) => 1 + i), url: '/', autostart: false } })],
     ['a port out of range', labelOf({ web: { ports: [70000], url: '/', autostart: true } })],
   ])('starts the task with no apps for a malformed label (%s) and logs once without the value', async (_n, label) => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
@@ -532,8 +539,9 @@ describe('DockerTaskLauncher app ports', () => {
 
   it('reads the current host ports back on start, when Docker assigned new ones', async () => {
     const { launcher, docker, container, image } = setup();
-    image.inspect.mockResolvedValue({ Config: { Labels: { 'agentic.apps': labelOf(apps) } } });
+    image.inspect.mockResolvedValue({ Config: { Labels: { 'agentic.apps': labelOf({ other: { ports: [1], url: '/', autostart: false } }) } } });
     container.inspect.mockResolvedValue({
+      Config: { Labels: { 'agentic.apps': labelOf(apps) } },
       NetworkSettings: { Ports: {
         '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: '50001' }],
         '9229/tcp': [{ HostIp: '127.0.0.1', HostPort: '50002' }],
@@ -549,7 +557,25 @@ describe('DockerTaskLauncher app ports', () => {
   it('returns no ports on start for a task without apps, and still tolerates 304', async () => {
     const { launcher, container } = setup();
     container.start.mockRejectedValue(dockerError(304));
+    container.inspect.mockResolvedValue({ Config: { Labels: {} }, NetworkSettings: { Ports: {} } });
     await expect(launcher.start('T-20261016-ab12')).resolves.toBeUndefined();
-    expect(container.inspect).not.toHaveBeenCalled();
+  });
+
+  it('returns undefined on start (record keeps its ports) when the container cannot be inspected', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { launcher, container } = setup();
+    container.inspect.mockRejectedValue(new Error('boom'));
+    await expect(launcher.start('T-20261016-ab12')).resolves.toBeUndefined();
+    warn.mockRestore();
+  });
+
+  it('returns undefined from launch when the host ports cannot be read after start', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { launcher, container, image } = setup();
+    image.inspect.mockResolvedValue({ Config: { Labels: { 'agentic.apps': labelOf(apps) } } });
+    container.inspect.mockRejectedValue(new Error('boom'));
+    const result = await launcher.launch(spec);
+    expect(result.appPorts).toBeUndefined();
+    warn.mockRestore();
   });
 });

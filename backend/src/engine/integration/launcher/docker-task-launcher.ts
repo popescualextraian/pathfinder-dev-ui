@@ -23,14 +23,23 @@ const APPS_LABEL = 'agentic.apps';
 
 // The image's apps label: base64 of JSON {name: {ports: [int], url, autostart}}. Only names and ports are used here.
 // undefined when it is malformed (the caller logs once, without the value).
+const MAX_APPS = 32;
+const MAX_PORTS_PER_APP = 16;
+const APP_NAME = /^[a-z][a-z0-9-]{0,30}$/;
+
 function parseAppsLabel(label: string): Record<string, number[]> | undefined {
   try {
     const value: unknown = JSON.parse(Buffer.from(label, 'base64').toString('utf8'));
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
-    const apps: Record<string, number[]> = {};
-    for (const [name, app] of Object.entries(value)) {
+    const entries = Object.entries(value);
+    if (entries.length > MAX_APPS) return undefined;
+    const apps: Record<string, number[]> = Object.create(null) as Record<string, number[]>;
+    for (const [name, app] of entries) {
+      if (!APP_NAME.test(name)) return undefined;
       const ports = (app as { ports?: unknown } | null)?.ports;
-      if (!Array.isArray(ports) || !ports.every((p) => Number.isInteger(p) && (p as number) >= 1 && (p as number) <= 65535)) return undefined;
+      if (!Array.isArray(ports) || ports.length > MAX_PORTS_PER_APP) return undefined;
+      if (!ports.every((p) => Number.isInteger(p) && (p as number) >= 1 && (p as number) <= 65535)) return undefined;
+      if (new Set(ports).size !== ports.length) return undefined;
       apps[name] = ports as number[];
     }
     return apps;
@@ -121,9 +130,16 @@ export class DockerTaskLauncher implements TaskLauncher {
     } catch (error) {
       if (!hasStatus(error, 304)) throw error;
     }
-    // Docker may assign new dynamic host ports on a restart: read the current ones back.
-    const apps = await this.apps();
-    return Object.keys(apps).length ? this.hostPorts(container, apps) : undefined;
+    // Docker may assign new dynamic host ports on a restart: read them back, with the apps from the container's own
+    // labels (it carries the image's labels as of its creation, even when the image tag moved on).
+    try {
+      const info = await container.inspect();
+      const apps = this.parseApps(info.Config?.Labels?.[APPS_LABEL]);
+      return Object.keys(apps).length ? this.portsFrom(info.NetworkSettings?.Ports, apps) : undefined;
+    } catch (error) {
+      this.logger.warn(`The app ports of a task could not be read: ${(error as Error).message}`);
+      return undefined;
+    }
   }
 
   async stop(taskId: string): Promise<void> {
@@ -238,6 +254,10 @@ export class DockerTaskLauncher implements TaskLauncher {
       this.warnAppsOnce('the image could not be inspected');
       return {};
     }
+    return this.parseApps(label);
+  }
+
+  private parseApps(label: string | undefined): Record<string, number[]> {
     if (!label) return {};
     const apps = parseAppsLabel(label);
     if (!apps) this.warnAppsOnce('the apps label of the image is malformed');
@@ -250,19 +270,23 @@ export class DockerTaskLauncher implements TaskLauncher {
     this.logger.warn(`Tasks start without apps: ${why}`);
   }
 
-  // Host ports Docker assigned, from the started container. A port without a binding is left out; a failed read means no ports.
-  private async hostPorts(container: Docker.Container, apps: Record<string, number[]>): Promise<AppPorts> {
-    let ports: Record<string, Array<{ HostPort?: string }> | null | undefined> = {};
+  // Host ports of a started container, undefined when they cannot be read (the caller then keeps what it has).
+  private async hostPorts(container: Docker.Container, apps: Record<string, number[]>): Promise<AppPorts | undefined> {
     try {
-      ports = (await container.inspect()).NetworkSettings?.Ports ?? {};
+      return this.portsFrom((await container.inspect()).NetworkSettings?.Ports, apps);
     } catch (error) {
       this.logger.warn(`The app ports of a task could not be read: ${(error as Error).message}`);
+      return undefined;
     }
+  }
+
+  // A container port without a binding is left out.
+  private portsFrom(ports: Record<string, Array<{ HostPort?: string }> | null | undefined> | undefined, apps: Record<string, number[]>): AppPorts {
     const result: AppPorts = {};
     for (const [app, containerPorts] of Object.entries(apps)) {
       result[app] = {};
       for (const port of containerPorts) {
-        const host = Number(ports[`${port}/tcp`]?.[0]?.HostPort);
+        const host = Number(ports?.[`${port}/tcp`]?.[0]?.HostPort);
         if (Number.isInteger(host) && host > 0) result[app][String(port)] = host;
       }
     }
