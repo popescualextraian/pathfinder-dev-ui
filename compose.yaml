@@ -79,6 +79,8 @@ services:
       # Workflows (optional, need the backlog): set WORKFLOWS_DIR_HOST to the host directory of the definitions to turn them on.
       WORKFLOWS_DIR: ${WORKFLOWS_DIR_HOST:+/etc/pathfinder/workflows}
       WORKFLOWS_DATA_DIR: /data/workflows
+      # Schedules are always on; their files live in the data volume (SCHEDULES_TIMEZONE and SCHEDULES_TICK_SECONDS come from the env file).
+      SCHEDULES_DATA_DIR: /data/schedules
     volumes:
       - docker-filter:/run/docker-filter
       - engine-data:/data

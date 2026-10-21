@@ -256,6 +256,7 @@ All under `/api`, JSON, times are ISO 8601 UTC strings. A task view contains the
 | `GET /api/tasks/:id/events?since=N&session=NAME` | Events after sequence number N as a JSON array; 409 when the container is not running (always for a closed task) | 200 |
 | `GET /api/tasks/:id/events/stream?since=N&session=NAME` | The full run: the same events, then live ones, as SSE (`id` is the event `seq`; `Last-Event-ID`, which EventSource sends on reconnect, takes precedence over `since` when present) | 200 |
 | `GET /api/tasks/stream` | The status stream, SSE: `event: task` with the task view when a task is created or changed (state, questions, last message, title, closed), `event: removed` with `{"id"}` when one is deleted, and a `: ping` comment every 25 seconds. Nothing is replayed on connect: load `GET /api/tasks` first (and again after a reconnect), then apply the events. | 200 |
+| `GET /api/schedules` and the other `/api/schedules` routes | Scheduled runs (see Schedules) | |
 | `GET /api/health` | `{"ok":true}`; no Docker or other call, used by the compose health check | 200 |
 | `GET /api/system/info` | `{ name, version, uptimeSeconds }` | 200 |
 
@@ -517,6 +518,60 @@ looks for markers in a multi-line prompt line by line: the first line starting w
 `FAKE_WRITE` blocks); a single-line prompt or one that starts with such a marker behaves as before (see the header of `tools/fake-agent/fake-agent.mjs`).
 Tests: `e2e/workflow-generation.spec.ts` (Playwright) and `backend/test/bridge/workflow-generation.bridge-spec.ts` (real bridge, local launcher, fake agent).
 
+## Schedules
+
+A schedule starts a task by itself at a time, runs it unattended and keeps what it reports. The UI fires schedules in-process (a tick every
+`SCHEDULES_TICK_SECONDS`, no timer per schedule); the menu entry is **Schedules** (`#/schedules`, `#/schedules/new`, `#/schedules/<id>`, `#/schedules/<id>/edit`).
+Schedules are always on; they use the repositories of `ENGINE_REPO_URL` and `ENGINE_REPOS`.
+
+| Variable | Meaning |
+|---|---|
+| `SCHEDULES_DATA_DIR` | Absolute directory of the schedules, one mode-600 JSON file per schedule with its results. Default `schedules` next to `ENGINE_DATA_DIR` (required when `ENGINE_DATA_DIR` is not set); `compose.yaml` sets `/data/schedules`. |
+| `SCHEDULES_TIMEZONE` | IANA zone (for example `Europe/Berlin`) of cron lines and one-off times; one per deployment. Default: the zone of the process (UTC in the container). The UI shows it next to times. |
+| `SCHEDULES_TICK_SECONDS` | Seconds between two looks for due schedules, positive integer, default `30`. |
+
+A schedule: `{id, title, prompt, repository, ref?, model?, when, timeoutMinutes, enabled, nextRunAt, createdAt, updatedAt}`. The `id` is generated from the title
+(`[a-z0-9-]`, at most 40, never `new`). `when` is `{cron}` (five fields, evaluated in `SCHEDULES_TIMEZONE`; the form has Daily, Weekdays and Weekly presets that write the line, and Custom)
+or `{at: "YYYY-MM-DDTHH:mm"}` (local time in that zone, in the future and within a year). `timeoutMinutes` is 1 to 1440, default 120. `nextRunAt` is computed
+(zone offset in the string) and is `null` when the schedule is disabled or finished.
+
+| Route | Does | Success |
+|---|---|---|
+| `GET /api/schedules` | All schedules, oldest first, each with `lastResult?` (no `results`) | 200 |
+| `GET /api/schedules/:id` | The schedule with `results`, newest first | 200 |
+| `POST /api/schedules` `{title, prompt, repository, when, ref?, model?, timeoutMinutes?, enabled?}` | Creates a schedule; 400 `{statusCode, message, field, path}` for a bad value (`field` such as `title`, `prompt`, `repository`, `when.cron`, `when.at`, `timeoutMinutes`) | 201 |
+| `PUT /api/schedules/:id` | Replaces the schedule (same body; `enabled` is a field; keeps id, `createdAt` and results; `nextRunAt` is recomputed from now) | 200 |
+| `DELETE /api/schedules/:id` | Removes the schedule and its results; tasks it started stay | 204 |
+| `POST /api/schedules/:id/run` | Run now: fires at once with `trigger: manual`, also on a disabled schedule, leaves `enabled` and `nextRunAt` alone. The answer is the new result: `running` with `taskId`, or `skipped` / `refused` with a `reason` | 202 result |
+| `POST /api/schedules/preview` `{when}` | The next three times in the zone, `{zone, next: [...]}`; 400 with `field` `when`, `when.cron` or `when.at` | 200 |
+
+Schedule responses also carry `zone`. An unknown schedule is 404.
+
+What a scheduled run does: it is an ordinary UI task (same repository clone, worktree, branch and grants), started with the bridge's scheduled mode
+(`AGENTIC_SCHEDULED=1`, `AGENTIC_RUN_TIMEOUT=<timeoutMinutes in seconds>`) and labelled with the schedule's title (a clock chip on its board card; the task view has
+`scheduleId`, `scheduleTitle` and, once ended, `summaryLine`; the public `POST /api/tasks` ignores these). In that mode the first prompt tells the agent that nobody watches,
+questions are not answered, there is only session `main`, and there is no idle suspension. When the agent ends its turn, or at the time limit, the bridge asks for a summary of about
+300 words, writes it to `/task/result.md`, stops the task and exits, so the container ends. The prompt of a schedule must therefore say what to do and where to put the result
+(push a branch, open a pull request).
+
+- **The task stays stopped.** It shows under Done with state `stopped` (reason `scheduled-done` or `timeout`) until someone closes it; nothing is cleaned up. A prompt, answer or new session
+  for it is refused with 409 ("its scheduled run has ended"): the container is never woken again, and the local launcher does not respawn its bridge.
+- **Results.** Every firing adds a result: `{firedAt, trigger: time|manual, outcome, reason?, taskId?, branch?, summary?, endedAt?}`. Outcomes: `running`, `done` (stopped with
+  `scheduled-done` and a summary), `timeout`, `failed` (the task failed, or ended without a result; `reason` says why), `skipped` (the previous run still runs, or the running
+  cap `ENGINE_MAX_RUNNING` is reached), `missed`, `refused` (the engine refused the start; `reason` is its message). The summary is `result.md`, kept up to 64 KB; without
+  one it reads "No summary: ..." plus the last message. The last 50 results per schedule are kept. A `running` result is reconciled from its task at start-up.
+- **One-offs.** A schedule with `at` fires once and then disables itself (`enabled: false`, `nextRunAt: null`); it stays for its result. Re-saving it needs a future time or the same `at` while disabled.
+- **Missed firings.** A schedule due more than two ticks late (the app was down) is not caught up: the result is `missed` and the schedule moves to its next time (a one-off is then finished).
+- **Timezone.** Cron lines and `at` times are read in `SCHEDULES_TIMEZONE`; results and `firedAt` are UTC ISO strings.
+
+The change for every task: when a poll cannot reach a task's bridge, the poller inspects the container (local launcher: the bridge process). If it has ended, the task takes its final
+state and reason from `/task/state.json` (normally `stopped`) and a change event is sent, instead of polling a dead bridge forever. A state left live there becomes `interrupted`, a missing
+`state.json` or a vanished container `failed`.
+
+Try it: `PORT=3101 SCHEDULES_TICK_SECONDS=5 npm run start:local` (passes `SCHEDULES_*` through; data in `.local/<port>/schedules`), open `#/schedules`, create a schedule and press Run now;
+the fake agent answers `echo: <prompt>` and the summary appears in the detail. Tests: `e2e/schedules.spec.ts` (Playwright), `backend/test/e2e/schedules.e2e-spec.ts`,
+`backend/test/bridge/scheduled-run.bridge-spec.ts` (real bridge in scheduled mode).
+
 ## Install
 
 ```sh
@@ -731,7 +786,7 @@ backend/
   src/
     main.ts, app.setup.ts   bootstrap; global prefix /api, pipe, interceptor, filters
     app.module.ts           imports the api modules and serves dist/frontend
-    api/<area>/             controllers (HTTP only, no business logic): system/, repositories/, tasks/, backlog/ (+ dto/)
+    api/<area>/             controllers (HTTP only, no business logic): system/, repositories/, tasks/, backlog/, schedules/ (+ dto/)
     service/<area>/         UI business logic: system/, repositories/
     repository/<area>/      UI storage: system/ (package.json)
     engine/                 the task engine package; others import only engine/index.ts
@@ -747,6 +802,10 @@ backend/
       service/              WorkflowRunner, generator/ (WorkflowGenerator, skill workflow-author.md), definition parser, placeholders, the WorkflowTasks and WorkItems interfaces
       repository/           definition files (YAML), run files and generation files (JSON)
     integration/workflow/   adapters of WorkflowTasks (engine) and WorkItems (backlog), wiring module
+    schedule/               the schedule package (always on); others import only schedule/index.ts
+      service/              ScheduleRunner, ScheduleService, validation, next times, the ScheduledTasks interface
+      repository/           schedule-file.repository.ts (one JSON file per schedule)
+    integration/schedule/   adapter of ScheduledTasks (engine), wiring module
     commons/                engine config, validation pipe, logging interceptor, exception filters, shared utilities
   test/
     unit/                   unit tests, mirroring src/
@@ -769,7 +828,7 @@ tools/deploy.sh             deploys or redeploys the compose setup (see Deployme
 Dockerfile, compose.yaml    the UI image and its compose setup (see Deployment)
 backlog.example.yaml        lanes config of the backlog (BACKLOG_CONFIG)
 workflows.example/          example workflow definitions (WORKFLOWS_DIR)
-.env.example                engine and backlog configuration template
+.env.example                engine, backlog and schedules configuration template
 ```
 
 Build output: `dist/backend` (Nest) and `dist/frontend` (Vite).
