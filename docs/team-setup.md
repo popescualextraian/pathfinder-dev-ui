@@ -3,9 +3,27 @@
 From nothing to the Pathfinder UI at http://localhost:3000, working on your project, with every task in its own
 container. Takes about 45 minutes, most of it image builds. Done once per machine; a second project takes 10 minutes.
 
-**Shortcut:** do [step 1](#1-prerequisites) and [step 2](#2-get-the-code), then run `claude` in
-`~/pathfinder/pathfinder-dev-ui` and type `/pathfinder-setup`. The skill walks through the rest with you, checks
-each step and fixes what it can. It never asks you to paste a token into the chat.
+## Let Claude do it
+
+Open Claude Code on Windows (any folder; the desktop app or `claude` in a terminal) and say:
+
+> Set up Pathfinder for me: download
+> https://raw.githubusercontent.com/popescualextraian/pathfinder-dev-ui/main/.claude/skills/pathfinder-setup/SKILL.md
+> and follow it. My project is https://gitlab.example.com/group/my-project.git
+
+Claude drives Ubuntu from Windows (`wsl.exe`), checks each step, does what is missing and asks before anything runs
+as root. It never asks for a token in the chat: it opens the settings file in Notepad and tells you what to paste.
+You do these yourself, when it asks:
+
+- install WSL the first time (`wsl --install -d Ubuntu`, as administrator, maybe a reboot) and create your Ubuntu
+  user on its first start;
+- log in for the Claude token (`claude setup-token`);
+- create the GitLab token(s) on the GitLab website ([Tokens](#tokens)).
+
+Already working inside Ubuntu with Claude Code there: `cd ~/pathfinder/pathfinder-dev-ui && claude`, then
+`/pathfinder-setup` (after cloning the repository as in [step 2](#2-get-the-code)).
+
+The rest of this page is the same setup by hand, and the reference the skill follows.
 
 ```mermaid
 flowchart LR

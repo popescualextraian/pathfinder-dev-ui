@@ -1,53 +1,88 @@
 ---
 name: pathfinder-setup
-description: Set up Pathfinder on this machine from scratch, or check and repair an existing setup - prerequisites in WSL, pathfinder-dev-base and the agentic CLI, the base image, a project's task image, the UI settings file with its tokens, and the UI in Docker. Use when someone asks to install, set up, configure, repair or update Pathfinder, add a project to it, or when the UI does not start.
+description: Set up Pathfinder on this machine from scratch, or check and repair an existing setup - WSL and its prerequisites, pathfinder-dev-base and the agentic CLI, the base image, a project's task image, the UI settings file with its tokens, the UI in Docker, optionally the GitLab board and workflows. Works from a Claude session on Windows (it drives Ubuntu through wsl.exe) or inside Ubuntu. Use when someone asks to install, set up, configure, repair or update Pathfinder, add a project to it, or when the UI does not start.
 ---
 
 # Pathfinder setup
 
-You set up Pathfinder for a teammate, following `docs/team-setup.md` in this repository (pathfinder-dev-ui): read
-it first, it is the source of truth for every command and value; this skill says how to run it with the user.
+You set up Pathfinder for a teammate. The commands and values come from the team guide, `docs/team-setup.md` of
+pathfinder-dev-ui (raw: https://raw.githubusercontent.com/popescualextraian/pathfinder-dev-ui/main/docs/team-setup.md;
+inside a checkout: `docs/team-setup.md`). Read it first; this skill says how to run it with the user. Where the
+two disagree, the guide's commands win and you tell the user.
+
+Everything Pathfinder runs lives **inside Ubuntu (WSL)**, in the Linux home (`~/pathfinder`), never on the Windows
+drive (`/mnt/c`): containers read the Linux file system many times faster, and scripts keep their line endings.
 
 ## Rules
 
-- **Never ask for a token in the chat and never print one.** Tokens go into files the user edits
-  (`~/pathfinder/pathfinder.env`). Check a token only by counting: `grep -c '^GH_TOKEN=.\+' FILE` (1 = set). Never
-  `cat`, `source` or `echo` a file that holds tokens; show such a file with values masked
-  (`sed -E 's/^([A-Z_]*TOKEN)=.+/\1=***/'`).
-- **sudo is the user's.** You cannot type a password. Give the user the exact commands and ask them to run them with
-  `! <command>` in this prompt (or in their own terminal), then check the result yourself.
-- Run in WSL (Ubuntu). If `uname -r` does not contain `microsoft`/`WSL`, or the current directory is under `/mnt/`,
-  stop and explain: everything lives in the Linux home (`~/pathfinder`), not on the Windows drive.
-- One step at a time: check, act only when the check fails, check again. Never redo a step whose check passes
-  (no rebuilds, no re-clones). Say in one line what you checked and what you do next.
-- Destructive or outward actions only with the user's yes: deleting folders, `docker compose down -v` (deletes task
-  records), pushing, changing a repository's `.agentic/` and committing it.
-- Never touch other containers, images or folders the user has; Pathfinder's are `agentic-*`, `agentic-ui-task-*`
-  and the compose project `agentic-pathfinder-dev-ui`.
-- Long commands (image builds, about 15 minutes) run in the background with their output in a log file; tell the
-  user how long it takes and check the log, do not wait silently.
+- **Tokens never pass through the chat.** Never ask for one in the chat, never print one, never `cat`, `source` or
+  `echo` a file that holds tokens. The user puts tokens into `~/pathfinder/pathfinder.env` with an editor. Check a
+  token only by counting (`grep -c '^GH_TOKEN=.\+' FILE`: 1 = set) or by an HTTP status code. Show such a file only
+  masked: `sed -E 's/^([A-Z_]*TOKEN)=.+/\1=***/' FILE`.
+- One step at a time: **check, act only when the check fails, check again.** Never redo a step whose check passes
+  (no rebuilds, no re-clones). Before each step say in one line what you check and what you will do.
+- **Ask first** for: anything run as root (say what, once per step), deleting anything, `wsl --terminate`,
+  `docker compose down -v` (deletes task records), pushing, committing to the project, changing its `.agentic/`.
+- Never touch other containers, images, folders or distros of the user. Pathfinder's are `agentic-*`,
+  `agentic-ui-task-*`, the compose project `agentic-pathfinder-dev-ui` and `~/pathfinder`.
+- Builds take long (base image about 15 minutes). Run them as a background command of your own and check its output;
+  tell the user how long it takes. Never start them with `&` or `nohup` inside a `wsl.exe` call: the process ends
+  when `wsl.exe` returns.
+
+## Where you run
+
+Find out first: `uname -s` (Git Bash on Windows: `MINGW...`/`MSYS...`), or `$env:OS` in PowerShell (`Windows_NT`).
+
+**Inside Ubuntu** (`uname -r` contains `microsoft`): run the commands directly. Root commands: give the user the
+exact `sudo ...` line to run themselves with `! <command>` (you cannot type a password), then check.
+
+**On Windows** you drive Ubuntu from outside. Set this up once and use it for every command of the guide:
+
+1. The distro: `wsl.exe -l -q | tr -d '\0'` (PowerShell: `wsl -l -q`). Use the one named `Ubuntu` (or `Ubuntu-*`);
+   with several, ask. None: see step 0 below. Its user: `wsl.exe -d <D> -e id -un` (`root` means the first-run
+   user was never created: step 0).
+2. The command prefix (call it `UB`): `wsl.exe -d <D> -e`; as root (`UBROOT`): `wsl.exe -d <D> -u root -e`.
+   **The user may give you a different `UB`** (for example a test machine: `wsl -d Ubuntu -- docker exec -i -u
+   colleague pf-dryrun`, root: `... -u root ...`): then use theirs everywhere and do not run `wsl --install`,
+   `wsl --terminate` or Notepad on it; ask the user to open it in a terminal for editing instead.
+3. **Run every step as a script on stdin**, never as a long one-liner: write the step to a file in your scratch or
+   temp folder (LF line endings, starting with `set -euo pipefail`, using `~` and `$HOME` freely), then
+   `tr -d '\r' < FILE | UB bash -ls` (Git Bash: prefix `MSYS_NO_PATHCONV=1`). That avoids every quoting trap:
+   `wsl.exe` would expand `$VARS` itself, and Git Bash rewrites `/paths` in arguments.
+4. Root steps (apt, Docker, the docker group, `/etc/wsl.conf`) go the same way through `UBROOT`, after the user's
+   yes. They need no password.
+5. Files the user edits: open them in Notepad from Windows,
+   `notepad.exe '\\wsl.localhost\<D>\home\<user>\pathfinder\pathfinder.env'`, tell them what to paste where, wait
+   for their "done", then strip Windows line endings (`sed -i 's/\r$//' FILE`), `chmod 600` it, and check by counting.
+6. The browser: `http://localhost:<UI_PORT>` works from Windows (WSL forwards localhost).
+7. Windows-side helpers you may use: the Windows git identity (`git config --global user.name`/`user.email`) as the
+   default for the tasks' commits (ask), `claude setup-token` in the user's Windows terminal for the Claude token, and
+   the Windows certificate store for a proxy's root certificate (step 3).
 
 ## Steps
 
-Ask first which project they want (the GitLab https URL) unless they said it, and where they work from:
-`~/pathfinder` is the default folder.
+Ask first which project (its https URL on GitLab or GitHub) unless they said it. The folder is `~/pathfinder`
+(inside Ubuntu).
 
 | # | Check (pass = skip) | Act |
 |---|---|---|
-| 1 | `docker run --rm hello-world` works without sudo; `git`, `jq`, `curl` exist; `docker compose version` | guide's step 1 commands for the user to run with sudo; after `usermod -aG docker`, a new terminal is needed: tell them to restart Claude Code in a new terminal and run the skill again |
-| 2 | `~/pathfinder/pathfinder-dev-base` and `~/pathfinder/pathfinder-dev-ui` are git checkouts; `command -v agentic` | clone, link `~/.local/bin/agentic` (guide step 2) |
-| 3 | `docker image inspect agentic-dev-base:local` | `agentic build-base` in the background (guide step 3) |
-| 4 | the project is cloned under `~/pathfinder/projects/<name>` and has `.agentic/agentic.yaml` | clone (the user may need to enter GitLab credentials: ask them to run the clone with `!` if git asks); without `.agentic/`, offer `agentic init` and, if they want, `agentic setup`; never commit for them without a yes |
-| 5 | `docker image inspect agentic-<project>:local` and its `agentic.config.hash` label matches (`agentic doctor` says when the config changed) | `agentic build` in the project, in the background |
-| 6 | `~/pathfinder/pathfinder.env` exists, mode 600, with `ENGINE_IMAGE`, `ENGINE_REPO_URL`, `ENGINE_PROJECT`, `ENGINE_GIT_NAME`, `ENGINE_GIT_EMAIL`, `DOCKER_GID`, and both tokens set (count check) | write the file without the tokens (guide step 5; fill name and email from `git config`), then ask the user to add `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) and `GH_TOKEN` (GitLab token, see the guide's Tokens table) with `nano`, and wait |
-| 7 | `docker compose ps` in `pathfinder-dev-ui` shows `ui` and `docker-filter` healthy; `curl -fsS localhost:<UI_PORT>/api/health` | `tools/deploy.sh ~/pathfinder/pathfinder.env` (it needs the checkout on a clean `main`) |
-| 8 | the user started a task in the UI and it reached idle or answered | read `docker compose logs ui --tail 100` and the task's state; fix from the guide's Troubleshooting table |
-| 9 (optional, ask) | `GET /api/backlog/lanes` answers 200 and `GET /api/workflows` lists definitions | guide step 7: lanes file, workflows folder, `BACKLOG_CONFIG_FILE`, `WORKFLOWS_DIR_HOST`, an empty `GITLAB_TOKEN=` for the user to fill (a project access token, Developer, `api`); check it with the guide's curl lines (scopes and status code only, never the value); 403 means the wrong kind of token; then deploy again |
+| 0 | (Windows only) a WSL 2 distro exists with a normal user (`wsl -l -v`, step "Where you run" 1) | `wsl --install -d Ubuntu` in the user's terminal as administrator (they run it; it may need a reboot), then they open Ubuntu once from the Start menu and create their user and password. Wait, then continue |
+| 1 | `git`, `jq`, `curl` exist; `docker run --rm hello-world` works **without** root; `docker compose version`; `systemctl is-system-running` answers | root: `apt-get update && apt-get install -y git jq curl ca-certificates`, Docker Engine from the guide's step 1 (the apt repository lines), `usermod -aG docker <user>`. No systemd: add `[boot]\nsystemd=true` to `/etc/wsl.conf`. The group and systemd apply to new sessions: check `UB id -nG`; if `docker` is missing, ask to run `wsl.exe --terminate <D>` (it stops everything running in that distro), then check again. Docker Desktop installed too: its WSL integration for this distro must be off, so `docker` talks to the engine in Ubuntu |
+| 2 | `~/pathfinder/pathfinder-dev-base` and `~/pathfinder/pathfinder-dev-ui` are git checkouts; `~/.local/bin/agentic` exists | clone both from GitHub (guide step 2), `ln -sf` the CLI. In scripts call it as `~/.local/bin/agentic` (a non-interactive shell may not have `~/.local/bin` on its PATH yet) |
+| 3 | a TLS check passes: `curl -sS -o /dev/null https://download.docker.com` and `https://registry.npmjs.org` (exit 0) | exit 60 or "certificate" errors mean a TLS-intercepting proxy. On Windows, find its root certificate in the store (PowerShell: `Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root` and match the issuer of the failing certificate: `curl -v` shows it), export it as Base-64 (`[Convert]::ToBase64String($c.RawData)` between `-----BEGIN CERTIFICATE-----` lines) to a `.crt` file, then root: copy it to `/usr/local/share/ca-certificates/` and `update-ca-certificates`; also copy it to `~/.agentic/ca/` (the image builds read it there). Ask before each. Inside Ubuntu without Windows access: ask the user for the `.crt` file |
+| 4 | `docker image inspect agentic-dev-base:local` | `~/.local/bin/agentic build-base` (background, about 15 minutes) |
+| 5 | `~/pathfinder/pathfinder.env` exists, mode 600, with `ENGINE_IMAGE`, `ENGINE_REPO_URL`, `ENGINE_PROJECT`, `ENGINE_GIT_NAME`, `ENGINE_GIT_EMAIL`, `DOCKER_GID`, `UI_PORT` set, and both tokens set (count check) | write it without the tokens (guide step 5); then the user adds `CLAUDE_CODE_OAUTH_TOKEN` (they run `claude setup-token`, in Windows or Ubuntu, and paste the printed token) and `GH_TOKEN` (a GitLab or GitHub token for the repository: guide, Tokens). Check the repository token: `git ls-remote <url>` with it (next row's helper) answers |
+| 6 | the project is cloned at `~/pathfinder/projects/<name>` with `.agentic/agentic.yaml` | clone it with the token from the settings file, never typed and never stored: `git -c credential.helper= -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$(sed -n "s/^GH_TOKEN=//p" ~/pathfinder/pathfinder.env)"; }; f' clone <url>`, and set the same helper in the clone (`git config credential.helper ...`) so later pulls work. No `.agentic/`: offer `agentic init` (and `agentic setup` if they want); committing it is the user's call |
+| 7 | `docker image inspect agentic-<project>:local`; `agentic doctor` in the project does not say the config changed | `~/.local/bin/agentic build` in the project (background) |
+| 8 | `docker compose ps` in `~/pathfinder/pathfinder-dev-ui` shows `ui` and `docker-filter` healthy; `curl -fsS localhost:<UI_PORT>/api/health` | `tools/deploy.sh ~/pathfinder/pathfinder.env` (needs the checkout on a clean `main`). A restarting `ui` logs `Invalid engine configuration: X is required`: fix X in the settings file, deploy again |
+| 9 | the user started a task in the UI (`http://localhost:<UI_PORT>`) and it answered | read `docker compose logs ui --tail 100` and the task; fix from the guide's Troubleshooting |
+| 10 (optional, ask) | `GET /api/backlog/lanes` answers 200 and `GET /api/workflows` lists definitions | guide step 7: lanes file, workflows folder, `BACKLOG_CONFIG_FILE`, `WORKFLOWS_DIR_HOST`, an empty `GITLAB_TOKEN=` for the user (a project access token, Developer, scope `api`); check it with the guide's curl lines (scopes and status code only); 403 means the wrong kind of token; deploy again |
 
-Finish with: the URL, where the settings file is, how to update (guide step 6 table), and anything left undone.
+Finish with: the URL, where the settings file is (`\\wsl.localhost\<D>\home\<user>\pathfinder\pathfinder.env` from
+Windows), how to update (guide step 6 table), and anything left undone.
 
 ## Adding another project
 
-Steps 4 and 5 for the new project, then either a second UI (another folder with its own settings file, compose
+Steps 6 and 7 for the new project, then either a second UI (another folder with its own settings file, compose
 project name and `UI_PORT`) or more repositories in one UI with `ENGINE_REPOS` (they share one task image, so only
 for projects built from the same `.agentic/`). Ask which they want.
