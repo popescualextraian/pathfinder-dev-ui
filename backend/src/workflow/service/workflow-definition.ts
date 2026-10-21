@@ -1,19 +1,21 @@
 export type Gate = 'human' | 'auto';
 
-export interface SessionDef {
-  name: string;
-  prompt: string;
-  /** An earlier session's name: start as a copy of that conversation. */
-  fork?: string;
-  model?: string;
-}
-
 export interface StepDef {
   id: string;
   title: string;
   /** Work item stage the item moves to when the step starts (backlog: lane id); without it the item stays. */
   stage?: string;
-  sessions: SessionDef[];
+  prompt: string;
+  model?: string;
+  /** Id of an earlier step: this step goes on in that step's conversation (its prompt is sent to the same session). */
+  continue?: string;
+  /** Id of an earlier step: this step starts as a copy of that step's conversation. */
+  fork?: string;
+  /**
+   * Internal, only in the definition snapshot of a run saved before one-session steps: the session name the step
+   * used. Takes precedence over the name derived from the step. Never read from or written to workflow files.
+   */
+  session?: string;
   gate: Gate;
   /** Paths relative to the worktree, may contain placeholders. */
   requires?: string[];

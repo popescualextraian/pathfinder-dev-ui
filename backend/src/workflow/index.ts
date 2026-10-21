@@ -2,7 +2,7 @@
 export { parseWorkflowDefinition, validateWorkflowDefinition, WorkflowDefinitionError, PLACEHOLDERS, WORKFLOW_ID, WORKFLOW_ID_MESSAGE } from './service/parse-workflow';
 export type { ParseOptions, WorkflowErrorLocation } from './service/parse-workflow';
 export { serializeWorkflowDefinition } from './service/serialize-workflow';
-export type { Gate, RefusedWorkflow, SessionDef, StepDef, WorkflowDefinition, WorkflowDefinitions } from './service/workflow-definition';
+export type { Gate, RefusedWorkflow, StepDef, WorkflowDefinition, WorkflowDefinitions } from './service/workflow-definition';
 export { WORK_ITEMS } from './service/work-items';
 export type { WorkItem, WorkItems } from './service/work-items';
 export { WORKFLOW_TASKS } from './service/workflow-tasks';

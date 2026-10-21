@@ -1,13 +1,11 @@
 import { parse } from 'yaml';
 import { isSafeRelativePath } from './requires-path';
-import type { Gate, SessionDef, StepDef, WorkflowDefinition } from './workflow-definition';
+import type { Gate, StepDef, WorkflowDefinition } from './workflow-definition';
 
 export interface WorkflowErrorLocation {
   stepId?: string;
-  session?: string;
-  /** Index of the step / session, set when its id / name is unusable (missing or empty), so it cannot be named. */
+  /** Index of the step, set when its id is unusable (missing or empty), so it cannot be named. */
   stepIndex?: number;
-  sessionIndex?: number;
   field?: string;
 }
 
@@ -28,7 +26,9 @@ export const PLACEHOLDERS = [
 /** Ids of workflows (file names without extension) chosen at create. */
 export const WORKFLOW_ID = /^(?!new$)[a-z0-9][a-z0-9-]{0,63}$/;
 export const WORKFLOW_ID_MESSAGE = `The workflow id must match ${WORKFLOW_ID} ("new" is reserved: it is the editor's route for a new workflow)`;
-const SESSION_NAME = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+/** Step ids; the id is also the name of the step's session in the task (the first step's session is `main`). */
+export const STEP_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+export const OLD_FORMAT_MESSAGE = 'the file uses the old format (sessions:); since task 015 a step has one prompt: see README';
 
 export interface ParseOptions {
   /** Stages the work items have; when given, every stage must be one of them. */
@@ -53,7 +53,7 @@ function checkPlaceholders(text: string, where: string, loc: WorkflowErrorLocati
   }
 }
 
-// The first session's prompt is sent to start the task, so the task's own values cannot be in it.
+// The first step's prompt is sent to start the task, so the task's own values cannot be in it.
 function checkNoTaskPlaceholders(text: string, where: string, loc: WorkflowErrorLocation): void {
   for (const m of text.matchAll(/\{\{([^}]*)\}\}/g)) {
     const name = m[1].trim();
@@ -87,38 +87,39 @@ export function validateWorkflowDefinition(id: string, doc: unknown, opts: Parse
   const title = str(doc.title, 'title', { field: 'title' });
   if (!Array.isArray(doc.steps) || doc.steps.length === 0) fail('steps must be a non-empty list', { field: 'steps' });
 
+  (doc.steps as unknown[]).forEach((raw, i) => {
+    if (isMap(raw) && 'sessions' in raw) {
+      fail(OLD_FORMAT_MESSAGE, typeof raw.id === 'string' && raw.id !== '' ? { stepId: raw.id, field: 'sessions' } : { stepIndex: i, field: 'sessions' });
+    }
+  });
+
   const stepIds = new Set<string>();
-  const earlier = new Set<string>();
   const steps: StepDef[] = (doc.steps as unknown[]).map((raw, i) => {
     const at = `steps[${i}]`;
     if (!isMap(raw)) return fail(`${at} must be a mapping`);
     const stepId = str(raw.id, `${at}.id`, { stepIndex: i, field: 'id' });
-    const sl = (field: string, session?: string): WorkflowErrorLocation => ({ stepId, ...(session !== undefined && { session }), field });
+    const sl = (field: string): WorkflowErrorLocation => ({ stepId, field });
+    if (!STEP_ID.test(stepId)) fail(`${at}: step id "${stepId}" must match ${STEP_ID}`, sl('id'));
+    if (i > 0 && stepId === 'main') fail(`${at}: the step id "main" is reserved for the first step`, sl('id'));
     if (stepIds.has(stepId)) fail(`duplicate step id "${stepId}"`, sl('id'));
-    stepIds.add(stepId);
     const stepTitle = str(raw.title, `${at}.title`, sl('title'));
     const stage = optStr(raw.stage, `${at}.stage`, sl('stage'));
     if (stage !== undefined) checkStage(stage, `${at}.stage`, sl('stage'), opts.stages);
     if (raw.gate !== 'human' && raw.gate !== 'auto') fail(`${at}.gate must be "human" or "auto"`, sl('gate'));
-    if (!Array.isArray(raw.sessions) || raw.sessions.length === 0) fail(`${at}.sessions must be a non-empty list`, sl('sessions'));
-
-    const sessions: SessionDef[] = (raw.sessions as unknown[]).map((s, j) => {
-      const sat = `${at}.sessions[${j}]`;
-      if (!isMap(s)) return fail(`${sat} must be a mapping`, sl('sessions'));
-      const name = str(s.name, `${sat}.name`, { stepId, sessionIndex: j, field: 'name' });
-      const loc = (field: string): WorkflowErrorLocation => sl(field, name);
-      if (!SESSION_NAME.test(name)) fail(`${sat}: session name "${name}" must match ${SESSION_NAME}`, loc('name'));
-      if (i === 0 && j === 0 && name !== 'main') fail(`${sat}: the first session must be named "main"`, loc('name'));
-      if (earlier.has(name)) fail(`duplicate session name "${name}"`, loc('name'));
-      const prompt = str(s.prompt, `${sat}.prompt`, loc('prompt'));
-      checkPlaceholders(prompt, `${sat}.prompt`, loc('prompt'));
-      if (i === 0 && j === 0) checkNoTaskPlaceholders(prompt, `${sat}.prompt`, loc('prompt'));
-      const fork = optStr(s.fork, `${sat}.fork`, loc('fork'));
-      if (fork !== undefined && !earlier.has(fork)) fail(`${sat}.fork "${fork}" is not an earlier session`, loc('fork'));
-      const model = optStr(s.model, `${sat}.model`, loc('model'));
-      earlier.add(name);
-      return { name, prompt, ...(fork !== undefined && { fork }), ...(model !== undefined && { model }) };
-    });
+    const prompt = str(raw.prompt, `${at}.prompt`, sl('prompt'));
+    checkPlaceholders(prompt, `${at}.prompt`, sl('prompt'));
+    if (i === 0) checkNoTaskPlaceholders(prompt, `${at}.prompt`, sl('prompt'));
+    const cont = optStr(raw.continue, `${at}.continue`, sl('continue'));
+    const fork = optStr(raw.fork, `${at}.fork`, sl('fork'));
+    for (const [field, target] of [['continue', cont], ['fork', fork]] as const) {
+      if (target === undefined) continue;
+      if (i === 0) fail(`${at}.${field}: the first step has no earlier step`, sl(field));
+      if (!stepIds.has(target)) fail(`${at}.${field} "${target}" is not an earlier step`, sl(field));
+    }
+    if (cont !== undefined && fork !== undefined) fail(`${at}: continue and fork cannot be used together`, sl('fork'));
+    const model = optStr(raw.model, `${at}.model`, sl('model'));
+    if (model !== undefined && cont !== undefined) fail(`${at}.model: a step that continues a conversation cannot choose a model`, sl('model'));
+    stepIds.add(stepId);
 
     let requires: string[] | undefined;
     if (raw.requires !== undefined) {
@@ -135,7 +136,8 @@ export function validateWorkflowDefinition(id: string, doc: unknown, opts: Parse
     const exitPrompt = optStr(raw.exitPrompt, `${at}.exitPrompt`, sl('exitPrompt'));
     if (exitPrompt !== undefined) checkPlaceholders(exitPrompt, `${at}.exitPrompt`, sl('exitPrompt'));
     return {
-      id: stepId, title: stepTitle, ...(stage !== undefined && { stage }), sessions, gate: raw.gate as Gate,
+      id: stepId, title: stepTitle, ...(stage !== undefined && { stage }), prompt, ...(model !== undefined && { model }), ...(cont !== undefined && { continue: cont }),
+      ...(fork !== undefined && { fork }), gate: raw.gate as Gate,
       ...(requires !== undefined && { requires }), ...(exitPrompt !== undefined && { exitPrompt }),
     };
   });
