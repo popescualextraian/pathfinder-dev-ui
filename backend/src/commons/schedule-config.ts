@@ -8,7 +8,7 @@ export interface ScheduleConfig {
   dataDir: string;
   // SCHEDULES_TIMEZONE: IANA zone of cron lines and `at` times (default: the process zone).
   timezone: string;
-  // SCHEDULES_TICK_SECONDS: how often the scheduler looks for due schedules.
+  // SCHEDULES_TICK_SECONDS: how often the scheduler looks for due schedules (1..3600).
   tickSeconds: number;
 }
 
@@ -19,6 +19,8 @@ export class ScheduleConfigError extends Error {
     this.name = 'ScheduleConfigError';
   }
 }
+
+const MAX_TICK_SECONDS = 3600;
 
 const value = (env: NodeJS.ProcessEnv, name: string): string | undefined => env[name]?.trim() || undefined;
 
@@ -51,8 +53,9 @@ export function loadScheduleConfig(env: NodeJS.ProcessEnv = process.env): Schedu
   let tickSeconds = 30;
   const rawTick = value(env, 'SCHEDULES_TICK_SECONDS');
   if (rawTick !== undefined) {
-    if (/^[1-9]\d*$/.test(rawTick)) tickSeconds = Number(rawTick);
-    else problems.push('SCHEDULES_TICK_SECONDS must be a positive integer');
+    if (!/^[1-9]\d*$/.test(rawTick)) problems.push('SCHEDULES_TICK_SECONDS must be a positive integer');
+    else if (Number(rawTick) > MAX_TICK_SECONDS) problems.push(`SCHEDULES_TICK_SECONDS must be at most ${MAX_TICK_SECONDS}`);
+    else tickSeconds = Number(rawTick);
   }
 
   if (problems.length > 0) throw new ScheduleConfigError(problems);

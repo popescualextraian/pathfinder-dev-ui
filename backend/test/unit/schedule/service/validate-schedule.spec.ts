@@ -29,6 +29,14 @@ describe('validateSchedule', () => {
     ['repository missing', { ...good, repository: undefined }, 'repository'],
     ['ref not a string', { ...good, ref: 3 }, 'ref'],
     ['model not a string', { ...good, model: 3 }, 'model'],
+    ['title too long', { ...good, title: 'x'.repeat(201) }, 'title'],
+    ['prompt too long', { ...good, prompt: 'x'.repeat(20_001) }, 'prompt'],
+    ['ref starting with a dash', { ...good, ref: '-main' }, 'ref'],
+    ['ref with a space', { ...good, ref: 'my branch' }, 'ref'],
+    ['ref too long', { ...good, ref: 'a'.repeat(201) }, 'ref'],
+    ['model with a space', { ...good, model: 'bad model' }, 'model'],
+    ['model too long', { ...good, model: 'a'.repeat(101) }, 'model'],
+    ['cron that never fires', { ...good, when: { cron: '0 0 31 2 *' } }, 'when.cron'],
     ['when missing', { ...good, when: undefined }, 'when'],
     ['when with both', { ...good, when: { cron: '0 2 * * *', at: '2026-10-22T22:00' } }, 'when'],
     ['cron with six fields', { ...good, when: { cron: '0 0 2 * * *' } }, 'when.cron'],
@@ -45,6 +53,12 @@ describe('validateSchedule', () => {
   ])('refuses %s with field %s', (_name, input, field) => {
     expect(failure(input).field).toBe(field);
     expect(failure(input).message).not.toBe('');
+  });
+
+  it('accepts the limits of the task API: title 200, prompt 20000, ref 200, model 100 and their characters', () => {
+    expect(validateSchedule({
+      ...good, title: 'x'.repeat(200), prompt: 'x'.repeat(20_000), ref: `release/1.2_x-${'a'.repeat(186)}`, model: `claude-opus-4[1m]:x/${'a'.repeat(80)}`,
+    }, options)).toHaveProperty('value');
   });
 
   it('reports the first error in field order', () => {

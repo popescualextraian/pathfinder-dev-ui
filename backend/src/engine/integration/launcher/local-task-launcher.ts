@@ -453,6 +453,11 @@ export class LocalTaskLauncher implements TaskLauncher {
     child.on('error', (error) => { task.log = (task.log + `spawn failed: ${error.message}\n`).slice(-LOG_LIMIT); });
     child.on('exit', (code, signal) => {
       if (task.stopping || task.awaitingUp || task.child !== child) return;
+      // The bridge of a scheduled run exits by itself (code 0) once the run is over: that is its normal end.
+      if (task.scheduled && code === 0) {
+        this.logger.log(`The bridge of task ${taskId} exited after its scheduled run ended`);
+        return;
+      }
       this.logger.warn(`The bridge of task ${taskId} exited unexpectedly (${signal ? `signal ${signal}` : `code ${code}`})`);
     });
     task.closed = new Promise<void>((done) => { child.once('close', () => done()); });

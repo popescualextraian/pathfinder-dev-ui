@@ -1,5 +1,9 @@
 import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength, registerDecorator, ValidationArguments, ValidationOptions } from 'class-validator';
-import { MAX_TEXT_LENGTH } from './prompt.dto';
+import {
+  MAX_MODEL_LENGTH, MAX_REF_LENGTH, MAX_TEXT_LENGTH, MAX_TITLE_LENGTH, MODEL_NAME, MODEL_NAME_MESSAGE, REPO_REF,
+} from '../../../commons/task-input-rules';
+
+export { MODEL_NAME, MODEL_NAME_MESSAGE } from '../../../commons/task-input-rules';
 
 // An https URL without embedded credentials (file:, ssh:, git@ forms and user:pw@ are refused).
 export function IsHttpsUrlWithoutCredentials(options?: ValidationOptions): PropertyDecorator {
@@ -39,9 +43,6 @@ function ExcludesProperty(other: string, options?: ValidationOptions): PropertyD
     });
 }
 
-export const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9_.:/[\]-]*$/;
-export const MODEL_NAME_MESSAGE = 'model contains characters that are not allowed';
-
 export class StartTaskDto {
   @IsString()
   @MaxLength(MAX_TEXT_LENGTH)
@@ -52,7 +53,7 @@ export class StartTaskDto {
   // Defaults to the first line of the prompt.
   @IsOptional()
   @IsString()
-  @MaxLength(200)
+  @MaxLength(MAX_TITLE_LENGTH)
   @Matches(/\S/, { message: 'title must not be blank' })
   title?: string;
 
@@ -72,13 +73,13 @@ export class StartTaskDto {
   // Branch, tag or commit; cannot start with '-' (would look like an option to git).
   @IsOptional()
   @IsString()
-  @MaxLength(200)
-  @Matches(/^[A-Za-z0-9_./][A-Za-z0-9_./-]*$/, { message: 'repoRef contains characters that are not allowed' })
+  @MaxLength(MAX_REF_LENGTH)
+  @Matches(REPO_REF, { message: 'repoRef contains characters that are not allowed' })
   repoRef?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLength(MAX_MODEL_LENGTH)
   @Matches(MODEL_NAME, { message: MODEL_NAME_MESSAGE })
   model?: string;
 }

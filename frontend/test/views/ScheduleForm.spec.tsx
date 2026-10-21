@@ -119,6 +119,32 @@ describe('ScheduleForm', () => {
     expect(p.onSaved).toHaveBeenCalledWith('nightly');
   });
 
+  it('edit: a finished (disabled) one-off moved to a new time is saved enabled; unchanged it stays disabled', async () => {
+    m.replaceSchedule.mockResolvedValue(makeRecord());
+    const schedule = makeRecord({ when: { at: '2026-10-20T22:00' }, enabled: false, nextRunAt: null });
+    setup({ schedule });
+    fireEvent.change(field('Title'), { target: { value: 'Renamed' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    });
+    expect(m.replaceSchedule).toHaveBeenLastCalledWith('nightly', expect.objectContaining({ when: { at: '2026-10-20T22:00' }, enabled: false }));
+    fireEvent.change(field('Date'), { target: { value: '2099-01-02' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    });
+    expect(m.replaceSchedule).toHaveBeenLastCalledWith('nightly', expect.objectContaining({ when: { at: '2099-01-02T22:00' }, enabled: true }));
+  });
+
+  it('edit: a disabled repeating schedule stays disabled when its time changes', async () => {
+    m.replaceSchedule.mockResolvedValue(makeRecord());
+    setup({ schedule: makeRecord({ enabled: false, nextRunAt: null }) });
+    fireEvent.change(field('At'), { target: { value: '03:00' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    });
+    expect(m.replaceSchedule).toHaveBeenLastCalledWith('nightly', expect.objectContaining({ enabled: false }));
+  });
+
   it('edit: a custom cron opens as Custom', () => {
     setup({ schedule: makeRecord({ when: { cron: '0 9 1 * *' } }) });
     expect(field('Repeats').value).toBe('custom');

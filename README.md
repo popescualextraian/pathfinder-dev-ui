@@ -528,18 +528,20 @@ Schedules are always on; they use the repositories of `ENGINE_REPO_URL` and `ENG
 |---|---|
 | `SCHEDULES_DATA_DIR` | Absolute directory of the schedules, one mode-600 JSON file per schedule with its results. Default `schedules` next to `ENGINE_DATA_DIR` (required when `ENGINE_DATA_DIR` is not set); `compose.yaml` sets `/data/schedules`. |
 | `SCHEDULES_TIMEZONE` | IANA zone (for example `Europe/Berlin`) of cron lines and one-off times; one per deployment. Default: the zone of the process (UTC in the container). The UI shows it next to times. |
-| `SCHEDULES_TICK_SECONDS` | Seconds between two looks for due schedules, positive integer, default `30`. |
+| `SCHEDULES_TICK_SECONDS` | Seconds between two looks for due schedules, integer 1 to 3600, default `30`. |
 
 A schedule: `{id, title, prompt, repository, ref?, model?, when, timeoutMinutes, enabled, nextRunAt, createdAt, updatedAt}`. The `id` is generated from the title
 (`[a-z0-9-]`, at most 40, never `new`). `when` is `{cron}` (five fields, evaluated in `SCHEDULES_TIMEZONE`; the form has Daily, Weekdays and Weekly presets that write the line, and Custom)
-or `{at: "YYYY-MM-DDTHH:mm"}` (local time in that zone, in the future and within a year). `timeoutMinutes` is 1 to 1440, default 120. `nextRunAt` is computed
+or `{at: "YYYY-MM-DDTHH:mm"}` (local time in that zone, in the future and within a year); a cron line that never fires (for example `0 0 31 2 *`) is refused. `timeoutMinutes` is 1 to 1440, default 120.
+`title`, `prompt`, `ref` and `model` follow the rules of `POST /api/tasks` (title at most 200 characters, prompt at most 20000, `ref` a branch, tag or commit of at most 200 characters
+not starting with `-`, `model` at most 100 characters of the same set as a task's model). `nextRunAt` is computed
 (zone offset in the string) and is `null` when the schedule is disabled or finished.
 
 | Route | Does | Success |
 |---|---|---|
 | `GET /api/schedules` | All schedules, oldest first, each with `lastResult?` (no `results`) | 200 |
 | `GET /api/schedules/:id` | The schedule with `results`, newest first | 200 |
-| `POST /api/schedules` `{title, prompt, repository, when, ref?, model?, timeoutMinutes?, enabled?}` | Creates a schedule; 400 `{statusCode, message, field, path}` for a bad value (`field` such as `title`, `prompt`, `repository`, `when.cron`, `when.at`, `timeoutMinutes`) | 201 |
+| `POST /api/schedules` `{title, prompt, repository, when, ref?, model?, timeoutMinutes?, enabled?}` | Creates a schedule; 400 `{statusCode, message, field, path}` for a bad value (`field` such as `title`, `prompt`, `repository`, `ref`, `model`, `when.cron`, `when.at`, `timeoutMinutes`) | 201 |
 | `PUT /api/schedules/:id` | Replaces the schedule (same body; `enabled` is a field; keeps id, `createdAt` and results; `nextRunAt` is recomputed from now) | 200 |
 | `DELETE /api/schedules/:id` | Removes the schedule and its results; tasks it started stay | 204 |
 | `POST /api/schedules/:id/run` | Run now: fires at once with `trigger: manual`, also on a disabled schedule, leaves `enabled` and `nextRunAt` alone. The answer is the new result: `running` with `taskId`, or `skipped` / `refused` with a `reason` | 202 result |
@@ -559,14 +561,19 @@ questions are not answered, there is only session `main`, and there is no idle s
 - **Results.** Every firing adds a result: `{firedAt, trigger: time|manual, outcome, reason?, taskId?, branch?, summary?, endedAt?}`. Outcomes: `running`, `done` (stopped with
   `scheduled-done` and a summary), `timeout`, `failed` (the task failed, or ended without a result; `reason` says why), `skipped` (the previous run still runs, or the running
   cap `ENGINE_MAX_RUNNING` is reached), `missed`, `refused` (the engine refused the start; `reason` is its message). The summary is `result.md`, kept up to 64 KB; without
-  one it reads "No summary: ..." plus the last message. The last 50 results per schedule are kept. A `running` result is reconciled from its task at start-up.
-- **One-offs.** A schedule with `at` fires once and then disables itself (`enabled: false`, `nextRunAt: null`); it stays for its result. Re-saving it needs a future time or the same `at` while disabled.
+  one it reads "No summary: ..." plus the last message. The last 50 results per schedule are kept. A `running` result is reconciled from its task at start-up: a run whose
+  container (or bridge process) has ended meanwhile gets its end from `/task/state.json` and `result.md` (so `done` or `timeout`, not `failed`); one still running stays `running`
+  and is completed by its end later.
+- **One-offs.** A schedule with `at` fires once and then disables itself (`enabled: false`, `nextRunAt: null`); it stays for its result. Re-saving it needs a future time or the same `at` while disabled; the form switches a finished one-off on again when its time is changed.
 - **Missed firings.** A schedule due more than two ticks late (the app was down) is not caught up: the result is `missed` and the schedule moves to its next time (a one-off is then finished).
+  Lateness counts from the due time or from the end of the last tick that ran, whichever is later, so a tick held up by a slow start does not make other schedules `missed`.
 - **Timezone.** Cron lines and `at` times are read in `SCHEDULES_TIMEZONE`; results and `firedAt` are UTC ISO strings.
 
 The change for every task: when a poll cannot reach a task's bridge, the poller inspects the container (local launcher: the bridge process). If it has ended, the task takes its final
 state and reason from `/task/state.json` (normally `stopped`) and a change event is sent, instead of polling a dead bridge forever. A state left live there becomes `interrupted`, a missing
-`state.json` or a vanished container `failed`.
+`state.json` or a vanished container `failed`. A scheduled run is polled in every live state (also `waiting` on a question nobody answers, and `idle`), so its end at the
+time limit is seen. Reading a scheduled run (`GET /api/tasks/:id`) or waking it (prompt, answer, session) when its container no longer runs records that end the same way
+(the wake is then refused with 409).
 
 Try it: `PORT=3101 SCHEDULES_TICK_SECONDS=5 npm run start:local` (passes `SCHEDULES_*` through; data in `.local/<port>/schedules`), open `#/schedules`, create a schedule and press Run now;
 the fake agent answers `echo: <prompt>` and the summary appears in the detail. Tests: `e2e/schedules.spec.ts` (Playwright), `backend/test/e2e/schedules.e2e-spec.ts`,

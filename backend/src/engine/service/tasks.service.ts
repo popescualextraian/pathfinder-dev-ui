@@ -6,9 +6,9 @@ import {
   BRIDGE_CLIENT_FACTORY, BridgeClient, AddSessionInput as BridgeAddSessionInput, AnswerInput, BridgeClientFactory, BridgeError, BridgeEvent, BridgeStatus,
   BridgeUnreachableError, waitForStatus,
 } from './bridge-client';
-import { TASK_LAUNCHER, TaskFileName, TaskLauncher, WORKTREE_FILE_MAX_BYTES } from './task-launcher';
+import { TASK_LAUNCHER, TaskFileName, TaskInspection, TaskLauncher, WORKTREE_FILE_MAX_BYTES } from './task-launcher';
 import { assertTaskFileName } from './worktree-paths';
-import { needsSummaryLine, readSummaryLine, scheduledRunEnded } from './task-end';
+import { needsSummaryLine, readSummaryLine, recordedLive, recordGoneEnd, scheduledRunEnded } from './task-end';
 import { RecordPatch, TaskKind, TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
 import { repoNameOf } from '../../commons/repo-name';
 import { TaskCostService } from './cost/task-cost.service';
@@ -138,10 +138,15 @@ export class TasksService {
       .map((record) => toView(record));
   }
 
+  // A scheduled run recorded as live whose container (or bridge process) no longer runs has ended: its end is
+  // recorded from state.json (as the poller does), so a read never shows such a run as suspended.
   async get(id: string): Promise<TaskView> {
     const record = await this.require(id);
     if (record.closed) return toView(record);
     const inspection = await this.launcher.inspect(id);
+    if (record.scheduled !== undefined && recordedLive(record) && !(inspection.exists && inspection.running)) {
+      return toView(await this.recordEnd(record, inspection));
+    }
     if (!inspection.exists) return toView(record, { state: 'stopped', reason: 'container is gone' });
     if (!inspection.running) {
       const state = record.lastState === 'stopped' ? 'stopped' : 'suspended';
@@ -343,11 +348,15 @@ export class TasksService {
     if (scheduledRunEnded(record)) throw scheduledConflict(id);
     if (record.lastState === 'stopped') throw stoppedConflict(id);
     const inspection = await this.launcher.inspect(id);
+    // A scheduled run has no idle suspension: a container that is not running (or gone) is a run that is over;
+    // its end is recorded from state.json before the refusal, so the record does not stay live.
+    if (record.scheduled !== undefined && !(inspection.exists && inspection.running)) {
+      await this.recordEnd(record, inspection);
+      throw scheduledConflict(id);
+    }
     if (!inspection.exists) {
       throw new ConflictException(`Task ${id} has no container any more; it cannot be woken`);
     }
-    // A scheduled run has no idle suspension: a container that is not running is a run that is over.
-    if (record.scheduled !== undefined && !inspection.running) throw scheduledConflict(id);
     if (inspection.running) {
       let live: BridgeStatus | undefined;
       try {
@@ -375,6 +384,14 @@ export class TasksService {
       throw stoppedConflict(id);
     }
     return record;
+  }
+
+  // The end of a task whose container is not running, from its state.json (a stop or close meanwhile wins), announced.
+  private async recordEnd(record: TaskRecord, inspection: TaskInspection): Promise<TaskRecord> {
+    const gone = await recordGoneEnd(this.records, this.launcher, () => this.costs.armRecheck(), record.id, inspection);
+    if (gone === undefined) return record;
+    if (viewsDiffer(toView(gone.before), toView(gone.updated))) this.updates.changed(toView(gone.updated));
+    return gone.updated;
   }
 
   private async waitFor(record: TaskRecord, message: string): Promise<BridgeStatus> {

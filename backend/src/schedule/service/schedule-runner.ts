@@ -14,7 +14,9 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
 /**
  * Fires schedules: a tick every SCHEDULES_TICK_SECONDS looks for enabled schedules whose nextRunAt has come, starts
  * their runs (one tick at a time; a busy tick makes the next one skip), records each firing as a result and saves the
- * schedule with its next time before it is done. Captures the end of each run (from ScheduledTasks.ends, and at
+ * schedule with its next time before it is done. A firing more than two ticks late is `missed`, where lateness counts
+ * from the due time or from the end of the last tick that ran, whichever is later: a tick held up by a slow start
+ * does not make the schedules due meanwhile missed, a downtime (or a first tick after startup) does. Captures the end of each run (from ScheduledTasks.ends, and at
  * startup for runs that ended while the app was down). Work on one schedule is serialized (ScheduleLocks).
  */
 @Injectable()
@@ -23,6 +25,8 @@ export class ScheduleRunner implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
   private subscription?: { unsubscribe(): void };
   private ticking = false;
+  // When the last tick that ran was done (epoch ms); undefined before the first one.
+  private lastTickEndedAt?: number;
   private readonly pending = new Set<Promise<unknown>>();
 
   constructor(
@@ -62,6 +66,7 @@ export class ScheduleRunner implements OnModuleInit, OnModuleDestroy {
   async tick(): Promise<void> {
     if (this.ticking) return;
     this.ticking = true;
+    const since = this.lastTickEndedAt;
     try {
       const now = this.clock.now().getTime();
       let all: ScheduleRecord[];
@@ -72,10 +77,11 @@ export class ScheduleRunner implements OnModuleInit, OnModuleDestroy {
         return;
       }
       const due = all.filter((s) => s.enabled && s.nextRunAt !== null && Date.parse(s.nextRunAt) <= now);
-      await Promise.all(due.map((s) => this.locks.run(s.id, () => this.fireDue(s.id)).catch((error: unknown) => {
+      await Promise.all(due.map((s) => this.locks.run(s.id, () => this.fireDue(s.id, now, since)).catch((error: unknown) => {
         this.logger.error(`Schedule ${s.id} could not fire: ${message(error)}`);
       })));
     } finally {
+      this.lastTickEndedAt = this.clock.now().getTime();
       this.ticking = false;
     }
   }
@@ -92,15 +98,16 @@ export class ScheduleRunner implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  // Under the schedule's lock; read again, as it may have changed since the tick listed it.
-  private async fireDue(id: string): Promise<void> {
+  // Under the schedule's lock; read again, as it may have changed since the tick listed it. `tickAt`: when the tick
+  // began (waiting for the lock does not count); `since`: when the tick before it ended.
+  private async fireDue(id: string, tickAt: number, since: number | undefined): Promise<void> {
     const record = await this.schedules.get(id);
     if (!record || !record.enabled || record.nextRunAt === null) return;
     const now = this.clock.now();
     const dueAt = Date.parse(record.nextRunAt);
     if (dueAt > now.getTime()) return;
 
-    const late = now.getTime() - dueAt > 2 * this.config.tickSeconds * 1000;
+    const late = tickAt - Math.max(dueAt, since ?? dueAt) > 2 * this.config.tickSeconds * 1000;
     const result: ScheduleResult = late
       ? { firedAt: now.toISOString(), trigger: 'time', outcome: 'missed', reason: `it was due at ${record.nextRunAt}; missed times are not caught up` }
       : await this.fire(record, 'time', now);

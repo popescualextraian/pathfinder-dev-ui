@@ -15,12 +15,18 @@ describe('loadScheduleConfig', () => {
       .toEqual({ dataDir: '/x/s', timezone: 'Europe/Bucharest', tickSeconds: 5 });
   });
 
+  it('accepts a tick of 3600 s', () => {
+    expect(loadScheduleConfig({ ...base, SCHEDULES_TICK_SECONDS: '3600' }).tickSeconds).toBe(3600);
+  });
+
   it.each([
     [{ ...base, SCHEDULES_DATA_DIR: 'rel/dir' }, 'SCHEDULES_DATA_DIR must be an absolute path'],
     [{ ...base, SCHEDULES_TIMEZONE: 'Mars/Base' }, 'SCHEDULES_TIMEZONE must be an IANA time zone'],
     [{ ...base, SCHEDULES_TICK_SECONDS: '0' }, 'SCHEDULES_TICK_SECONDS must be a positive integer'],
     [{ ...base, SCHEDULES_TICK_SECONDS: '1.5' }, 'SCHEDULES_TICK_SECONDS must be a positive integer'],
     [{ ...base, SCHEDULES_TICK_SECONDS: 'abc' }, 'SCHEDULES_TICK_SECONDS must be a positive integer'],
+    [{ ...base, SCHEDULES_TICK_SECONDS: '3601' }, 'SCHEDULES_TICK_SECONDS must be at most 3600'],
+    [{ ...base, SCHEDULES_TICK_SECONDS: '99999999999999999999' }, 'SCHEDULES_TICK_SECONDS must be at most 3600'],
     [{}, 'SCHEDULES_DATA_DIR is required when ENGINE_DATA_DIR is not set'],
   ])('refuses %j', (env, message) => {
     expect(() => loadScheduleConfig(env)).toThrow(ScheduleConfigError);

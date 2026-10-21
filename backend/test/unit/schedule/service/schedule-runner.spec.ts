@@ -160,6 +160,33 @@ describe('ScheduleRunner', () => {
       expect((await stored()).results).toHaveLength(1);
     });
 
+    it('a tick held up by a slow start does not make a schedule due meanwhile missed', async () => {
+      const { tasks, runner, clock, stored } = await make([schedule({ id: 'a' }), schedule({ id: 'b', nextRunAt: '2026-10-21T10:00:20+00:00' })]);
+      let open!: () => void;
+      tasks.gate = new Promise((resolve) => { open = resolve; });
+      const first = runner.tick();
+      await new Promise((resolve) => setImmediate(resolve));
+      for (const at of ['2026-10-21T10:00:30.000Z', '2026-10-21T10:01:00.000Z']) {
+        clock.set(at);
+        await runner.tick(); // skipped: the first one still waits on its start
+      }
+      clock.set('2026-10-21T10:01:30.000Z');
+      open();
+      await first;
+      tasks.gate = undefined;
+      clock.set('2026-10-21T10:01:40.000Z');
+      await runner.tick();
+      expect((await stored('b')).results).toEqual([expect.objectContaining({ outcome: 'running', firedAt: '2026-10-21T10:01:40.000Z' })]);
+    });
+
+    it('a schedule due long after the last tick ended (the process stood still) is still missed', async () => {
+      const { runner, clock, stored } = await make([schedule({ id: 'a', nextRunAt: '2026-10-21T10:00:20+00:00' })]);
+      await runner.tick();
+      clock.set('2026-10-21T10:05:00.000Z');
+      await runner.tick();
+      expect((await stored('a')).results.map((r) => r.outcome)).toEqual(['missed']);
+    });
+
     it('a failing save does not stop the other schedules', async () => {
       const { repo, tasks, runner } = await make([schedule({ id: 'a' }), schedule({ id: 'b' })]);
       const save = repo.save.bind(repo);

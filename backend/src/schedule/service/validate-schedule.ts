@@ -1,4 +1,7 @@
 import { Cron } from 'croner';
+import {
+  MAX_MODEL_LENGTH, MAX_REF_LENGTH, MAX_TEXT_LENGTH, MAX_TITLE_LENGTH, MODEL_NAME, MODEL_NAME_MESSAGE, REPO_REF,
+} from '../../commons/task-input-rules';
 import { AT_FORMAT, zonedToInstant } from './schedule-time';
 import { DEFAULT_TIMEOUT_MINUTES, MAX_TIMEOUT_MINUTES, MIN_TIMEOUT_MINUTES, ScheduleInput, When } from './schedule';
 
@@ -27,13 +30,22 @@ export function validateSchedule(input: unknown, options: ValidateOptions): Vali
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return fail('schedule', 'The schedule must be an object');
   const body = input as Record<string, unknown>;
 
+  // The same limits and characters as the public task API (commons/task-input-rules).
   if (!isText(body.title) || body.title.trim() === '') return fail('title', 'The title is required');
+  if (body.title.length > MAX_TITLE_LENGTH) return fail('title', `The title must be at most ${MAX_TITLE_LENGTH} characters`);
   if (!isText(body.prompt) || body.prompt.trim() === '') return fail('prompt', 'The prompt is required');
+  if (body.prompt.length > MAX_TEXT_LENGTH) return fail('prompt', `The prompt must be at most ${MAX_TEXT_LENGTH} characters`);
   if (!isText(body.repository) || !options.repositories.includes(body.repository)) {
     return fail('repository', 'The repository must be one of the configured repositories');
   }
   if (body.ref !== undefined && !isText(body.ref)) return fail('ref', 'The ref must be text');
+  const ref = isText(body.ref) ? body.ref.trim() : '';
+  if (ref.length > MAX_REF_LENGTH) return fail('ref', `The ref must be at most ${MAX_REF_LENGTH} characters`);
+  if (ref && !REPO_REF.test(ref)) return fail('ref', 'The ref contains characters that are not allowed (or starts with -)');
   if (body.model !== undefined && !isText(body.model)) return fail('model', 'The model must be text');
+  const model = isText(body.model) ? body.model.trim() : '';
+  if (model.length > MAX_MODEL_LENGTH) return fail('model', `The model must be at most ${MAX_MODEL_LENGTH} characters`);
+  if (model && !MODEL_NAME.test(model)) return fail('model', MODEL_NAME_MESSAGE);
 
   const when = validateWhen(body.when, options);
   if ('error' in when) return when;
@@ -48,9 +60,7 @@ export function validateSchedule(input: unknown, options: ValidateOptions): Vali
     title: body.title.trim(), prompt: body.prompt, repository: body.repository, when: when.value,
     timeoutMinutes: timeout, enabled: body.enabled ?? true,
   };
-  const ref = isText(body.ref) ? body.ref.trim() : '';
   if (ref) value.ref = ref;
-  const model = isText(body.model) ? body.model.trim() : '';
   if (model) value.model = model;
   return { value };
 }
@@ -62,11 +72,13 @@ export function validateWhen(raw: unknown, options: Pick<ValidateOptions, 'zone'
   if ((cron === undefined) === (at === undefined)) return fail('when', 'when must have exactly one of cron and at');
   if (cron !== undefined) {
     if (!isText(cron) || cron.trim().split(/\s+/).length !== 5) return fail('when.cron', 'The cron line must have five fields: minute hour day month weekday');
+    let next: Date | null;
     try {
-      new Cron(cron.trim(), { timezone: options.zone }).nextRun(options.now);
+      next = new Cron(cron.trim(), { timezone: options.zone }).nextRun(options.now);
     } catch {
       return fail('when.cron', 'The cron line cannot be parsed');
     }
+    if (next === null) return fail('when.cron', 'The cron line never fires (no such date)');
     return { value: { cron: cron.trim().split(/\s+/).join(' ') } };
   }
   const m = isText(at) ? AT_FORMAT.exec(at) : null;

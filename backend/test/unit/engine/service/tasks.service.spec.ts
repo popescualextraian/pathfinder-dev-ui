@@ -719,6 +719,34 @@ describe('TasksService scheduled runs', () => {
     expect(launcher.start).not.toHaveBeenCalled();
   });
 
+  it('a prompt to a scheduled run whose container exited records its end from state.json, then refuses with 409', async () => {
+    const readTaskFile = jest.fn(async (_id: string, name: string) =>
+      name === 'state.json' ? JSON.stringify({ state: 'stopped', reason: 'timeout' }) : 'The time for this run is up.');
+    const { service, records, published } = setup({
+      records: [scheduledRecord({ lastState: 'waiting', lastStatus: { state: 'waiting', reason: '', questions: [{ id: 'Q1' }] } })],
+      launcher: { ...notRunning, readTaskFile },
+    });
+    await expect(service.answer(ID, { text: 'yes' })).rejects.toThrow(/scheduled run.*has ended/);
+    expect(records.map.get(ID)).toMatchObject({ lastState: 'stopped', lastStatus: { reason: 'timeout', questions: [] }, summaryLine: 'The time for this run is up.' });
+    expect(published).toEqual([expect.objectContaining({ kind: 'task', task: expect.objectContaining({ state: 'stopped', reason: 'timeout' }) })]);
+  });
+
+  it('get of a scheduled run recorded as live whose container exited records the end from state.json (not suspended)', async () => {
+    const readTaskFile = jest.fn(async (_id: string, name: string) =>
+      name === 'state.json' ? JSON.stringify({ state: 'stopped', reason: 'scheduled-done' }) : 'Bumped deps.');
+    const { service, records, bridge } = setup({ records: [scheduledRecord({ lastState: 'running' })], launcher: { ...notRunning, readTaskFile } });
+    const view = await service.get(ID);
+    expect(view).toMatchObject({ state: 'stopped', reason: 'scheduled-done', section: 'done', summaryLine: 'Bumped deps.' });
+    expect(records.map.get(ID)).toMatchObject({ lastState: 'stopped', summaryLine: 'Bumped deps.' });
+    expect(bridge.status).not.toHaveBeenCalled();
+  });
+
+  it('get of an ordinary task whose container is not running still shows it suspended', async () => {
+    const { service, records } = setup({ records: [record({ lastState: 'idle' })], launcher: notRunning });
+    expect(await service.get(ID)).toMatchObject({ state: 'suspended' });
+    expect(records.map.get(ID)!.lastState).toBe('idle');
+  });
+
   it('a running scheduled task still takes a prompt', async () => {
     const { service, bridge } = setup({ records: [scheduledRecord({ lastState: 'running' })], bridge: { status: jest.fn(async () => status({ state: 'running' })) } });
     await service.prompt(ID, 'more');

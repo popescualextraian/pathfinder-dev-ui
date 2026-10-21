@@ -70,6 +70,17 @@ function toInput(f: Fields, repository: string, enabled: boolean): ScheduleInput
   return input;
 }
 
+/**
+ * Whether the saved schedule is on: as it was, except that a finished (disabled) one-off given a new time is on again
+ * (a time in the past is refused by the server).
+ */
+function enabledOnSave(schedule: ScheduleRecord | undefined, when: ScheduleInput['when'] | null): boolean {
+  if (!schedule) return true;
+  if (schedule.enabled) return true;
+  const was = 'at' in schedule.when ? schedule.when.at : undefined;
+  return was !== undefined && when !== null && 'at' in when && when.at !== was;
+}
+
 const PRESETS: { value: RepeatPreset; label: string }[] = [
   { value: 'daily', label: 'Daily' },
   { value: 'weekdays', label: 'Weekdays (Mon–Fri)' },
@@ -82,10 +93,10 @@ export function ScheduleForm({ schedule, repositories, onSaved, onCancel, previe
   const initial = useMemo(() => initialFields(schedule), [schedule]);
   const [fields, setFields] = useState<Fields>(initial);
   const [asking, setAsking] = useState(false);
-  const enabled = schedule?.enabled ?? true;
   const save = useScheduleSave();
 
   const when = formToWhen(fields.when);
+  const enabled = enabledOnSave(schedule, when);
   const preview = useSchedulePreview(when, previewDelay);
   const dirty = JSON.stringify(fields) !== JSON.stringify(initial);
   const guard = useLeaveGuard(dirty);

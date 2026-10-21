@@ -103,6 +103,20 @@ describe('TaskPoller', () => {
       expect([...bridges].filter(([, b]) => b.calls.length > 0).map(([id]) => id)).toEqual([ids[0], ids[1]]);
     });
 
+    it('polls a scheduled run in every live state (it ends by itself), an ordinary waiting or idle task not', async () => {
+      const scheduled = { runTimeoutSeconds: 60 };
+      const { poller, bridges } = setup({
+        [ids[0]]: { lastState: 'waiting', scheduled },
+        [ids[1]]: { lastState: 'idle', scheduled },
+        [ids[2]]: { lastState: 'waiting' },
+        [ids[3]]: { lastState: 'stopped', scheduled },
+        [ids[4]]: { lastState: 'suspended', scheduled },
+        [ids[5]]: { lastState: 'waiting', scheduled, closed: true },
+      });
+      await poller.tick();
+      expect([...bridges].filter(([, b]) => b.calls.length > 0).map(([id]) => id)).toEqual([ids[0], ids[1]]);
+    });
+
     it('asks for the status view after the saved cursor', async () => {
       const { poller, bridges } = setup({ [ids[0]]: { lastState: 'running', lastSeq: 41 } });
       await poller.tick();
@@ -504,6 +518,37 @@ describe('TaskPoller: a task whose bridge is gone', () => {
     await poller.tick();
     expect(bridges.get(id)!.calls).toHaveLength(calls);
     expect(published).toHaveLength(1);
+  });
+
+  it('a scheduled run waiting on a question whose bridge is gone (the timeout ended it) ends from state.json and arms the cost recheck', async () => {
+    const readTaskFile = files({ 'state.json': JSON.stringify({ state: 'stopped', reason: 'timeout' }), 'result.md': 'The time is up.' });
+    const { poller, records, published } = ended({
+      lastState: 'waiting', lastStatus: { state: 'waiting', reason: '', questions: [{ id: 'Q1' }] }, scheduled: { runTimeoutSeconds: 60 }, scheduleId: 's',
+    }, { ...gone, readTaskFile });
+    await poller.tick();
+    expect(records.map.get(id)).toMatchObject({ lastState: 'stopped', lastStatus: { reason: 'timeout', questions: [] }, summaryLine: 'The time is up.', costRecheck: 2 });
+    expect(published.at(-1)!.task).toMatchObject({ state: 'stopped', section: 'done', reason: 'timeout' });
+  });
+
+  it('a scheduled run seen leaving waiting for stopped in the events arms the cost recheck', async () => {
+    const { poller, records, bridges } = setup({ [id]: { lastState: 'waiting', scheduled: { runTimeoutSeconds: 60 } } });
+    bridges.get(id)!.push('state', { state: 'stopped', reason: 'timeout' });
+    await poller.tick();
+    expect(records.map.get(id)).toMatchObject({ lastState: 'stopped', costRecheck: 2 });
+  });
+
+  it('logs the end only when it was recorded, not when a stop meanwhile won', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const { poller, records, launcher } = ended({}, { readTaskFile: files({}) });
+    launcher.inspect = jest.fn(async () => {
+      records.map.set(id, { ...records.map.get(id)!, lastState: 'stopped' });
+      return { exists: true, running: false, bridgeUrl: '' };
+    });
+    await poller.tick();
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('ended while its bridge was gone'));
+    const second = ended({}, { ...gone, readTaskFile: files({}) });
+    await second.poller.tick();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('ended while its bridge was gone'));
   });
 
   it('takes the timeout reason', async () => {

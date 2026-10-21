@@ -1,7 +1,12 @@
 import { BadGatewayException, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { TaskUpdates, TaskView, WorktreeFileTooLargeError } from '../../../../src/engine';
 import { EngineScheduledTasks } from '../../../../src/integration/schedule/engine-scheduled-tasks';
-import { ScheduledTaskEnd, ScheduledTaskRefusedError, ScheduledTaskStart } from '../../../../src/schedule';
+import { ScheduledTaskEnd, ScheduledTaskRefusedError, ScheduledTaskStart, ScheduleRunner } from '../../../../src/schedule';
+import { ScheduleLocks } from '../../../../src/schedule/service/schedule-locks';
+import { TasksService } from '../../../../src/engine/service/tasks.service';
+import { TaskCostService } from '../../../../src/engine/service/cost/task-cost.service';
+import { config, fakeBridge, fakeLauncher, fakeRecords, record } from '../../engine/service/helpers';
+import { FakeClock, MemoryScheduleRepository } from '../../../helpers/fake-schedule';
 
 function view(patch: Partial<TaskView> = {}): TaskView {
   return {
@@ -120,5 +125,64 @@ describe('EngineScheduledTasks', () => {
       tasks.get.mockRejectedValueOnce(new NotFoundException());
       expect(await adapter.readResult('T-1')).toBeUndefined();
     });
+  });
+});
+
+// The adapter on the real TasksService (fake records, launcher and bridge) with the runner's reconcile at startup.
+describe('EngineScheduledTasks with the engine: a run that ended while the app was down', () => {
+  const ID = 'T-20260101-abcd';
+
+  async function restart(launcherOver: Record<string, unknown>, lastState = 'running') {
+    const records = fakeRecords([record({ id: ID, lastState, scheduled: { runTimeoutSeconds: 600 }, scheduleId: 'nightly', scheduleTitle: 'Nightly deps' })]);
+    const launcher = fakeLauncher(launcherOver);
+    const updates = new TaskUpdates();
+    const tasks = new TasksService(records as never, launcher as never, (() => fakeBridge()) as never, config, updates,
+      new TaskCostService(records as never, launcher as never), { waitTimeoutMs: 50, waitIntervalMs: 1 });
+    const adapter = new EngineScheduledTasks(tasks, updates);
+    const repo = new MemoryScheduleRepository();
+    await repo.save({
+      id: 'nightly', title: 'Nightly deps', prompt: 'Update', repository: 'repo', when: { cron: '0 2 * * *' }, timeoutMinutes: 10, enabled: true,
+      nextRunAt: '2099-01-01T02:00:00+00:00', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      results: [{ firedAt: '2026-01-01T02:00:00.000Z', trigger: 'time', outcome: 'running', taskId: ID }],
+    });
+    const runner = new ScheduleRunner(adapter, repo, { dataDir: '/unused', timezone: 'UTC', tickSeconds: 3600 }, new ScheduleLocks(), new FakeClock(Date.parse('2026-01-01T03:00:00.000Z')));
+    await runner.onModuleInit();
+    await runner.settled();
+    return { records, updates, adapter, repo, runner };
+  }
+
+  let stop: (() => void) | undefined;
+  afterEach(() => stop?.());
+
+  const files = (map: Record<string, string>) => jest.fn(async (_id: string, name: string) => map[name] ?? null);
+  const exited = { inspect: jest.fn(async () => ({ exists: true, running: false, bridgeUrl: '' })) };
+
+  it('a container that is not running: the result is done with the summary of result.md (state from state.json), not failed', async () => {
+    const readTaskFile = files({ 'state.json': JSON.stringify({ state: 'stopped', reason: 'scheduled-done' }), 'result.md': 'Updated 3 deps.' });
+    const { repo, records, runner } = await restart({ ...exited, readTaskFile });
+    stop = () => runner.onModuleDestroy();
+    expect((await repo.get('nightly'))!.results[0]).toMatchObject({ outcome: 'done', summary: 'Updated 3 deps.', endedAt: expect.any(String) });
+    expect(records.map.get(ID)).toMatchObject({ lastState: 'stopped', summaryLine: 'Updated 3 deps.' });
+  });
+
+  it('a run that waited on a question when its time limit was reached: timeout', async () => {
+    const readTaskFile = files({ 'state.json': JSON.stringify({ state: 'stopped', reason: 'timeout' }), 'result.md': 'The time is up.' });
+    const { repo, runner } = await restart({ ...exited, readTaskFile }, 'waiting');
+    stop = () => runner.onModuleDestroy();
+    expect((await repo.get('nightly'))!.results[0]).toMatchObject({ outcome: 'timeout', summary: 'The time is up.' });
+  });
+
+  it('a run still going stays running, and its later end completes the result', async () => {
+    let running = true;
+    const readTaskFile = files({ 'state.json': JSON.stringify({ state: 'stopped', reason: 'scheduled-done' }), 'result.md': 'Done late.' });
+    const inspect = jest.fn(async () => ({ exists: true, running, bridgeUrl: '' }));
+    const { repo, runner, adapter } = await restart({ inspect, readTaskFile });
+    stop = () => runner.onModuleDestroy();
+    expect((await repo.get('nightly'))!.results[0]).toMatchObject({ outcome: 'running' });
+    // The container exits later; the engine records the end (here through a read, as a wake or the poller would).
+    running = false;
+    await adapter.get(ID);
+    await runner.settled();
+    expect((await repo.get('nightly'))!.results[0]).toMatchObject({ outcome: 'done', summary: 'Done late.' });
   });
 });

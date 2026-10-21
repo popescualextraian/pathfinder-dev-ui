@@ -97,4 +97,19 @@ describeWithBridge('a scheduled run against the local launcher and the real brid
     expect((await api().post(`/api/tasks/${id}/prompt`).send({ text: 'more' })).status).toBe(409);
     expect((await api().delete(`/api/tasks/${id}`)).status).toBe(204);
   }, 130_000);
+
+  // The fake agent's ASK: ends its turn at once (the bridge then asks for the summary); a permission request holds the
+  // turn, so the task waits on a question until the timeout cancels it, as a real agent's open question does.
+  it('a run waiting on a question (nobody answers) is seen to end at the timeout: stopped, reason timeout', async () => {
+    const started = await tasks.start({ prompt: 'PERMISSION:git push --force', scheduled: { runTimeoutSeconds: 60 }, scheduleId: 'asks' });
+    const id = started.id;
+    await until('the question', async () => stored(id).lastState === 'waiting' && stored(id), 30_000);
+    const ended = await until('the timeout end', async () =>
+      changes.find((c) => c.kind === 'task' && c.task.id === id && c.task.state === 'stopped'), 100_000);
+    if (ended.kind !== 'task') throw new Error('unexpected change');
+    expect(ended.task).toMatchObject({ section: 'done', reason: 'timeout', questions: [], summaryLine: expect.stringMatching(/.+/) });
+    expect(stored(id)).toMatchObject({ lastState: 'stopped', lastStatus: { reason: 'timeout' } });
+    expect((await api().post(`/api/tasks/${id}/answer`).send({ text: 'main' })).status).toBe(409);
+    expect((await api().delete(`/api/tasks/${id}`)).status).toBe(204);
+  }, 140_000);
 });

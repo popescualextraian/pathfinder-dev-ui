@@ -295,7 +295,8 @@ describe('LocalTaskLauncher', () => {
     const make = (bridge: string) => new LocalTaskLauncher({ ...base, dataDir: join(tmp, 'data'), localAgent: 'fake' }, { bridgeCommand: bridge, agenticDir: NO_IMAGE });
 
     it('does not respawn the bridge of a scheduled task that exited normally with a final state', async () => {
-      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
       const l = make(ending(0));
       await l.launch({ ...spec, repoUrl: origin, scheduled: { runTimeoutSeconds: 60 } });
       await waitFor('bridge exit', () => existsSync(join(l.root, 'T-1', 'task', 'state.json')));
@@ -303,6 +304,9 @@ describe('LocalTaskLauncher', () => {
       expect(await l.inspect('T-1')).toMatchObject({ exists: true, running: false });
       await expect(l.start('T-1')).rejects.toThrow(/scheduled run of task T-1 has ended/);
       expect(await l.countRunning()).toBe(0);
+      // A normal end: no warning that it exited unexpectedly, a plain log line.
+      expect(warn.mock.calls.map((c) => String(c[0]))).not.toContainEqual(expect.stringContaining('exited unexpectedly'));
+      expect(log.mock.calls.map((c) => String(c[0]))).toContainEqual(expect.stringMatching(/T-1 exited after its scheduled run ended/));
       await l.remove('T-1');
       jest.restoreAllMocks();
     });

@@ -1,9 +1,14 @@
-import { TaskRecord } from '../repository/task-record.repository';
-import { TaskLauncher } from './task-launcher';
+import { TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
+import { TaskInspection, TaskLauncher } from './task-launcher';
 import { summaryLineOf } from './task-view';
 
 // States in which a task's bridge is (or should be) alive.
-const LIVE_STATES = new Set(['starting', 'running', 'waiting', 'idle']);
+export const LIVE_STATES: ReadonlySet<string> = new Set(['starting', 'running', 'waiting', 'idle']);
+
+/** Whether the record says the task's bridge is (or should be) alive: not closed, not stopped, in a live state. */
+export function recordedLive(record: TaskRecord): boolean {
+  return !record.closed && LIVE_STATES.has(record.lastState ?? 'starting');
+}
 // States the bridge writes into state.json when it ends (or suspends) on purpose.
 const END_STATES = new Set(['stopped', 'failed', 'suspended', 'interrupted']);
 
@@ -52,4 +57,49 @@ export async function endedState(launcher: Pick<TaskLauncher, 'readTaskFile'>, i
   if (END_STATES.has(state)) return { state, reason };
   if (state === '') return { state: 'failed', reason: 'the task ended and its state.json names no state' };
   return { state: 'interrupted', reason: `the bridge ended while the task was ${state} (without stop or suspension)` };
+}
+
+export interface GoneEnd {
+  /** The record as it was when the end was written (or refused). */
+  before: TaskRecord;
+  /** The record after the write; the same object as `before` when the write was refused. */
+  updated: TaskRecord;
+  /** False when a stop, close or other change that left the live states came in meanwhile and won. */
+  applied: boolean;
+  end: { state: string; reason: string };
+}
+
+/**
+ * Records the end of a task whose bridge is gone (container exited or local bridge process ended) with the state
+ * its state.json gives, and the summary line of a scheduled run. Undefined when the container still runs (nothing
+ * written). Only a record still in a live state (starting, running, waiting, idle) is moved: a stop, close or
+ * other end that came in meanwhile wins. The caller announces the change.
+ */
+export async function recordGoneEnd(
+  records: Pick<TaskRecordRepository, 'update'>,
+  launcher: Pick<TaskLauncher, 'inspect' | 'readTaskFile'>,
+  armRecheck: () => Partial<TaskRecord>,
+  id: string,
+  known?: TaskInspection,
+): Promise<GoneEnd | undefined> {
+  const inspection = known ?? await launcher.inspect(id);
+  if (inspection.exists && inspection.running) return undefined;
+  const end = await endedState(launcher, id, inspection.exists);
+  let before: TaskRecord | undefined;
+  let applied = false;
+  let updated = await records.update(id, (current) => {
+    before = current;
+    if (!recordedLive(current)) return undefined;
+    applied = true;
+    return {
+      lastState: end.state,
+      lastStatus: { ...(current.lastStatus as object | undefined), state: end.state, reason: end.reason, questions: [] },
+      ...armRecheck(),
+    };
+  });
+  if (needsSummaryLine(updated)) {
+    const summaryLine = await readSummaryLine(launcher, id);
+    updated = await records.update(id, (current) => (current.summaryLine === undefined ? { summaryLine } : undefined));
+  }
+  return { before: before ?? updated, updated, applied, end };
 }

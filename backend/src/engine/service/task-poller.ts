@@ -3,7 +3,7 @@ import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 import { SessionRecord, TaskRecord, TaskRecordRepository } from '../repository/task-record.repository';
 import { BRIDGE_CLIENT_FACTORY, BridgeClientFactory, BridgeEvent, BridgeQuestion, BridgeStatus, BridgeUnreachableError } from './bridge-client';
 import { TaskCostService } from './cost/task-cost.service';
-import { endedState, needsSummaryLine, readSummaryLine } from './task-end';
+import { LIVE_STATES, needsSummaryLine, readSummaryLine, recordGoneEnd } from './task-end';
 import { TASK_LAUNCHER, TaskLauncher } from './task-launcher';
 import { TaskUpdates } from './task-updates';
 import { MAIN_SESSION, toView, viewsDiffer } from './task-view';
@@ -17,10 +17,25 @@ const POLLED_STATES = new Set(['starting', 'running']);
 // After these states no question can still be open.
 const QUIET_STATES = new Set(['idle', 'suspended', 'stopped', 'failed', 'interrupted']);
 
-// Reads the status view of the event stream of every starting or running task (and of a task right
-// after one of our own actions) and keeps the record up to date: state, open questions, the whole
-// last agent message and the cursor. Idle, suspended, stopped and closed tasks change only through
-// our actions and are not polled. A failed poll is logged and retried in the next round, except when the
+// Polled in every round: starting and running tasks, and a scheduled run in any live state.
+function polled(record: TaskRecord): boolean {
+  const state = record.lastState ?? 'starting';
+  return POLLED_STATES.has(state) || (record.scheduled !== undefined && LIVE_STATES.has(state));
+}
+
+// A turn end (the cost is read again): a task left starting/running, or a scheduled run left the live states.
+function turnEnded(current: TaskRecord, next: string | undefined): boolean {
+  if (next === undefined) return false;
+  const state = current.lastState ?? 'starting';
+  if (POLLED_STATES.has(state) && !POLLED_STATES.has(next)) return true;
+  return current.scheduled !== undefined && LIVE_STATES.has(state) && !LIVE_STATES.has(next);
+}
+
+// Reads the status view of the event stream of every starting or running task, of every scheduled run in a
+// live state (a scheduled run that waits on a question or is idle still ends by itself: at its timeout the
+// bridge stops and exits), and of a task right after one of our own actions, and keeps the record up to date:
+// state, open questions, the whole last agent message and the cursor. Other idle or waiting tasks and
+// suspended, stopped and closed ones change only through our actions and are not polled. A failed poll is logged and retried in the next round, except when the
 // bridge is unreachable because the task ended (container exited, local bridge process gone): then the
 // bridge's state.json says how it ended (a scheduled run: stopped, scheduled-done or timeout) and the
 // record moves there, announced like any other change; a scheduled run also gets its summary line.
@@ -60,7 +75,7 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
   private async pollAll(): Promise<void> {
     const acted = this.updates.actedIds();
     const due = (await this.records.list()).filter(
-      (r) => !r.closed && r.bridgeUrl !== undefined && r.lastState !== 'stopped' && (POLLED_STATES.has(r.lastState ?? 'starting') || acted.has(r.id)),
+      (r) => !r.closed && r.bridgeUrl !== undefined && r.lastState !== 'stopped' && (polled(r) || acted.has(r.id)),
     );
     let next = 0;
     const worker = async (): Promise<void> => {
@@ -102,8 +117,7 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
       before = current;
       if (current.closed || current.lastState === 'stopped') return undefined;
       const patch = applyEvents(current, events);
-      const ended = POLLED_STATES.has(current.lastState ?? 'starting') && patch?.lastState !== undefined && !POLLED_STATES.has(patch.lastState);
-      return ended ? { ...patch, ...this.costs.armRecheck() } : patch;
+      return patch !== undefined && turnEnded(current, patch.lastState) ? { ...patch, ...this.costs.armRecheck() } : patch;
     });
     this.announce(before, await this.withSummaryLine(updated));
   }
@@ -111,22 +125,12 @@ export class TaskPoller implements OnModuleInit, OnModuleDestroy {
   // The bridge did not answer: when the container (or local bridge process) is no longer running the task
   // has ended, with the state its state.json gives. False when it still runs (the poll is then retried).
   private async endIfGone(polled: TaskRecord): Promise<boolean> {
-    const inspection = await this.launcher.inspect(polled.id);
-    if (inspection.exists && inspection.running) return false;
-    const end = await endedState(this.launcher, polled.id, inspection.exists);
-    let before: TaskRecord | undefined;
-    const updated = await this.records.update(polled.id, (current) => {
-      before = current;
-      // A stop, close or anything that moved the task out of the polled states meanwhile wins.
-      if (current.closed || !POLLED_STATES.has(current.lastState ?? 'starting')) return undefined;
-      return {
-        lastState: end.state,
-        lastStatus: { ...(current.lastStatus as object | undefined), state: end.state, reason: end.reason, questions: [] },
-        ...this.costs.armRecheck(),
-      };
-    });
-    this.logger.log(`Task ${polled.id} ended while its bridge was gone: ${end.state}${end.reason ? ` (${end.reason})` : ''}`);
-    this.announce(before, await this.withSummaryLine(updated));
+    const gone = await recordGoneEnd(this.records, this.launcher, () => this.costs.armRecheck(), polled.id);
+    if (gone === undefined) return false;
+    if (gone.applied) {
+      this.logger.log(`Task ${polled.id} ended while its bridge was gone: ${gone.end.state}${gone.end.reason ? ` (${gone.end.reason})` : ''}`);
+    }
+    this.announce(gone.before, gone.updated);
     return true;
   }
 
