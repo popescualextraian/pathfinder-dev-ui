@@ -53,15 +53,17 @@ function setup(overrides: Partial<EngineConfig> = {}) {
     getArchive: jest.fn(),
   };
   const volume = { remove: jest.fn().mockResolvedValue(undefined) };
+  const image = { inspect: jest.fn().mockResolvedValue({ Config: { Labels: {} } }) };
   const docker = {
     createVolume: jest.fn().mockResolvedValue({}),
     createContainer: jest.fn().mockResolvedValue(container),
     getContainer: jest.fn().mockReturnValue(container),
     getVolume: jest.fn().mockReturnValue(volume),
     listContainers: jest.fn().mockResolvedValue([]),
+    getImage: jest.fn().mockReturnValue(image),
   };
   const launcher = new DockerTaskLauncher({ ...config, ...overrides }, docker as unknown as Docker);
-  return { launcher, docker, container, volume };
+  return { launcher, docker, container, volume, image };
 }
 
 function envOf(call: { Env: string[] }): Record<string, string> {
@@ -446,5 +448,92 @@ describe('DockerTaskLauncher.readTaskFile', () => {
       await expect(launcher.readTaskFile('T-1', name as 'result.md')).rejects.toThrow(BadRequestException);
     }
     expect(container.getArchive).not.toHaveBeenCalled();
+  });
+});
+
+const labelOf = (apps: unknown): string => Buffer.from(JSON.stringify(apps)).toString('base64');
+
+describe('DockerTaskLauncher app ports', () => {
+  const apps = { web: { ports: [3000, 9229], url: '/', autostart: true }, api: { ports: [8080], url: '/h', autostart: false } };
+
+  it('publishes each app port on 127.0.0.1 with a Docker-picked host port and returns the host ports', async () => {
+    const { launcher, docker, container, image } = setup();
+    image.inspect.mockResolvedValue({ Config: { Labels: { 'agentic.apps': labelOf(apps) } } });
+    container.inspect.mockResolvedValue({
+      State: { Running: true },
+      NetworkSettings: { Ports: {
+        '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: '49153' }],
+        '9229/tcp': [{ HostIp: '127.0.0.1', HostPort: '49154' }],
+        '8080/tcp': [{ HostIp: '127.0.0.1', HostPort: '49155' }],
+      } },
+    });
+    const result = await launcher.launch(spec);
+    const c = docker.createContainer.mock.calls[0][0];
+    const binding = [{ HostIp: '127.0.0.1', HostPort: '' }];
+    expect(c.ExposedPorts).toEqual({ '3000/tcp': {}, '9229/tcp': {}, '8080/tcp': {} });
+    expect(c.HostConfig.PortBindings).toEqual({ '3000/tcp': binding, '9229/tcp': binding, '8080/tcp': binding });
+    expect(docker.getImage).toHaveBeenCalledWith('agentic-dev:test');
+    expect(result.appPorts).toEqual({ web: { 3000: 49153, 9229: 49154 }, api: { 8080: 49155 } });
+  });
+
+  it('adds no ports and no appPorts for an image without the label', async () => {
+    const { launcher, docker, container } = setup();
+    const result = await launcher.launch(spec);
+    const c = docker.createContainer.mock.calls[0][0];
+    expect(c.ExposedPorts).toBeUndefined();
+    expect(c.HostConfig.PortBindings).toBeUndefined();
+    expect(result.appPorts).toBeUndefined();
+    expect(container.inspect).not.toHaveBeenCalled();
+  });
+
+  it('adds no ports and no appPorts for an empty label (e30=)', async () => {
+    const { launcher, docker, image } = setup();
+    image.inspect.mockResolvedValue({ Config: { Labels: { 'agentic.apps': 'e30=' } } });
+    const result = await launcher.launch(spec);
+    expect(docker.createContainer.mock.calls[0][0].ExposedPorts).toBeUndefined();
+    expect(result.appPorts).toBeUndefined();
+  });
+
+  it.each([
+    ['not base64 json', '%%%secret-value%%%'],
+    ['json that is not an object', labelOf([1, 2])],
+    ['a port that is not an integer', labelOf({ web: { ports: ['x'], url: '/', autostart: true } })],
+    ['a port out of range', labelOf({ web: { ports: [70000], url: '/', autostart: true } })],
+  ])('starts the task with no apps for a malformed label (%s) and logs once without the value', async (_n, label) => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { launcher, docker, image } = setup();
+    image.inspect.mockResolvedValue({ Config: { Labels: { 'agentic.apps': label } } });
+    const first = await launcher.launch(spec);
+    await launcher.launch({ ...spec, taskId: 'T-20261016-cd34' });
+    expect(first.appPorts).toBeUndefined();
+    expect(docker.createContainer.mock.calls[0][0].ExposedPorts).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).not.toContain(label);
+    expect(String(warn.mock.calls[0][0])).not.toContain('secret-value');
+    warn.mockRestore();
+  });
+
+  it('starts with no apps when the image cannot be inspected', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { launcher, image } = setup();
+    image.inspect.mockRejectedValue(dockerError(404));
+    const result = await launcher.launch(spec);
+    expect(result).toEqual({ bridgeUrl: 'http://agentic-ui-task-T-20261016-ab12:8765' });
+    warn.mockRestore();
+  });
+
+  it('keeps the launch working when the host ports cannot be read', async () => {
+    const { launcher, container, image } = setup();
+    image.inspect.mockResolvedValue({ Config: { Labels: { 'agentic.apps': labelOf(apps) } } });
+    container.inspect.mockResolvedValue({ State: { Running: true }, NetworkSettings: { Ports: { '3000/tcp': null } } });
+    const result = await launcher.launch(spec);
+    expect(result.appPorts).toEqual({ web: {}, api: {} });
+  });
+
+  it('does not touch the ports on start (a resumed task keeps its record)', async () => {
+    const { launcher, docker, container } = setup();
+    await launcher.start('T-20261016-ab12');
+    expect(container.start).toHaveBeenCalled();
+    expect(docker.createContainer).not.toHaveBeenCalled();
   });
 });

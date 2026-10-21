@@ -55,6 +55,8 @@ export interface TaskRecord {
   branch: string;
   containerName: string;
   bridgeUrl?: string;
+  // Host ports the Docker launcher published for the task's apps: {app name: {container port: host port}}. Absent in older records.
+  appPorts?: Record<string, Record<string, number>>;
   taskToken: string;
   agentToken: string;
   createdAt: string;

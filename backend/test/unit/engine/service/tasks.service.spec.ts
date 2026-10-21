@@ -130,6 +130,15 @@ describe('TasksService.start', () => {
     expect(launcher.remove).not.toHaveBeenCalled();
   });
 
+  it('stores the app ports from the launcher in the record, and none when it returns none', async () => {
+    const withPorts = setup({ records: [], launcher: { launch: jest.fn(async () => ({ bridgeUrl: 'http://bridge:8765', appPorts: { web: { 3000: 49153 } } })) } });
+    const view = await withPorts.service.start({ prompt: 'hello' });
+    expect(withPorts.records.map.get(view.id)!.appPorts).toEqual({ web: { 3000: 49153 } });
+    const without = setup({ records: [] });
+    const view2 = await without.service.start({ prompt: 'hello' });
+    expect(without.records.map.get(view2.id)).not.toHaveProperty('appPorts');
+  });
+
   it('refuses a repoUrl whose host is not allowed, before anything happens', async () => {
     const { service, launcher, records } = setup({ records: [] });
     for (const url of ['https://attacker.example/r.git', 'https://github.com.evil.example/r.git', 'https://GITHUB.com:444@evil.example/r.git']) {

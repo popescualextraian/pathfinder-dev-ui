@@ -322,11 +322,11 @@ export class TasksService {
     // Record first: a crash between launch and save would orphan a container.
     await this.records.create(record);
     try {
-      const { bridgeUrl } = await this.launcher.launch({
+      const { bridgeUrl, appPorts } = await this.launcher.launch({
         taskId: id, taskToken, agentToken, prompt: input.prompt, repoUrl, repoRef: input.repoRef, model: input.model, branch,
         ...(record.scheduled ? { scheduled: record.scheduled } : {}),
       });
-      const launched = await this.records.update(id, { bridgeUrl });
+      const launched = await this.records.update(id, appPorts ? { bridgeUrl, appPorts } : { bridgeUrl });
       // The first poll catches up with the events from the beginning, whatever the state is by then.
       this.updates.markActed(id);
       this.updates.changed(toView(launched));

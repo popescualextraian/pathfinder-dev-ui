@@ -20,8 +20,13 @@ export interface LaunchSpec {
   scheduled?: { runTimeoutSeconds: number };
 }
 
+// App ports of a task: {app name: {container port: host port}}.
+export type AppPorts = Record<string, Record<string, number>>;
+
 export interface LaunchResult {
   bridgeUrl: string;
+  // Host ports of the image's apps; absent when the launcher publishes none (no apps, or the local launcher).
+  appPorts?: AppPorts;
 }
 
 export interface TaskInspection {
