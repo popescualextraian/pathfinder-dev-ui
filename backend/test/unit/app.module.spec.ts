@@ -7,6 +7,7 @@ import { WorkflowsApiModule } from '../../src/api/workflows/workflows-api.module
 import { AppModule, backlogModules, workflowModules } from '../../src/app.module';
 import { BACKLOG_CONFIG } from '../../src/backlog/service/backlog-config';
 import { ENGINE_CONFIG } from '../../src/commons/engine-config';
+import { SCHEDULE_CONFIG } from '../../src/commons/schedule-config';
 import { TASK_LAUNCHER } from '../../src/engine/service/task-launcher';
 import { WorkflowDefinitionsService, WorkflowRunner } from '../../src/workflow';
 
@@ -15,7 +16,9 @@ describe('AppModule', () => {
     // The real config and launcher need environment variables and Docker; stubbed here.
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(ENGINE_CONFIG)
-      .useValue({ dataDir: '/tmp/unused', maxRunning: 1 })
+      .useValue({ dataDir: '/tmp/unused', maxRunning: 1, repositories: [] })
+      .overrideProvider(SCHEDULE_CONFIG)
+      .useValue({ dataDir: join(tmpdir(), 'app-module-spec-schedules'), timezone: 'UTC', tickSeconds: 3600 })
       .overrideProvider(TASK_LAUNCHER)
       .useValue({})
       .compile();

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { BacklogApiModule } from './api/backlog/backlog-api.module';
 import { RepositoriesApiModule } from './api/repositories/repositories-api.module';
+import { SchedulesApiModule } from './api/schedules/schedules-api.module';
 import { SystemApiModule } from './api/system/system-api.module';
 import { TasksApiModule } from './api/tasks/tasks-api.module';
 import { WorkflowsApiModule } from './api/workflows/workflows-api.module';
@@ -27,6 +28,7 @@ export function workflowModules(env: NodeJS.ProcessEnv): Array<typeof WorkflowsA
     SystemApiModule,
     RepositoriesApiModule,
     TasksApiModule,
+    SchedulesApiModule,
     ...backlogModules(process.env),
     ...workflowModules(process.env),
   ],

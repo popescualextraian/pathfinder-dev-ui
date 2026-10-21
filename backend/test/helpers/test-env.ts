@@ -19,6 +19,9 @@ export function setTestEnv(maxRunning = 2): string {
     ENGINE_MAX_RUNNING: String(maxRunning),
     ENGINE_GIT_NAME: 'Made Up Bot',
     ENGINE_GIT_EMAIL: 'made-up-bot@example.invalid',
+    SCHEDULES_DATA_DIR: join(dataDir, 'schedules'),
+    SCHEDULES_TIMEZONE: 'UTC',
+    SCHEDULES_TICK_SECONDS: '3600',
     GH_TOKEN: FAKE_GH_TOKEN,
     CLAUDE_CODE_OAUTH_TOKEN: FAKE_OAUTH_TOKEN,
   });
