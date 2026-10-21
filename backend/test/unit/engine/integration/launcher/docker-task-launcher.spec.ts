@@ -494,6 +494,16 @@ describe('DockerTaskLauncher app ports', () => {
     expect(result.appPorts).toBeUndefined();
   });
 
+  it('publishes 20 distinct ports in all (a port shared by two apps counts once)', async () => {
+    const { launcher, docker, image } = setup();
+    image.inspect.mockResolvedValue({ Config: { Labels: { 'agentic.apps': labelOf({
+      web: { ports: Array.from({ length: 10 }, (_v, i) => 3000 + i), url: '/', autostart: false },
+      api: { ports: [3000, ...Array.from({ length: 10 }, (_v, i) => 4000 + i)], url: '/', autostart: false },
+    }) } } });
+    await launcher.launch(spec);
+    expect(Object.keys(docker.createContainer.mock.calls[0][0].HostConfig.PortBindings)).toHaveLength(20);
+  });
+
   it.each([
     ['not base64 json', '%%%secret-value%%%'],
     ['json that is not an object', labelOf([1, 2])],
@@ -504,6 +514,10 @@ describe('DockerTaskLauncher app ports', () => {
     ['the name __proto__', Buffer.from('{"__proto__":{"ports":[3000]}}').toString('base64')],
     ['more than 32 apps', labelOf(Object.fromEntries(Array.from({ length: 33 }, (_v, i) => [`app${i}`, { ports: [3000 + i], url: '/', autostart: false }])))],
     ['more than 16 ports in an app', labelOf({ web: { ports: Array.from({ length: 17 }, (_v, i) => 3000 + i), url: '/', autostart: false } })],
+    ['more than 20 distinct ports in all (the socket filter publishes at most 20)', labelOf({
+      web: { ports: Array.from({ length: 11 }, (_v, i) => 3000 + i), url: '/', autostart: false },
+      api: { ports: Array.from({ length: 10 }, (_v, i) => 4000 + i), url: '/', autostart: false },
+    })],
     ['a huge label', labelOf({ web: { ports: Array.from({ length: 50000 }, (_v, i) => 1 + i), url: '/', autostart: false } })],
     ['a port out of range', labelOf({ web: { ports: [70000], url: '/', autostart: true } })],
   ])('starts the task with no apps for a malformed label (%s) and logs once without the value', async (_n, label) => {

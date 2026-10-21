@@ -25,6 +25,8 @@ const APPS_LABEL = 'agentic.apps';
 // undefined when it is malformed (the caller logs once, without the value).
 const MAX_APPS = 32;
 const MAX_PORTS_PER_APP = 16;
+// Distinct ports over all apps; the socket filter (socket-filter/src/rules.ts MAX_APP_PORTS) allows no more.
+const MAX_PORTS = 20;
 const APP_NAME = /^[a-z][a-z0-9-]{0,30}$/;
 
 function parseAppsLabel(label: string): Record<string, number[]> | undefined {
@@ -42,6 +44,7 @@ function parseAppsLabel(label: string): Record<string, number[]> | undefined {
       if (new Set(ports).size !== ports.length) return undefined;
       apps[name] = ports as number[];
     }
+    if (new Set(Object.values(apps).flat()).size > MAX_PORTS) return undefined;
     return apps;
   } catch {
     return undefined;
@@ -115,7 +118,8 @@ export class DockerTaskLauncher implements TaskLauncher {
         },
       });
       await container.start();
-      if (containerPorts.length) appPorts = await this.hostPorts(container, apps);
+      // By name: the socket filter allows an inspect by name only (dockerode's handle from create holds the id).
+      if (containerPorts.length) appPorts = await this.hostPorts(this.docker.getContainer(name), apps);
     } catch (error) {
       await this.remove(spec.taskId).catch(() => undefined);
       throw error;

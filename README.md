@@ -315,7 +315,8 @@ bridge in the container runs them. The UI only relays.
   are read again on every start of the task container, so a link from before a restart of the task is stale.
 - In the compose setup the task containers are siblings of `ui`, created by the Docker engine: their ports are
   published on the Docker host's 127.0.0.1, so the links work in a browser on the Docker host (elsewhere,
-  forward the port, for example with `ssh -L`). The socket filter allows exactly these bindings (see Deployment).
+  forward the port, for example with `ssh -L`). The socket filter allows exactly these bindings, at most 20
+  distinct ports per task; an image whose label names more starts its tasks without apps (see Deployment).
 - Start and restart can take minutes when the app prepares first (for example `npm ci`): the bridge
   allows 11 minutes for start and 14 for restart, stop 3, and the UI waits slightly longer than each.
 
@@ -738,9 +739,11 @@ streams (SSE and WebSocket connections reconnect) and requests in flight. `docke
 The filter allows only what the task launcher needs, and only for task containers (name prefix
 `agentic-ui-task-`, label `agentic-ui.kind=task`, image `ENGINE_IMAGE`, network `agentic-ui`): create a task
 volume and container with exactly the launcher's settings, start (by name, or by the full container id the
-launcher gets from create), stop, inspect, copy a file out (`archive`) and remove them, list task containers, and `_ping`/`version`.
-Everything else is answered 403, including exec, attach, logs, images, networks, other containers, and every
-connection upgrade. Consequences:
+launcher gets from create), stop, inspect, copy a file out (`archive`) and remove them, list task containers,
+inspect the image `ENGINE_IMAGE` (for its apps label), and `_ping`/`version`. The apps' ports (see Apps) are
+allowed only as the launcher publishes them: at most 20 `<port>/tcp`, each bound once to `127.0.0.1` with a
+Docker-picked host port. Everything else is answered 403, including exec, attach, logs, other images, networks,
+other containers, other port bindings, and every connection upgrade. Consequences:
 
 - `ENGINE_TASK_EXTRA_BINDS` does not work: the filter allows only the task's own volume as bind, so a launch with
   extra binds fails with 403 (and the launcher removes the volume again). Use it only without the filter
