@@ -4,6 +4,7 @@ import { MAIN_SESSION, resolveSession } from '../state/use-route';
 import { useTaskActions } from '../state/use-task-actions';
 import { AddSessionDialog } from './AddSessionDialog';
 import { ScheduleChip } from './ScheduleChip';
+import { AppsSection } from './AppsSection';
 import { SessionTabs } from './SessionTabs';
 import { Button } from './Button';
 import { FullRun } from './FullRun';
@@ -218,6 +219,7 @@ function SessionPanel({ task, sessions, name, done, onTask }: PanelProps) {
           }}
         />
       ))}
+      <AppsSection taskId={task.id} taskState={task.state} />
       <button type="button" className={styles.runLink} onClick={() => setShowRun(!showRun)} aria-expanded={showRun}>
         {showRun ? 'Hide full run ▾' : 'View full run ▸'}
       </button>

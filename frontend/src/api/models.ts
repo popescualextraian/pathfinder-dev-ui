@@ -98,7 +98,20 @@ export interface AnswerRequest {
   session?: string;
 }
 
-export type BridgeEventType = 'state' | 'message' | 'tool' | 'plan' | 'question' | 'answer' | 'gate' | 'error';
+export type AppState = 'running' | 'stopped' | 'failed';
+
+export interface TaskApp {
+  name: string;
+  state: AppState;
+  ports: number[];
+  url: string;
+  since?: string;
+  exit_code?: number;
+  /** http://localhost:<hostPort><url>, null without a published port. */
+  link: string | null;
+}
+
+export type BridgeEventType = 'state' | 'message' | 'tool' | 'plan' | 'question' | 'answer' | 'gate' | 'error' | 'app';
 
 export interface BridgeEvent {
   seq: number;
