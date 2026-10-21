@@ -1,5 +1,6 @@
 .list { padding: 24px; display: flex; flex-direction: column; gap: 12px; max-width: 900px; }
 .header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.headerActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .header h1 { margin: 0; font-size: 22px; }
 .notice { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--state-needs-bg); color: var(--state-needs-text); font-size: 13px; }
 .error { margin: 0; color: var(--msg-red); font-size: 13px; overflow-wrap: anywhere; }

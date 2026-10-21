@@ -1,6 +1,6 @@
 import { useRoute } from './state/use-route';
 import { useRepositories } from './state/use-repositories';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTask } from './state/use-task';
 import { useTasks } from './state/use-tasks';
 import { useBacklog } from './state/use-backlog';
@@ -83,17 +83,23 @@ export function App() {
                 }}
               />
             ) : (
-              <WorkflowList
-                definitions={workflows.definitions}
-                refused={workflows.refused}
-                writable={workflows.writable}
-                onNew={() => route.selectWorkflow('new')}
-                onEdit={(id) => route.selectWorkflow(id)}
-                onDuplicate={(id) => route.selectWorkflow('new', id)}
-                onDelete={workflows.remove}
-                onDeleteRefused={workflows.removeRefused}
-                generations={workflows.writable ? <WorkflowGenerationsSection /> : undefined}
-              />
+              (() => {
+                const list = (slots?: { button: ReactNode; panels: ReactNode }) => (
+                  <WorkflowList
+                    definitions={workflows.definitions}
+                    refused={workflows.refused}
+                    writable={workflows.writable}
+                    onNew={() => route.selectWorkflow('new')}
+                    onEdit={(id) => route.selectWorkflow(id)}
+                    onDuplicate={(id) => route.selectWorkflow('new', id)}
+                    onDelete={workflows.remove}
+                    onDeleteRefused={workflows.removeRefused}
+                    headerActions={slots?.button}
+                    generations={slots?.panels}
+                  />
+                );
+                return workflows.writable ? <WorkflowGenerationsSection>{list}</WorkflowGenerationsSection> : list();
+              })()
             )
           ) : route.view === 'backlog' && backlog.enabled ? (
             <BoardView

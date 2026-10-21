@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom';
+import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { TaskCost, WorkflowGenerationSummary } from '../../src/api/models';
 import { GenerationPanel } from '../../src/views/GenerationPanel';
@@ -28,6 +29,12 @@ const panel = (over: Partial<WorkflowGenerationSummary> = {}, props: Partial<Par
   render(<GenerationPanel {...p} />);
   return p;
 };
+const show = ({ button, panels }: { button: ReactNode; panels: ReactNode }) => (
+  <>
+    <header data-testid="head">{button}</header>
+    {panels}
+  </>
+);
 const state = () => screen.getByTestId('generation-state');
 
 describe('GenerationPanel', () => {
@@ -150,7 +157,8 @@ describe('GenerationPanel', () => {
 });
 
 describe('WorkflowGenerations', () => {
-  const setup = (over: Partial<Parameters<typeof WorkflowGenerations>[0]> = {}) => {
+  type GProps = Omit<Parameters<typeof WorkflowGenerations>[0], 'children'>;
+  const setup = (over: Partial<GProps> = {}) => {
     const p = {
       generations: [gen(), gen({ id: 'G-2', state: 'ready', hasDraft: true })],
       error: null,
@@ -161,9 +169,9 @@ describe('WorkflowGenerations', () => {
       discard: jest.fn(() => ok(gen())),
       answer: jest.fn(() => ok(undefined)),
       ...over,
-    } as Parameters<typeof WorkflowGenerations>[0];
-    const r = render(<WorkflowGenerations {...p} />);
-    return { ...p, rerender: (next: Partial<Parameters<typeof WorkflowGenerations>[0]>) => r.rerender(<WorkflowGenerations {...p} {...next} />) };
+    } as GProps;
+    const r = render(<WorkflowGenerations {...p}>{show}</WorkflowGenerations>);
+    return { ...p, rerender: (next: Partial<GProps>) => r.rerender(<WorkflowGenerations {...p} {...next}>{show}</WorkflowGenerations>) };
   };
 
   it('shows one panel per open generation, wired to its id', () => {

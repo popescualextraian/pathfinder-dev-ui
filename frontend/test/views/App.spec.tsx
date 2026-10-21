@@ -206,12 +206,27 @@ describe('App workflow generations', () => {
     expect(within(panel).getByRole('link', { name: 'Open in editor' })).toHaveAttribute('href', '#/workflows/new?generation=G-1');
   });
 
+  it('writable: the header has Generate with AI left of New workflow; the cost note is only in the dialog', async () => {
+    window.location.hash = '#/workflows';
+    list(true);
+    m(workflowsApi.listGenerations).mockResolvedValue([]);
+    render(<App />);
+    await screen.findByTestId('workflow-row-wf');
+    const header = screen.getByRole('heading', { name: 'Workflows' }).closest('header') as HTMLElement;
+    const names = within(header).getAllByRole('button').map((b) => b.textContent);
+    expect(names).toEqual(['Generate with AI', 'New workflow']);
+    expect(screen.queryByText(/costs tokens/)).toBeNull();
+    fireEvent.click(within(header).getByRole('button', { name: 'Generate with AI' }));
+    expect(await screen.findByRole('dialog')).toHaveTextContent(/costs tokens/);
+  });
+
   it('read-only: no generate button and no generations are read', async () => {
     window.location.hash = '#/workflows';
     list(false);
     render(<App />);
     await screen.findByTestId('workflow-row-wf');
     expect(screen.queryByRole('button', { name: 'Generate with AI' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New workflow' })).toBeNull();
     expect(workflowsApi.listGenerations).not.toHaveBeenCalled();
   });
 

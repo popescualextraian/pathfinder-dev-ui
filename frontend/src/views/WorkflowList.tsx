@@ -17,12 +17,14 @@ interface Props {
   onDeleteRefused: (file: string, version: string) => Promise<string | null>;
   /** Shown above the list (the AI generations; only given when the folder is writable). */
   generations?: ReactNode;
+  /** Header buttons left of "New workflow" (only given when the folder is writable). */
+  headerActions?: ReactNode;
 }
 
 type Pending = { kind: 'workflow'; id: string; title: string; version?: string } | { kind: 'file'; file: string; version: string };
 
 export function WorkflowList({
-  definitions, refused, writable, onNew, onEdit, onDuplicate, onDelete, onDeleteRefused, generations,
+  definitions, refused, writable, onNew, onEdit, onDuplicate, onDelete, onDeleteRefused, generations, headerActions,
 }: Props) {
   const [pending, setPending] = useState<Pending | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,9 +42,12 @@ export function WorkflowList({
       <header className={styles.header}>
         <h1>Workflows</h1>
         {writable && (
-          <Button variant="primary" onClick={onNew}>
-            New workflow
-          </Button>
+          <div className={styles.headerActions}>
+            {headerActions}
+            <Button variant="primary" onClick={onNew}>
+              New workflow
+            </Button>
+          </div>
         )}
       </header>
       {!writable && (
