@@ -111,7 +111,7 @@ describe('App workflows not loaded', () => {
 });
 
 describe('App workflows screen', () => {
-  const def = { id: 'wf', title: 'My flow', doneStage: 'plan', steps: [{ id: 's', title: 'S', gate: 'human' as const, sessions: ['main'] }] };
+  const def = { id: 'wf', title: 'My flow', doneStage: 'plan', steps: [{ id: 's', title: 'S', gate: 'human' as const }] };
 
   it('workflows off: no Workflows entry', async () => {
     window.location.hash = '#/backlog';

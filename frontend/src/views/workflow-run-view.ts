@@ -37,12 +37,25 @@ export function stepLabel(run: WorkflowRun): string {
   return `${step?.title ?? '?'} · ${run.stepIndex + 1}/${run.definition.steps.length}`;
 }
 
-/** The current step's last started session (its first one when none has started yet). */
-export function currentSession(run: WorkflowRun): string {
-  const sessions = currentStep(run)?.sessions ?? [];
-  const started = sessions.filter((s) => (run.sessions[s.name]?.status ?? 'pending') !== 'pending');
-  return (started[started.length - 1] ?? sessions[0])?.name ?? 'main';
+/**
+ * The task session a step runs in (same rule as the runner): an old run's saved `session` wins; the first step's is
+ * `main`; a step that continues an earlier step's conversation uses that step's session (chains followed); every
+ * other step has a session named after its id.
+ */
+export function sessionOfStep(steps: readonly WorkflowRunStep[], index: number): string {
+  const step = steps[index];
+  if (!step) return 'main';
+  if (step.session !== undefined) return step.session;
+  if (index === 0) return 'main';
+  if (step.continue !== undefined) {
+    const earlier = steps.findIndex((s) => s.id === step.continue);
+    if (earlier >= 0 && earlier < index) return sessionOfStep(steps, earlier);
+  }
+  return step.id;
 }
+
+/** The session of the current step. */
+export const currentSession = (run: WorkflowRun): string => sessionOfStep(run.definition.steps, run.stepIndex);
 
 export const openStepHref = (run: WorkflowRun) =>
   `#/tasks/${encodeURIComponent(run.taskId)}?session=${encodeURIComponent(currentSession(run))}`;

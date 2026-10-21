@@ -3,7 +3,7 @@ export class ApiError extends Error {
     readonly status: number,
     message: string,
     /** Where a definition rule was broken (400 of the workflow routes). */
-    readonly location?: { stepId?: string; session?: string; stepIndex?: number; sessionIndex?: number; field?: string },
+    readonly location?: { stepId?: string; stepIndex?: number; field?: string },
   ) {
     super(message);
     this.name = 'ApiError';

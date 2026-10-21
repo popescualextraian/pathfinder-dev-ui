@@ -27,10 +27,10 @@ const item = (over: Partial<BacklogItem> = {}): BacklogItem => ({
 const three = makeRun().definition;
 three.steps = [
   ...three.steps,
-  { id: 'review', title: 'Review', stage: 'review', gate: 'human', sessions: [{ name: 'review', prompt: 'r' }] },
+  { id: 'review', title: 'Review', stage: 'review', gate: 'human', prompt: 'r' },
 ];
 const run3 = (over: Partial<WorkflowRun> = {}) =>
-  makeRun({ definition: three, sessions: { main: { status: 'running' }, impl: { status: 'pending' }, review: { status: 'pending' } }, ...over });
+  makeRun({ definition: three, sessions: { main: { status: 'running' }, implement: { status: 'pending' }, review: { status: 'pending' } }, ...over });
 
 const board = (over: Partial<WorkflowBoard> = {}, runs: WorkflowRun[] = []): WorkflowBoard => ({
   definitions: [makeWorkflow()],
@@ -152,21 +152,23 @@ describe('run line', () => {
     expect(screen.queryByRole('button', { name: 'Start workflow on #7' })).toBeNull();
   });
 
-  it('Open step links the last started session of the current step', () => {
+  it('Open step links the session of the current step: its own, or the one it continues', () => {
     const run = makeRun({
       definition: {
         ...three,
-        steps: [
-          three.steps[0],
-          { ...three.steps[1], sessions: [{ name: 'impl', prompt: 'a' }, { name: 'tests', prompt: 'b' }, { name: 'docs', prompt: 'c' }] },
-        ],
+        steps: [three.steps[0], { ...three.steps[1], continue: 'plan' }, three.steps[2]],
       },
       stepIndex: 1,
-      sessions: { main: { status: 'done' }, impl: { status: 'done' }, tests: { status: 'running' }, docs: { status: 'pending' } },
+      sessions: { main: { status: 'running' }, review: { status: 'pending' } },
     });
     renderBoard(board({}, [run]));
-    expect(screen.getByRole('link', { name: 'Open step' }).getAttribute('href')).toBe('#/tasks/T-1?session=tests');
-    expect(screen.getByTestId('workflow-step').textContent).toBe('Implement · 2/2');
+    expect(screen.getByRole('link', { name: 'Open step' }).getAttribute('href')).toBe('#/tasks/T-1?session=main');
+    expect(screen.getByTestId('workflow-step').textContent).toBe('Implement · 2/3');
+  });
+
+  it('Open step links a new step session by the step id', () => {
+    renderBoard(board({}, [run3({ stepIndex: 2 })]));
+    expect(screen.getByRole('link', { name: 'Open step' }).getAttribute('href')).toBe('#/tasks/T-1?session=review');
   });
 
   it.each([
@@ -337,8 +339,8 @@ describe('dragging a card with an active run', () => {
         definition: {
           ...makeRun().definition,
           steps: [
-            { id: 'plan', title: 'Plan', stage: 'plan', gate: 'human', sessions: [{ name: 'main', prompt: 'p' }] },
-            { id: 'implement', title: 'Implement', gate: 'auto', sessions: [{ name: 'impl', prompt: 'd' }] },
+            { id: 'plan', title: 'Plan', stage: 'plan', gate: 'human', prompt: 'p' },
+            { id: 'implement', title: 'Implement', gate: 'auto', prompt: 'd' },
           ],
         },
       }),
