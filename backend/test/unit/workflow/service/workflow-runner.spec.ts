@@ -11,55 +11,58 @@ const PIR: WorkflowDefinition = {
   id: 'pir', title: 'Plan, implement, review', doneStage: 'done',
   steps: [
     {
-      id: 'plan', title: 'Plan', stage: 'plan', gate: 'human',
+      id: 'plan', title: 'Plan', stage: 'plan', gate: 'human', model: 'opus',
       exitPrompt: 'Commit plans/{{item.id}}.md on {{task.branch}}',
-      sessions: [{
-        name: 'main', model: 'opus',
-        prompt: 'Plan #{{item.id}}: {{item.title}} / {{item.description}} ({{item.url}}) step {{ step.id }} task [{{task.id}}] [{{task.branch}}]',
-      }],
+      prompt: 'Plan #{{item.id}}: {{item.title}} / {{item.description}} ({{item.url}}) step {{ step.id }} task [{{task.id}}] [{{task.branch}}]',
     },
     {
       id: 'implement', title: 'Implement', stage: 'in-progress', gate: 'auto', requires: ['plans/{{item.id}}.md'],
-      sessions: [{ name: 'impl', prompt: 'Implement plans/{{item.id}}.md in {{task.id}} at {{step.id}}' }],
+      prompt: 'Implement plans/{{item.id}}.md in {{task.id}} at {{step.id}}',
     },
-    {
-      id: 'review', title: 'Review', stage: 'review', gate: 'human',
-      sessions: [{ name: 'review', fork: 'impl', model: 'sonnet', prompt: 'Review {{task.branch}}' }],
-    },
+    { id: 'review', title: 'Review', stage: 'review', gate: 'human', fork: 'implement', model: 'sonnet', prompt: 'Review {{task.branch}}' },
   ],
 };
 
 const DUO: WorkflowDefinition = {
-  id: 'duo', title: 'Two sessions',
+  id: 'duo', title: 'Two steps',
   steps: [
-    {
-      id: 'work', title: 'Work', stage: 'in-progress', gate: 'auto',
-      sessions: [{ name: 'main', prompt: 'Work on {{item.title}}' }, { name: 'second', fork: 'main', model: 'haiku', prompt: 'Check {{item.id}}' }],
-    },
+    { id: 'work', title: 'Work', stage: 'in-progress', gate: 'auto', prompt: 'Work on {{item.title}}' },
+    { id: 'second', title: 'Second', gate: 'auto', fork: 'work', model: 'haiku', prompt: 'Check {{item.id}}' },
+  ],
+};
+
+// new conversation, continue, fork: sessions main (a, b, c all in it), then "d" forked from main.
+const CONT: WorkflowDefinition = {
+  id: 'cont', title: 'Continue and fork', doneStage: 'done',
+  steps: [
+    { id: 'a', title: 'A', stage: 'plan', gate: 'human', prompt: 'First {{item.id}}' },
+    { id: 'b', title: 'B', stage: 'in-progress', gate: 'human', continue: 'a', prompt: 'Second on {{task.branch}}', exitPrompt: 'Wrap up {{step.id}}' },
+    { id: 'c', title: 'C', gate: 'auto', continue: 'b', prompt: 'Third' },
+    { id: 'd', title: 'D', stage: 'review', gate: 'human', fork: 'c', model: 'haiku', prompt: 'Fourth' },
   ],
 };
 
 const AUTO_EXIT: WorkflowDefinition = {
   id: 'auto-exit', title: 'Auto with exit',
   steps: [
-    { id: 'a', title: 'A', stage: 'plan', gate: 'auto', exitPrompt: 'Wrap up {{step.id}}', sessions: [{ name: 'main', prompt: 'Go' }] },
-    { id: 'b', title: 'B', stage: 'review', gate: 'human', sessions: [{ name: 'b', prompt: 'Next' }] },
+    { id: 'a', title: 'A', stage: 'plan', gate: 'auto', exitPrompt: 'Wrap up {{step.id}}', prompt: 'Go' },
+    { id: 'b', title: 'B', stage: 'review', gate: 'human', prompt: 'Next' },
   ],
 };
 
 const NOSTAGE: WorkflowDefinition = {
   id: 'nostage', title: 'No stages',
   steps: [
-    { id: 'a', title: 'A', gate: 'auto', sessions: [{ name: 'main', prompt: 'Go' }] },
-    { id: 'b', title: 'B', gate: 'human', sessions: [{ name: 'b', prompt: 'Next' }] },
+    { id: 'a', title: 'A', gate: 'auto', prompt: 'Go' },
+    { id: 'b', title: 'B', gate: 'human', prompt: 'Next' },
   ],
 };
 
 const AUTO2: WorkflowDefinition = {
   id: 'auto2', title: 'Auto then human',
   steps: [
-    { id: 'a', title: 'A', stage: 'plan', gate: 'auto', sessions: [{ name: 'main', prompt: 'Go' }] },
-    { id: 'b', title: 'B', stage: 'review', gate: 'human', requires: ['{{item.title}}/plan.md'], sessions: [{ name: 'b', prompt: 'Next' }] },
+    { id: 'a', title: 'A', stage: 'plan', gate: 'auto', prompt: 'Go' },
+    { id: 'b', title: 'B', stage: 'review', gate: 'human', requires: ['{{item.title}}/plan.md'], prompt: 'Next' },
   ],
 };
 
@@ -72,7 +75,7 @@ describe('WorkflowRunner', () => {
   let seen: WorkflowRunView[];
 
   const make = async (retry?: RetryDelays): Promise<WorkflowRunner> => {
-    const r = new WorkflowRunner(tasks, items, new FakeDefinitions([PIR, DUO, AUTO_EXIT, AUTO2, NOSTAGE]), new WorkflowRunFileRepository(dir), updates, retry);
+    const r = new WorkflowRunner(tasks, items, new FakeDefinitions([PIR, DUO, CONT, AUTO_EXIT, AUTO2, NOSTAGE]), new WorkflowRunFileRepository(dir), updates, retry);
     await r.onModuleInit();
     return r;
   };
@@ -110,7 +113,7 @@ describe('WorkflowRunner', () => {
       }]);
       expect(run).toMatchObject({
         workflowId: 'pir', itemId: '7', taskId: 'T-20261020-0001', stepIndex: 0, state: 'running', phase: 'sessions',
-        sessions: { main: { status: 'running' }, impl: { status: 'pending' }, review: { status: 'pending' } },
+        sessions: { main: { status: 'running' }, implement: { status: 'pending' }, review: { status: 'pending' } },
       });
       expect(run.definition).toEqual(PIR);
       expect(items.moves).toEqual([{ itemId: '7', stage: 'plan' }]);
@@ -214,18 +217,18 @@ describe('WorkflowRunner', () => {
     expect(implementing).toMatchObject({ state: 'running', phase: 'sessions', stepIndex: 1 });
     expect(tasks.hasFilesCalls).toEqual([['plans/7.md']]);
     expect(items.moves.at(-1)).toEqual({ itemId: '7', stage: 'in-progress' });
-    expect(tasks.added).toEqual([{ taskId: t, name: 'impl', prompt: `Implement plans/7.md in ${t} at implement` }]);
+    expect(tasks.added).toEqual([{ taskId: t, name: 'implement', prompt: `Implement plans/7.md in ${t} at implement` }]);
 
     // Auto gate: on to review, forked with its model.
-    tasks.finishTurn(t, 'impl');
+    tasks.finishTurn(t, 'implement');
     expect(await changed(t)).toMatchObject({ state: 'running', stepIndex: 2 });
-    expect(tasks.added[1]).toEqual({ taskId: t, name: 'review', fork: 'impl', model: 'sonnet', prompt: `Review agentic/${t}` });
+    expect(tasks.added[1]).toEqual({ taskId: t, name: 'review', fork: 'implement', model: 'sonnet', prompt: `Review agentic/${t}` });
     expect(items.moves.at(-1)).toEqual({ itemId: '7', stage: 'review' });
 
     tasks.finishTurn(t, 'review');
     expect((await changed(t)).state).toBe('awaiting-approval');
     const done = await runner.advance(run.id, {});
-    expect(done).toMatchObject({ state: 'done', sessions: { main: { status: 'done' }, impl: { status: 'done' }, review: { status: 'done' } } });
+    expect(done).toMatchObject({ state: 'done', sessions: { main: { status: 'done' }, implement: { status: 'done' }, review: { status: 'done' } } });
     expect(done.finishedAt).toBeDefined();
     expect(items.moves.at(-1)).toEqual({ itemId: '7', stage: 'done' });
     await expect(runner.advance(run.id, {})).rejects.toBeInstanceOf(WorkflowConflictError);
@@ -250,7 +253,7 @@ describe('WorkflowRunner', () => {
     const forced = await runner.advance(run.id, { force: true });
     expect(forced).toMatchObject({ state: 'running', stepIndex: 1 });
     expect(forced.warning).toBeUndefined();
-    expect(tasks.added.map((a) => a.name)).toEqual(['impl']);
+    expect(tasks.added.map((a) => a.name)).toEqual(['implement']);
   });
 
   it('blocked run continues without force once the files exist', async () => {
@@ -264,7 +267,7 @@ describe('WorkflowRunner', () => {
     expect(await runner.advance(run.id, {})).toMatchObject({ state: 'running', stepIndex: 1 });
   });
 
-  it('runs the sessions of a step one after another, once each, then the auto gate ends the run', async () => {
+  it('runs the steps one after another, once each, then the auto gate ends the run', async () => {
     const run = await runner.start('8', 'duo');
     const t = run.taskId;
     tasks.finishTurn(t, 'main');
@@ -548,6 +551,102 @@ describe('WorkflowRunner', () => {
     const failed = await changed(run.taskId);
     expect(failed).toMatchObject({ state: 'failed', failureReason: 'required path "../plan.md" is not a relative path inside the worktree' });
     expect(tasks.hasFilesCalls).toEqual([]);
+  });
+
+  describe('the session of a step: new, continue (chains), fork', () => {
+    it('start records one session per conversation, named main and after the step id; continue adds none', async () => {
+      const run = await runner.start('7', 'cont');
+      expect(Object.keys(run.sessions).sort()).toEqual(['d', 'main']);
+      expect(run.sessions).toEqual({ main: { status: 'running' }, d: { status: 'pending' } });
+    });
+
+    it('new, continue, continue chain, fork: continue prompts the existing session, only new and fork add sessions', async () => {
+      const run = await runner.start('7', 'cont');
+      const t = run.taskId;
+      tasks.finishTurn(t, 'main');
+      expect((await changed(t)).state).toBe('awaiting-approval'); // step a, human gate
+
+      // Continue after the human gate: no exit prompt on a; the prompt of b goes to main.
+      const b = await runner.advance(run.id, {});
+      expect(b).toMatchObject({ stepIndex: 1, phase: 'sessions', state: 'running', sessions: { main: { status: 'running' } } });
+      expect(tasks.prompts).toEqual([{ taskId: t, session: 'main', text: `Second on agentic/${t}` }]);
+      expect(tasks.added).toEqual([]);
+      expect(items.moves.map((m) => m.stage)).toEqual(['plan', 'in-progress']);
+
+      // The old final message is not the end of the new turn: done only on a new one.
+      expect((await changed(t)).sessions.main.status).toBe('running');
+      tasks.finishTurn(t, 'main');
+      expect((await changed(t)).phase).toBe('awaiting-approval'); // step b, human gate
+
+      // Exit prompt of a continued step goes to the step's session (main), not to a session named b.
+      const exiting = await runner.advance(run.id, {});
+      expect(exiting).toMatchObject({ stepIndex: 1, phase: 'exit', state: 'running' });
+      expect(tasks.prompts.at(-1)).toEqual({ taskId: t, session: 'main', text: 'Wrap up b' });
+      tasks.finishTurn(t, 'main');
+
+      // Step c continues b, which continued a: the chain ends in main. Auto gate, no exit prompt.
+      const c = await changed(t);
+      expect(c).toMatchObject({ stepIndex: 2, phase: 'sessions' });
+      expect(tasks.prompts.at(-1)).toEqual({ taskId: t, session: 'main', text: 'Third' });
+      expect(tasks.added).toEqual([]);
+      tasks.finishTurn(t, 'main');
+
+      // Step d forks c's conversation, which is main's.
+      expect(await changed(t)).toMatchObject({ stepIndex: 3, phase: 'sessions' });
+      expect(tasks.added).toEqual([{ taskId: t, name: 'd', fork: 'main', model: 'haiku', prompt: 'Fourth' }]);
+      tasks.finishTurn(t, 'd');
+      expect((await changed(t)).state).toBe('awaiting-approval');
+      expect(await runner.advance(run.id, {})).toMatchObject({
+        state: 'done', sessions: { main: { status: 'done' }, d: { status: 'done' } },
+      });
+      expect(items.moves.at(-1)).toEqual({ itemId: '7', stage: 'done' });
+    });
+
+    it('a failed prompt of a continued step leaves the run where it was and is retried on the next change', async () => {
+      const run = await runner.start('7', 'cont');
+      const t = run.taskId;
+      tasks.finishTurn(t, 'main');
+      await changed(t);
+      const send = tasks.prompt.bind(tasks);
+      tasks.prompt = async () => { throw new Error('bridge 409'); };
+      await expect(runner.advance(run.id, {})).rejects.toThrow('bridge 409');
+      expect(await runner.get(run.id)).toMatchObject({ stepIndex: 0, phase: 'awaiting-approval', sessions: { main: { status: 'done' } } });
+      tasks.prompt = send;
+      await runner.advance(run.id, {});
+      expect(tasks.prompts).toHaveLength(1);
+    });
+
+    it('a continued session goes done, running, done again (status by session name)', async () => {
+      const run = await runner.start('7', 'cont');
+      const t = run.taskId;
+      tasks.finishTurn(t, 'main');
+      expect((await changed(t)).sessions.main.status).toBe('done');
+      expect((await runner.advance(run.id, {})).sessions.main.status).toBe('running');
+      tasks.finishTurn(t, 'main');
+      expect((await changed(t)).sessions.main.status).toBe('done');
+    });
+
+    it('a new session that exists after a restart was started (no second addSession); runs resume across a restart', async () => {
+      const run = await runner.start('7', 'cont');
+      const t = run.taskId;
+      tasks.finishTurn(t, 'main');
+      await changed(t);
+      await runner.advance(run.id, {});
+      tasks.finishTurn(t, 'main');
+      await changed(t);
+      await runner.advance(run.id, {}); // exit prompt
+      tasks.finishTurn(t, 'main'); // c is prompted, d starts
+      await changed(t);
+      tasks.finishTurn(t, 'main');
+      await changed(t);
+      expect(tasks.added.map((a) => a.name)).toEqual(['d']);
+      runner.onModuleDestroy();
+      runner = await make();
+      tasks.emit(t);
+      await runner.settled();
+      expect(tasks.added.map((a) => a.name)).toEqual(['d']);
+      expect((await runner.get(run.id)).sessions.d.status).toBe('running');
+    });
   });
 
   it('list returns the active runs and the 50 most recently finished ones, oldest first', async () => {
