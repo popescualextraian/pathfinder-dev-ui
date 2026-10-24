@@ -22,6 +22,14 @@
   --state-done-bg: #eeecef;
   --state-done-text: var(--ink-soft);
 
+  /* Architect: impact of a plan on a component (each mark also carries its sign + ~ −). */
+  --impact-new: #23855a;
+  --impact-new-bg: rgba(63, 179, 127, 0.12);
+  --impact-changed: #a87512;
+  --impact-changed-bg: rgba(217, 164, 65, 0.18);
+  --impact-removed: #b3261e;
+  --impact-removed-bg: rgba(179, 38, 30, 0.1);
+
   --font-sans: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   --radius-card: 12px;

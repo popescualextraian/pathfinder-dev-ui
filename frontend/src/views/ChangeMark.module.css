@@ -1,0 +1,4 @@
+.mark { display: inline-block; min-width: 1em; font-weight: 700; font-family: var(--font-mono); text-align: center; }
+.new { color: var(--impact-new); }
+.changed { color: var(--impact-changed); }
+.removed { color: var(--impact-removed); }
