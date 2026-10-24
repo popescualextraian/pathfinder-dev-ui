@@ -1,0 +1,281 @@
+{
+  "version": 1,
+  "kind": "full",
+  "commit": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105",
+  "reviewedAt": "2026-10-24T16:23:42Z",
+  "components": {
+    "api-system": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "workflow-service": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "api-tasks": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "api-schedules": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "architecture-service": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "frontend-views": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "engine-integration": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "socket-filter": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "system-repository": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "api-backlog": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "backend-commons": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "architecture-integration": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "backlog-repository": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "frontend-api": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "engine-repository": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "api-architecture": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "backlog-integration": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "workflow-repository": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "engine-service": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "schedule-integration": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "schedule-repository": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "frontend-state": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "api-workflows": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "system-service": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "backlog-service": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "schedule-service": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    "workflow-integration": {
+      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    }
+  },
+  "findings": [
+    {
+      "id": "layers/api-schedules/imports-schedule-integration",
+      "rule": "layers:api>integration",
+      "component": "api-schedules",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/api/schedules/schedules-api.module.ts imports backend/src/integration/schedule/schedule-integration.module.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/api-workflows/imports-workflow-integration",
+      "rule": "layers:api>integration",
+      "component": "api-workflows",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/api/workflows/workflows-api.module.ts imports backend/src/integration/workflow/workflow-integration.module.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/architecture-integration/imports-architecture-service",
+      "rule": "layers:integration>service",
+      "component": "architecture-integration",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/integration/architecture/architecture-integration.module.ts imports backend/src/service/architecture/repository-files.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/backlog-integration/imports-backlog-service",
+      "rule": "layers:integration>service",
+      "component": "backlog-integration",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/backlog/integration/backlog-integration.module.ts imports backend/src/backlog/service/backlog-config.module.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/backlog-repository/imports-backlog-service",
+      "rule": "layers:repository>service",
+      "component": "backlog-repository",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/backlog/repository/backlog-cache.repository.ts imports backend/src/backlog/service/backlog-config.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/engine-integration/imports-engine-service",
+      "rule": "layers:integration>service",
+      "component": "engine-integration",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/engine/integration/bridge/bridge-client.factory.ts imports backend/src/engine/service/bridge-client.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/frontend-views/imports-frontend-api",
+      "rule": "layers:views>api",
+      "component": "frontend-views",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "frontend/src/ArchitectPage.tsx imports frontend/src/api/models.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/schedule-integration/imports-engine-service",
+      "rule": "layers:integration>service",
+      "component": "schedule-integration",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/integration/schedule/engine-scheduled-tasks.ts imports backend/src/engine/index.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/schedule-integration/imports-schedule-service",
+      "rule": "layers:integration>service",
+      "component": "schedule-integration",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/integration/schedule/engine-scheduled-tasks.ts imports backend/src/schedule/index.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/schedule-repository/imports-schedule-service",
+      "rule": "layers:repository>service",
+      "component": "schedule-repository",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/schedule/repository/schedule-file.repository.ts imports backend/src/schedule/service/schedule-id.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/workflow-integration/imports-backlog-service",
+      "rule": "layers:integration>service",
+      "component": "workflow-integration",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/integration/workflow/backlog-work-items.ts imports backend/src/backlog/index.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/workflow-integration/imports-engine-service",
+      "rule": "layers:integration>service",
+      "component": "workflow-integration",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/integration/workflow/engine-workflow-tasks.ts imports backend/src/engine/index.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/workflow-integration/imports-workflow-service",
+      "rule": "layers:integration>service",
+      "component": "workflow-integration",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/integration/workflow/backlog-work-items.ts imports backend/src/workflow/index.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layers/workflow-repository/imports-workflow-service",
+      "rule": "layers:repository>service",
+      "component": "workflow-repository",
+      "severity": "error",
+      "source": "depcruise",
+      "text": "backend/src/workflow/repository/workflow-definition-file.repository.ts imports backend/src/workflow/service/parse-workflow.ts",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layering/api-workflows/uses-sibling-api-filters",
+      "rule": "modules-meet-through-services",
+      "component": "api-workflows",
+      "severity": "warn",
+      "source": "llm",
+      "text": "workflow-runs.controller.ts and workflow-generations.controller.ts import BridgeErrorFilter and BacklogErrorFilter from the tasks and backlog API folders; move the shared filters to commons or register them globally in app.setup.ts.",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "dry/api-tasks/error-filter-shape-copied",
+      "rule": "dry",
+      "component": "api-tasks",
+      "severity": "info",
+      "source": "llm",
+      "text": "The tasks, backlog and workflow error filters each copy the describeXError plus status/message/path JSON response code; one commons helper for the response would remove the copies.",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "layering/backend-commons/module-config-in-commons",
+      "rule": "commons-knows-no-module",
+      "component": "backend-commons",
+      "severity": "info",
+      "source": "llm",
+      "text": "commons holds engine, workflow, schedule and architecture config loaders and modules, which are module knowledge; commons is meant to be generic, so each config belongs in its package (engine/backlog/workflow/schedule) or service folder.",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "solid/workflow-service/runner-definitions-generator",
+      "rule": "single-responsibility",
+      "component": "workflow-service",
+      "severity": "info",
+      "source": "llm",
+      "text": "One component holds the runner (workflow-runner.ts, 500 lines), definition editing and validation, the AI generator (workflow-generator.ts, 468 lines) and the old-format converter; the generator and converter could be their own components.",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    },
+    {
+      "id": "solid/engine-service/large-tasks-service",
+      "rule": "single-responsibility",
+      "component": "engine-service",
+      "severity": "info",
+      "source": "llm",
+      "text": "tasks.service.ts is 513 lines covering start, wake, stop, file reads and scheduled-run reconciliation next to the poller and events; split along those jobs if it keeps growing.",
+      "status": "open",
+      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+    }
+  ]
+}
