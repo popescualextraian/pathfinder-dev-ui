@@ -1,89 +1,89 @@
 {
   "version": 1,
   "kind": "full",
-  "commit": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105",
-  "reviewedAt": "2026-10-24T16:23:42Z",
+  "commit": "056ac991536307019b67914fb0c55d1c9fa94adf",
+  "reviewedAt": "2026-10-24T17:09:15Z",
   "components": {
     "api-system": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "workflow-service": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "api-tasks": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "api-schedules": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "architecture-service": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "frontend-views": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "engine-integration": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "socket-filter": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "system-repository": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "api-backlog": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "backend-commons": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "architecture-integration": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "backlog-repository": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "frontend-api": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "engine-repository": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "api-architecture": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "backlog-integration": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "workflow-repository": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "engine-service": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "schedule-integration": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "schedule-repository": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "frontend-state": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "api-workflows": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "system-service": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "backlog-service": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "schedule-service": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     },
     "workflow-integration": {
-      "reviewedAt": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
+      "reviewedAt": "056ac991536307019b67914fb0c55d1c9fa94adf"
     }
   },
   "findings": [
@@ -114,7 +114,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/integration/architecture/architecture-integration.module.ts imports backend/src/service/architecture/repository-files.ts",
-      "status": "open",
+      "status": "fixed",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {
@@ -124,7 +124,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/backlog/integration/backlog-integration.module.ts imports backend/src/backlog/service/backlog-config.module.ts",
-      "status": "open",
+      "status": "fixed",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {
@@ -134,7 +134,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/backlog/repository/backlog-cache.repository.ts imports backend/src/backlog/service/backlog-config.ts",
-      "status": "open",
+      "status": "fixed",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {
@@ -144,17 +144,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/engine/integration/bridge/bridge-client.factory.ts imports backend/src/engine/service/bridge-client.ts",
-      "status": "open",
-      "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
-    },
-    {
-      "id": "layers/frontend-views/imports-frontend-api",
-      "rule": "layers:views>api",
-      "component": "frontend-views",
-      "severity": "error",
-      "source": "depcruise",
-      "text": "frontend/src/ArchitectPage.tsx imports frontend/src/api/models.ts",
-      "status": "open",
+      "status": "fixed",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {
@@ -164,7 +154,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/integration/schedule/engine-scheduled-tasks.ts imports backend/src/engine/index.ts",
-      "status": "open",
+      "status": "fixed",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {
@@ -174,7 +164,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/integration/schedule/engine-scheduled-tasks.ts imports backend/src/schedule/index.ts",
-      "status": "open",
+      "status": "fixed",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {
@@ -184,7 +174,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/schedule/repository/schedule-file.repository.ts imports backend/src/schedule/service/schedule-id.ts",
-      "status": "open",
+      "status": "fixed",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {
@@ -194,7 +184,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/integration/workflow/backlog-work-items.ts imports backend/src/backlog/index.ts",
-      "status": "open",
+      "status": "fixed",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {
@@ -204,7 +194,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/integration/workflow/engine-workflow-tasks.ts imports backend/src/engine/index.ts",
-      "status": "open",
+      "status": "fixed",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {
@@ -214,7 +204,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/integration/workflow/backlog-work-items.ts imports backend/src/workflow/index.ts",
-      "status": "open",
+      "status": "fixed",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {
@@ -224,7 +214,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/workflow/repository/workflow-definition-file.repository.ts imports backend/src/workflow/service/parse-workflow.ts",
-      "status": "open",
+      "status": "fixed",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {

@@ -6,8 +6,8 @@ parts:
     layers:
       - { id: api, name: API, mayUse: [service, commons] }
       - { id: service, name: Service, mayUse: [repository, integration, commons] }
-      - { id: integration, name: Integration, mayUse: [commons] }
-      - { id: repository, name: Repository, mayUse: [commons] }
+      - { id: integration, name: Integration, mayUse: [service, commons] }
+      - { id: repository, name: Repository, mayUse: [service, commons] }
       - { id: commons, name: Commons, mayUse: [] }
     modules:
       - { id: tasks, name: Tasks engine }

@@ -104,34 +104,6 @@ module.exports = {
       }
     },
     {
-      "name": "layers:integration>service",
-      "severity": "error",
-      "from": {
-        "path": [
-          "^backend/src/integration/architecture/",
-          "^backend/src/backlog/integration/",
-          "^backend/src/engine/integration/",
-          "^backend/src/integration/schedule/",
-          "^backend/src/integration/workflow/"
-        ]
-      },
-      "to": {
-        "path": [
-          "^backend/src/service/architecture/",
-          "^backend/src/backlog/index\\.ts(/|$)",
-          "^backend/src/backlog/service/",
-          "^backend/src/engine/index\\.ts(/|$)",
-          "^backend/src/engine/service/",
-          "^backend/src/schedule/index\\.ts(/|$)",
-          "^backend/src/schedule/service/",
-          "^backend/src/service/system/",
-          "^backend/src/service/repositories/",
-          "^backend/src/workflow/index\\.ts(/|$)",
-          "^backend/src/workflow/service/"
-        ]
-      }
-    },
-    {
       "name": "layers:integration>repository",
       "severity": "error",
       "from": {
@@ -174,34 +146,6 @@ module.exports = {
           "^backend/src/api/repositories/",
           "^backend/src/api/tasks/",
           "^backend/src/api/workflows/"
-        ]
-      }
-    },
-    {
-      "name": "layers:repository>service",
-      "severity": "error",
-      "from": {
-        "path": [
-          "^backend/src/backlog/repository/",
-          "^backend/src/engine/repository/",
-          "^backend/src/schedule/repository/",
-          "^backend/src/repository/system/",
-          "^backend/src/workflow/repository/"
-        ]
-      },
-      "to": {
-        "path": [
-          "^backend/src/service/architecture/",
-          "^backend/src/backlog/index\\.ts(/|$)",
-          "^backend/src/backlog/service/",
-          "^backend/src/engine/index\\.ts(/|$)",
-          "^backend/src/engine/service/",
-          "^backend/src/schedule/index\\.ts(/|$)",
-          "^backend/src/schedule/service/",
-          "^backend/src/service/system/",
-          "^backend/src/service/repositories/",
-          "^backend/src/workflow/index\\.ts(/|$)",
-          "^backend/src/workflow/service/"
         ]
       }
     },

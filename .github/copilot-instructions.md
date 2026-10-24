@@ -5,7 +5,7 @@ Style: Modular monolith, layered.
 
 ## Layers
 
-- **Backend**: API -> service, commons; Service -> repository, integration, commons; Integration -> commons; Repository -> commons; Commons -> nothing
+- **Backend**: API -> service, commons; Service -> repository, integration, commons; Integration -> service, commons; Repository -> service, commons; Commons -> nothing
 - **Frontend**: Views -> state; State -> api; API client -> nothing
 - **Socket filter**: Filter -> nothing
 

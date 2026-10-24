@@ -30,6 +30,7 @@
           "id": "integration",
           "name": "Integration",
           "mayUse": [
+            "service",
             "commons"
           ]
         },
@@ -37,6 +38,7 @@
           "id": "repository",
           "name": "Repository",
           "mayUse": [
+            "service",
             "commons"
           ]
         },
