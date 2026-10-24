@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
 import { BacklogConfigError, loadBacklogConfig } from './backlog';
+import { ArchitectureConfigError, architectureEnabled, loadArchitectureConfig } from './commons/architecture-config';
 import { EngineConfigError, loadEngineConfig } from './commons/engine-config';
 
 async function bootstrap() {
@@ -10,8 +11,9 @@ async function bootstrap() {
   try {
     loadEngineConfig();
     loadBacklogConfig(); // does nothing when BACKLOG_CONFIG is unset
+    if (architectureEnabled()) loadArchitectureConfig();
   } catch (error) {
-    if (error instanceof EngineConfigError || error instanceof BacklogConfigError) {
+    if (error instanceof EngineConfigError || error instanceof BacklogConfigError || error instanceof ArchitectureConfigError) {
       console.error(error.message);
       process.exit(1);
     }

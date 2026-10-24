@@ -58,6 +58,12 @@ describe('buildAppEnv', () => {
     for (const name of ['BACKLOG_CONFIG', 'BACKLOG_DATA_DIR', 'WORKFLOWS_DIR', 'WORKFLOWS_DATA_DIR']) expect(off).not.toHaveProperty(name);
   });
 
+  it('architecture: data dir defaults under the data dir, made absolute; the switches pass through', () => {
+    expect(build({}).ARCHITECTURE_DATA_DIR).toBe('/co/.local/3100/architecture');
+    expect(build({ ARCHITECTURE_DATA_DIR: 'arch' }).ARCHITECTURE_DATA_DIR).toBe('/co/arch');
+    expect(build({ ARCHITECTURE_ENABLED: '1', ARCHITECTURE_FETCH_SECONDS: '5' })).toMatchObject({ ARCHITECTURE_ENABLED: '1', ARCHITECTURE_FETCH_SECONDS: '5' });
+  });
+
   it('claude agent keeps both tokens', () => {
     const env = build({ ENGINE_LOCAL_AGENT: 'claude', CLAUDE_CODE_OAUTH_TOKEN: 'o', GH_TOKEN: 'g' });
     expect(env).toMatchObject({ CLAUDE_CODE_OAUTH_TOKEN: 'o', GH_TOKEN: 'g' });

@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { ArchitectureApiModule } from './api/architecture/architecture-api.module';
 import { BacklogApiModule } from './api/backlog/backlog-api.module';
 import { RepositoriesApiModule } from './api/repositories/repositories-api.module';
 import { SchedulesApiModule } from './api/schedules/schedules-api.module';
 import { SystemApiModule } from './api/system/system-api.module';
 import { TasksApiModule } from './api/tasks/tasks-api.module';
 import { WorkflowsApiModule } from './api/workflows/workflows-api.module';
+import { architectureEnabled } from './commons/architecture-config';
 import { FRONTEND_DIR } from './commons/frontend-dir';
 import { workflowsEnabled } from './commons/workflow-config';
 
@@ -20,6 +22,11 @@ export function workflowModules(env: NodeJS.ProcessEnv): Array<typeof WorkflowsA
   return workflowsEnabled(env) ? [WorkflowsApiModule] : [];
 }
 
+// The architecture page is optional: its API exists only when ARCHITECTURE_ENABLED=1.
+export function architectureModules(env: NodeJS.ProcessEnv): Array<typeof ArchitectureApiModule> {
+  return architectureEnabled(env) ? [ArchitectureApiModule] : [];
+}
+
 @Module({
   imports: [
     // Serves the built assets and index.html at /. Its own index.html fallback (renderPath) is switched off
@@ -31,6 +38,7 @@ export function workflowModules(env: NodeJS.ProcessEnv): Array<typeof WorkflowsA
     SchedulesApiModule,
     ...backlogModules(process.env),
     ...workflowModules(process.env),
+    ...architectureModules(process.env),
   ],
 })
 export class AppModule {}
