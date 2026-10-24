@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "title": "Task 019: Start a plain task on a work item",
+  "plan": "docs/superpowers/plans/2026-10-21-item-task.md",
+  "baseCommit": "4954472973e7a9d1b8585f5ebc67195d70392e9d",
+  "reviewedAt": "2026-10-24T09:00:00Z",
+  "size": "M",
+  "summary": "A plain task linked to a work item as a workflow run of kind task: one new route, runner and model changes, the adapter's repository pass-through, and a button with dialog and state in the frontend; no new component and no layer or boundary change.",
+  "changes": [
+    { "component": "workflow-service", "change": "changed", "line": "Run model gets optional kind 'task'; the runner starts and follows a plain-task run (no stage move, no session, never done, advance 409); WorkflowTaskStart gets repository." },
+    { "component": "api-workflows", "change": "changed", "line": "New POST /workflow-runs/task with its DTO (201/400/404/409) in the runs controller." },
+    { "component": "workflow-integration", "change": "changed", "line": "EngineWorkflowTasks passes the optional repository through to the engine's start." },
+    { "component": "frontend-api", "change": "changed", "line": "startTask(itemId, ...) in the workflow runs API service and the optional kind in the run model." },
+    { "component": "frontend-state", "change": "changed", "line": "Workflow runs hook gets startTask; the app opens the task screen after the start." },
+    { "component": "frontend-views", "change": "changed", "line": "'▶ Task' in WorkflowControls, NewTaskDialog initial values and heading, a Task run line without steps, wiring in App." }
+  ],
+  "findings": [
+    {
+      "id": "clean-code/frontend-views/kickoff-prompt-built-in-view",
+      "rule": "clean-code",
+      "component": "frontend-views",
+      "severity": "info",
+      "text": "The plan builds the kickoff prompt in the frontend without saying where; views only render, behaviour belongs in state or a pure helper.",
+      "alternative": "Put the prompt builder in a pure function next to the state hook (or workflow-draft style helper) and pass the result to the dialog as initial values.",
+      "status": "open"
+    },
+    {
+      "id": "solid/workflow-service/run-kind-overloads-workflow-run",
+      "rule": "solid",
+      "component": "workflow-service",
+      "severity": "info",
+      "text": "Making a plain task a WorkflowRun of kind task reuses storage, stream and the one-active rule (YAGNI, DRY), but the runner and views then branch on kind and a task run needs a placeholder definition; the plan leaves the representation open.",
+      "alternative": "Accepted trade-off; keep the branch in one place (runner and one view helper) and make the representation (synthetic definition vs optional fields) a decision before step 1.",
+      "status": "open"
+    }
+  ],
+  "passed": ["make-it-work", "yagni", "least-surprise", "kiss", "consistent", "dry", "layers", "boundaries", "ports-and-adapters", "repository", "adapter", "controllers-http-only", "frontend-only-api-calls", "tests-mirror-source"]
+}

@@ -1,0 +1,496 @@
+{
+  "version": 1,
+  "style": {
+    "id": "modular-monolith",
+    "name": "Modular monolith, layered"
+  },
+  "parts": [
+    {
+      "id": "backend",
+      "name": "Backend",
+      "layers": [
+        {
+          "id": "api",
+          "name": "API",
+          "mayUse": [
+            "service",
+            "commons"
+          ]
+        },
+        {
+          "id": "service",
+          "name": "Service",
+          "mayUse": [
+            "repository",
+            "integration",
+            "commons"
+          ]
+        },
+        {
+          "id": "integration",
+          "name": "Integration",
+          "mayUse": [
+            "service",
+            "commons"
+          ]
+        },
+        {
+          "id": "repository",
+          "name": "Repository",
+          "mayUse": [
+            "service",
+            "commons"
+          ]
+        },
+        {
+          "id": "commons",
+          "name": "Commons",
+          "mayUse": []
+        }
+      ],
+      "modules": [
+        {
+          "id": "tasks",
+          "name": "Tasks engine"
+        },
+        {
+          "id": "backlog",
+          "name": "Backlog"
+        },
+        {
+          "id": "workflows",
+          "name": "Workflows"
+        },
+        {
+          "id": "schedules",
+          "name": "Schedules"
+        },
+        {
+          "id": "architecture",
+          "name": "Architecture"
+        },
+        {
+          "id": "system",
+          "name": "System and repositories"
+        }
+      ]
+    },
+    {
+      "id": "frontend",
+      "name": "Frontend",
+      "layers": [
+        {
+          "id": "views",
+          "name": "Views",
+          "mayUse": [
+            "state"
+          ]
+        },
+        {
+          "id": "state",
+          "name": "State",
+          "mayUse": [
+            "api"
+          ]
+        },
+        {
+          "id": "api",
+          "name": "API client",
+          "mayUse": []
+        }
+      ],
+      "modules": []
+    },
+    {
+      "id": "socket-filter",
+      "name": "Socket filter",
+      "layers": [
+        {
+          "id": "filter",
+          "name": "Filter",
+          "mayUse": []
+        }
+      ],
+      "modules": []
+    }
+  ],
+  "components": [
+    {
+      "id": "api-tasks",
+      "name": "Tasks API",
+      "part": "backend",
+      "layer": "api",
+      "module": "tasks",
+      "parent": null,
+      "summary": "REST and SSE routes for tasks, sessions and the task event stream.",
+      "page": "components/api-tasks.md"
+    },
+    {
+      "id": "engine-service",
+      "name": "Task engine service",
+      "part": "backend",
+      "layer": "service",
+      "module": "tasks",
+      "parent": null,
+      "summary": "Task lifecycle: start, poll, wake, events, cost; owns the TaskLauncher and BridgeClient interfaces.",
+      "page": "components/engine-service.md"
+    },
+    {
+      "id": "engine-integration",
+      "name": "Task engine integration",
+      "part": "backend",
+      "layer": "integration",
+      "module": "tasks",
+      "parent": null,
+      "summary": "Docker and local launchers and the HTTP/WebSocket bridge client.",
+      "page": "components/engine-integration.md"
+    },
+    {
+      "id": "engine-repository",
+      "name": "Task record repository",
+      "part": "backend",
+      "layer": "repository",
+      "module": "tasks",
+      "parent": null,
+      "summary": "One mode-600 JSON file per task in ENGINE_DATA_DIR.",
+      "page": "components/engine-repository.md"
+    },
+    {
+      "id": "api-backlog",
+      "name": "Backlog API",
+      "part": "backend",
+      "layer": "api",
+      "module": "backlog",
+      "parent": null,
+      "summary": "REST routes under /api/backlog and the backlog error filter.",
+      "page": "components/api-backlog.md"
+    },
+    {
+      "id": "backlog-service",
+      "name": "Backlog service",
+      "part": "backend",
+      "layer": "service",
+      "module": "backlog",
+      "parent": null,
+      "summary": "Lanes, items and moves over a BacklogConnector; emits trigger events for moves.",
+      "page": "components/backlog-service.md"
+    },
+    {
+      "id": "backlog-integration",
+      "name": "Backlog connectors",
+      "part": "backend",
+      "layer": "integration",
+      "module": "backlog",
+      "parent": null,
+      "summary": "GitLab connector and the in-memory test connector.",
+      "page": "components/backlog-integration.md"
+    },
+    {
+      "id": "backlog-repository",
+      "name": "Backlog cache repository",
+      "part": "backend",
+      "layer": "repository",
+      "module": "backlog",
+      "parent": null,
+      "summary": "The single backlog.json cache file.",
+      "page": "components/backlog-repository.md"
+    },
+    {
+      "id": "api-workflows",
+      "name": "Workflows API",
+      "part": "backend",
+      "layer": "api",
+      "module": "workflows",
+      "parent": null,
+      "summary": "Routes for workflow definitions, runs and generations, with their DTOs and error filter.",
+      "page": "components/api-workflows.md"
+    },
+    {
+      "id": "workflow-service",
+      "name": "Workflow service",
+      "part": "backend",
+      "layer": "service",
+      "module": "workflows",
+      "parent": null,
+      "summary": "Workflow definitions, the runner that follows task changes, runs, plain-task runs and the generator.",
+      "page": "components/workflow-service.md"
+    },
+    {
+      "id": "workflow-integration",
+      "name": "Workflow adapters",
+      "part": "backend",
+      "layer": "integration",
+      "module": "workflows",
+      "parent": null,
+      "summary": "EngineWorkflowTasks and BacklogWorkItems adapters and the workflow integration module.",
+      "page": "components/workflow-integration.md"
+    },
+    {
+      "id": "workflow-repository",
+      "name": "Workflow file repositories",
+      "part": "backend",
+      "layer": "repository",
+      "module": "workflows",
+      "parent": null,
+      "summary": "YAML definitions, run JSON and generation files.",
+      "page": "components/workflow-repository.md"
+    },
+    {
+      "id": "api-schedules",
+      "name": "Schedules API",
+      "part": "backend",
+      "layer": "api",
+      "module": "schedules",
+      "parent": null,
+      "summary": "Routes under /api/schedules and the schedule error filter.",
+      "page": "components/api-schedules.md"
+    },
+    {
+      "id": "schedule-service",
+      "name": "Schedule service",
+      "part": "backend",
+      "layer": "service",
+      "module": "schedules",
+      "parent": null,
+      "summary": "Schedules, the ticking runner and run results; owns ScheduledTasks and the repository interfaces.",
+      "page": "components/schedule-service.md"
+    },
+    {
+      "id": "schedule-integration",
+      "name": "Schedule adapter",
+      "part": "backend",
+      "layer": "integration",
+      "module": "schedules",
+      "parent": null,
+      "summary": "EngineScheduledTasks adapter and its module.",
+      "page": "components/schedule-integration.md"
+    },
+    {
+      "id": "schedule-repository",
+      "name": "Schedule file repository",
+      "part": "backend",
+      "layer": "repository",
+      "module": "schedules",
+      "parent": null,
+      "summary": "One mode-600 JSON per schedule with its last 50 results.",
+      "page": "components/schedule-repository.md"
+    },
+    {
+      "id": "api-architecture",
+      "name": "Architecture API",
+      "part": "backend",
+      "layer": "api",
+      "module": "architecture",
+      "parent": null,
+      "summary": "Read-only routes for the architecture page and the architecture error filter.",
+      "page": "components/api-architecture.md"
+    },
+    {
+      "id": "architecture-service",
+      "name": "Architecture service",
+      "part": "backend",
+      "layer": "service",
+      "module": "architecture",
+      "parent": null,
+      "summary": "Reads and validates docs/architecture files of configured repositories through RepositoryFiles.",
+      "page": "components/architecture-service.md"
+    },
+    {
+      "id": "architecture-integration",
+      "name": "Architecture git access",
+      "part": "backend",
+      "layer": "integration",
+      "module": "architecture",
+      "parent": null,
+      "summary": "Partial bare clones read with ls-tree and cat-file.",
+      "page": "components/architecture-integration.md"
+    },
+    {
+      "id": "api-system",
+      "name": "System and repositories API",
+      "part": "backend",
+      "layer": "api",
+      "module": "system",
+      "parent": null,
+      "summary": "Health, system info and repository list routes.",
+      "page": "components/api-system.md"
+    },
+    {
+      "id": "system-service",
+      "name": "System and repositories service",
+      "part": "backend",
+      "layer": "service",
+      "module": "system",
+      "parent": null,
+      "summary": "System info and the configured repository list.",
+      "page": "components/system-service.md"
+    },
+    {
+      "id": "system-repository",
+      "name": "Package info repository",
+      "part": "backend",
+      "layer": "repository",
+      "module": "system",
+      "parent": null,
+      "summary": "Reads package.json for system info.",
+      "page": "components/system-repository.md"
+    },
+    {
+      "id": "backend-commons",
+      "name": "Backend commons",
+      "part": "backend",
+      "layer": "commons",
+      "module": null,
+      "parent": null,
+      "summary": "Generic config, global pipes, filters and interceptors, shared input rules.",
+      "page": "components/backend-commons.md"
+    },
+    {
+      "id": "frontend-views",
+      "name": "Frontend views",
+      "part": "frontend",
+      "layer": "views",
+      "module": null,
+      "parent": null,
+      "summary": "React components, one CSS module each, and the page shells that wire them.",
+      "page": "components/frontend-views.md"
+    },
+    {
+      "id": "frontend-state",
+      "name": "Frontend state",
+      "part": "frontend",
+      "layer": "state",
+      "module": null,
+      "parent": null,
+      "summary": "Hooks that load, stream and mutate through the API client.",
+      "page": "components/frontend-state.md"
+    },
+    {
+      "id": "frontend-api",
+      "name": "Frontend API client",
+      "part": "frontend",
+      "layer": "api",
+      "module": null,
+      "parent": null,
+      "summary": "The only code that calls the backend: fetch, SSE and typed models.",
+      "page": "components/frontend-api.md"
+    },
+    {
+      "id": "socket-filter",
+      "name": "Docker socket filter",
+      "part": "socket-filter",
+      "layer": "filter",
+      "module": null,
+      "parent": null,
+      "summary": "A Unix-socket HTTP proxy that allows only what DockerTaskLauncher sends, only for task containers.",
+      "page": "components/socket-filter.md"
+    }
+  ],
+  "connections": [
+    {
+      "from": "api-tasks",
+      "to": "engine-service",
+      "via": "call"
+    },
+    {
+      "from": "engine-service",
+      "to": "engine-integration",
+      "via": "call"
+    },
+    {
+      "from": "engine-service",
+      "to": "engine-repository",
+      "via": "call"
+    },
+    {
+      "from": "api-backlog",
+      "to": "backlog-service",
+      "via": "call"
+    },
+    {
+      "from": "backlog-service",
+      "to": "backlog-integration",
+      "via": "call"
+    },
+    {
+      "from": "backlog-service",
+      "to": "backlog-repository",
+      "via": "call"
+    },
+    {
+      "from": "api-workflows",
+      "to": "workflow-service",
+      "via": "call"
+    },
+    {
+      "from": "workflow-service",
+      "to": "workflow-integration",
+      "via": "call"
+    },
+    {
+      "from": "workflow-service",
+      "to": "workflow-repository",
+      "via": "call"
+    },
+    {
+      "from": "workflow-integration",
+      "to": "engine-service",
+      "via": "call"
+    },
+    {
+      "from": "workflow-integration",
+      "to": "backlog-service",
+      "via": "call"
+    },
+    {
+      "from": "api-schedules",
+      "to": "schedule-service",
+      "via": "call"
+    },
+    {
+      "from": "schedule-service",
+      "to": "schedule-integration",
+      "via": "call"
+    },
+    {
+      "from": "schedule-service",
+      "to": "schedule-repository",
+      "via": "call"
+    },
+    {
+      "from": "schedule-integration",
+      "to": "engine-service",
+      "via": "call"
+    },
+    {
+      "from": "api-architecture",
+      "to": "architecture-service",
+      "via": "call"
+    },
+    {
+      "from": "architecture-service",
+      "to": "architecture-integration",
+      "via": "call"
+    },
+    {
+      "from": "api-system",
+      "to": "system-service",
+      "via": "call"
+    },
+    {
+      "from": "system-service",
+      "to": "system-repository",
+      "via": "call"
+    },
+    {
+      "from": "frontend-views",
+      "to": "frontend-state",
+      "via": "call"
+    },
+    {
+      "from": "frontend-state",
+      "to": "frontend-api",
+      "via": "call"
+    }
+  ]
+}
