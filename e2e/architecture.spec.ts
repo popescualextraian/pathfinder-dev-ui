@@ -25,7 +25,8 @@ test('the Architect page: picture, full review, plan reviews with their overlay,
   await team.getByRole('button', { name: 'Architect' }).click();
   await expect(page).toHaveURL(/#\/architect$/);
 
-  // The default repository (this checkout) has no doc: the empty state says how to make one.
+  // A repository without a doc: the empty state says how to make one (the default, this checkout, has one now).
+  await page.getByRole('combobox', { name: 'Repository' }).selectOption('nodocs');
   await expect(page.getByText('/architect seed')).toBeVisible();
 
   await page.getByRole('combobox', { name: 'Repository' }).selectOption('acme-shop');

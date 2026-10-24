@@ -33,7 +33,7 @@ export default defineConfig({
       BACKLOG_CONFIG: 'e2e/fixtures/backlog.yaml', WORKFLOWS_DIR: 'e2e/fixtures/workflows',
       SCHEDULES_TICK_SECONDS: '2', SCHEDULES_TIMEZONE: 'UTC', // the scheduler looks for due schedules every 2 s
       START_LOCAL_COPY_WORKFLOWS: '1', // the editor spec writes: it gets a copy in .local/<port>/workflows
-      // Architect page over two fixture repositories (bare repos in .local/architecture-fixture/, built here once);
+      // Architect page over fixture repositories (bare repos in .local/architecture-fixture-2/, built here once);
       // the default repository stays this checkout.
       ...ARCHITECTURE_ENV, ENGINE_REPOS: architectureFixtureRepositories(),
     },
