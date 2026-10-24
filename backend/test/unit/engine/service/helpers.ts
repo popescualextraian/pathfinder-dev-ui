@@ -78,6 +78,9 @@ export function fakeBridge(over: Record<string, unknown> = {}) {
     stop: jest.fn(async () => status({ state: 'stopped' })),
     status: jest.fn(async () => status()),
     events: jest.fn(async () => []),
+    apps: jest.fn(async () => []),
+    appAction: jest.fn(),
+    appLogs: jest.fn(async () => []),
     eventStream: jest.fn(),
   };
   return Object.assign(base, over);

@@ -21,6 +21,8 @@ export interface FakeContainer {
   /** Files readable through the archive API, by absolute path. */
   files: Record<string, Buffer>;
   body?: unknown;
+  /** Host ports the daemon assigned at the last start, by `<port>/tcp` (from the create body's PortBindings). */
+  ports?: Record<string, number>;
 }
 
 export type Override = (req: RecordedRequest, res: ServerResponse) => boolean;
@@ -62,6 +64,10 @@ export class FakeUpstream {
   readonly requests: RecordedRequest[] = [];
   readonly containers = new Map<string, FakeContainer>();
   readonly volumes = new Map<string, { Name: string; Labels: Record<string, string> }>();
+  /** Images by reference; a container gets its image's labels merged under its own, as with Docker. */
+  readonly images = new Map<string, { labels: Record<string, string> }>();
+  /** Next host port handed out for a published port (Docker's ephemeral range). */
+  private nextHostPort = 49153;
   override: Override | undefined;
   /** Bytes per write when streaming an archive (to exercise streaming through the filter). */
   archiveChunk = 7000;
@@ -120,8 +126,15 @@ export class FakeUpstream {
       const name = url.searchParams.get('name') ?? '';
       if (this.containers.has(name)) return json(res, 409, { message: 'Conflict' });
       const body = JSON.parse(req.body.toString('utf8') || '{}');
-      const container = this.addContainer(name, { labels: body.Labels ?? {}, body });
+      const imageLabels = this.images.get(body.Image)?.labels ?? {};
+      const container = this.addContainer(name, { labels: { ...imageLabels, ...(body.Labels ?? {}) }, body });
       return json(res, 201, { Id: container.id, Warnings: [] });
+    }
+    const image = /^\/images\/(.+)\/json$/.exec(path);
+    if (image && req.method === 'GET') {
+      const found = this.images.get(decodeURIComponent(image[1]));
+      if (!found) return json(res, 404, { message: `No such image: ${image[1]}` });
+      return json(res, 200, { Id: 'sha256:fake', Config: { Labels: found.labels } });
     }
     if (key === 'GET /containers/json') {
       const filters = JSON.parse(url.searchParams.get('filters') ?? '{}');
@@ -154,12 +167,26 @@ export class FakeUpstream {
       if (!container) return json(res, 404, { message: `No such container: ${ref}` });
       const action = `${req.method} ${m[2] ?? ''}`;
       switch (action) {
-        case 'GET json':
-          return json(res, 200, { Id: container.id, Name: `/${container.name}`, State: { Running: container.running, Status: container.running ? 'running' : 'exited' }, Config: { Labels: container.labels } });
-        case 'POST start':
+        case 'GET json': {
+          const ports = container.running
+            ? Object.fromEntries(Object.entries(container.ports ?? {}).map(([key, host]) => [key, [{ HostIp: '127.0.0.1', HostPort: String(host) }]]))
+            : {};
+          return json(res, 200, {
+            Id: container.id,
+            Name: `/${container.name}`,
+            State: { Running: container.running, Status: container.running ? 'running' : 'exited' },
+            Config: { Labels: container.labels },
+            NetworkSettings: { Ports: ports },
+          });
+        }
+        case 'POST start': {
           if (container.running) return noContent(res, 304);
           container.running = true;
+          // Like Docker with HostPort "": a fresh host port per published port on every start.
+          const bindings = (container.body as { HostConfig?: { PortBindings?: Record<string, unknown> } } | undefined)?.HostConfig?.PortBindings ?? {};
+          container.ports = Object.fromEntries(Object.keys(bindings).map((key) => [key, this.nextHostPort++]));
           return noContent(res, 204);
+        }
         case 'POST stop':
           if (!container.running) return noContent(res, 304);
           container.running = false;

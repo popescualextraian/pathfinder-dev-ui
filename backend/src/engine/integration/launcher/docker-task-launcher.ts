@@ -4,11 +4,52 @@ import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../commons/engine-config';
 import { TaskFileName, assertTaskFileName, assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from '../../../commons/git-credential-env';
-import { LEDGER_MAX_BYTES, TASK_FILE_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
+import {
+  AppPorts,
+  LEDGER_MAX_BYTES,
+  TASK_FILE_MAX_BYTES,
+  LaunchResult,
+  LaunchSpec,
+  TASK_GRANTS,
+  TaskInspection,
+  TaskLauncher,
+  WorktreeFileTooLargeError,
+} from '../../service/task-launcher';
 
 const BRIDGE_PORT = 8765;
 const STOP_TIMEOUT_SECONDS = 10;
 const KIND_LABEL = 'agentic-ui.kind=task';
+const APPS_LABEL = 'agentic.apps';
+
+// The image's apps label: base64 of JSON {name: {ports: [int], url, autostart}}. Only names and ports are used here.
+// undefined when it is malformed (the caller logs once, without the value).
+const MAX_APPS = 32;
+const MAX_PORTS_PER_APP = 16;
+// Distinct ports over all apps; the socket filter (socket-filter/src/rules.ts MAX_APP_PORTS) allows no more.
+const MAX_PORTS = 20;
+const APP_NAME = /^[a-z][a-z0-9-]{0,30}$/;
+
+function parseAppsLabel(label: string): Record<string, number[]> | undefined {
+  try {
+    const value: unknown = JSON.parse(Buffer.from(label, 'base64').toString('utf8'));
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+    const entries = Object.entries(value);
+    if (entries.length > MAX_APPS) return undefined;
+    const apps: Record<string, number[]> = Object.create(null) as Record<string, number[]>;
+    for (const [name, app] of entries) {
+      if (!APP_NAME.test(name)) return undefined;
+      const ports = (app as { ports?: unknown } | null)?.ports;
+      if (!Array.isArray(ports) || ports.length > MAX_PORTS_PER_APP) return undefined;
+      if (!ports.every((p) => Number.isInteger(p) && (p as number) >= 1 && (p as number) <= 65535)) return undefined;
+      if (new Set(ports).size !== ports.length) return undefined;
+      apps[name] = ports as number[];
+    }
+    if (new Set(Object.values(apps).flat()).size > MAX_PORTS) return undefined;
+    return apps;
+  } catch {
+    return undefined;
+  }
+}
 
 type LauncherConfig = Pick<
   EngineConfig,
@@ -44,6 +85,7 @@ async function firstTarFile(stream: Readable, maxBytes: number): Promise<Buffer 
 // Runs each task in its own container next to the UI, on the shared Docker network.
 export class DockerTaskLauncher implements TaskLauncher {
   private readonly logger = new Logger('DockerTaskLauncher');
+  private warnedAppsLabel = false;
 
   constructor(
     private readonly config: LauncherConfig,
@@ -52,7 +94,10 @@ export class DockerTaskLauncher implements TaskLauncher {
 
   async launch(spec: LaunchSpec): Promise<LaunchResult> {
     const name = this.name(spec.taskId);
+    const apps = await this.apps();
+    const containerPorts = [...new Set(Object.values(apps).flat())];
     await this.docker.createVolume({ Name: name, Labels: this.labels(spec.taskId) });
+    let appPorts: AppPorts | undefined;
     try {
       const container = await this.docker.createContainer({
         Image: this.config.image,
@@ -60,26 +105,44 @@ export class DockerTaskLauncher implements TaskLauncher {
         Cmd: ['agentic-bridge'],
         Labels: this.labels(spec.taskId),
         Env: this.env(spec, name),
+        ...(containerPorts.length ? { ExposedPorts: Object.fromEntries(containerPorts.map((p) => [`${p}/tcp`, {}])) } : {}),
         HostConfig: {
           Binds: [`${name}:/task`, ...this.config.taskExtraBinds],
           NetworkMode: this.config.dockerNetwork,
           CapDrop: ['ALL'],
           SecurityOpt: ['no-new-privileges'],
+          // Docker picks a free host port, so two tasks with the same app never clash; loopback only.
+          ...(containerPorts.length
+            ? { PortBindings: Object.fromEntries(containerPorts.map((p) => [`${p}/tcp`, [{ HostIp: '127.0.0.1', HostPort: '' }]])) }
+            : {}),
         },
       });
       await container.start();
+      // By name: the socket filter allows an inspect by name only (dockerode's handle from create holds the id).
+      if (containerPorts.length) appPorts = await this.hostPorts(this.docker.getContainer(name), apps);
     } catch (error) {
       await this.remove(spec.taskId).catch(() => undefined);
       throw error;
     }
-    return { bridgeUrl: this.bridgeUrl(spec.taskId) };
+    return { bridgeUrl: this.bridgeUrl(spec.taskId), ...(appPorts ? { appPorts } : {}) };
   }
 
-  async start(taskId: string): Promise<void> {
+  async start(taskId: string): Promise<AppPorts | undefined> {
+    const container = this.docker.getContainer(this.name(taskId));
     try {
-      await this.docker.getContainer(this.name(taskId)).start();
+      await container.start();
     } catch (error) {
       if (!hasStatus(error, 304)) throw error;
+    }
+    // Docker may assign new dynamic host ports on a restart: read them back, with the apps from the container's own
+    // labels (it carries the image's labels as of its creation, even when the image tag moved on).
+    try {
+      const info = await container.inspect();
+      const apps = this.parseApps(info.Config?.Labels?.[APPS_LABEL]);
+      return Object.keys(apps).length ? this.portsFrom(info.NetworkSettings?.Ports, apps) : undefined;
+    } catch (error) {
+      this.logger.warn(`The app ports of a task could not be read: ${(error as Error).message}`);
+      return undefined;
     }
   }
 
@@ -183,6 +246,55 @@ export class DockerTaskLauncher implements TaskLauncher {
     }
     if (file === 'too-large') throw new WorktreeFileTooLargeError(name, taskId, TASK_FILE_MAX_BYTES);
     return file.toString('utf8');
+  }
+
+  // The image's apps ({name: ports}); none when the label is missing, malformed or the image cannot be read.
+  private async apps(): Promise<Record<string, number[]>> {
+    let label: string | undefined;
+    try {
+      const info = await this.docker.getImage(this.config.image).inspect();
+      label = info.Config?.Labels?.[APPS_LABEL];
+    } catch {
+      this.warnAppsOnce('the image could not be inspected');
+      return {};
+    }
+    return this.parseApps(label);
+  }
+
+  private parseApps(label: string | undefined): Record<string, number[]> {
+    if (!label) return {};
+    const apps = parseAppsLabel(label);
+    if (!apps) this.warnAppsOnce('the apps label of the image is malformed');
+    return apps ?? {};
+  }
+
+  private warnAppsOnce(why: string): void {
+    if (this.warnedAppsLabel) return;
+    this.warnedAppsLabel = true;
+    this.logger.warn(`Tasks start without apps: ${why}`);
+  }
+
+  // Host ports of a started container, undefined when they cannot be read (the caller then keeps what it has).
+  private async hostPorts(container: Docker.Container, apps: Record<string, number[]>): Promise<AppPorts | undefined> {
+    try {
+      return this.portsFrom((await container.inspect()).NetworkSettings?.Ports, apps);
+    } catch (error) {
+      this.logger.warn(`The app ports of a task could not be read: ${(error as Error).message}`);
+      return undefined;
+    }
+  }
+
+  // A container port without a binding is left out.
+  private portsFrom(ports: Record<string, Array<{ HostPort?: string }> | null | undefined> | undefined, apps: Record<string, number[]>): AppPorts {
+    const result: AppPorts = {};
+    for (const [app, containerPorts] of Object.entries(apps)) {
+      result[app] = {};
+      for (const port of containerPorts) {
+        const host = Number(ports?.[`${port}/tcp`]?.[0]?.HostPort);
+        if (Number.isInteger(host) && host > 0) result[app][String(port)] = host;
+      }
+    }
+    return result;
   }
 
   private name(taskId: string): string {

@@ -72,6 +72,12 @@ describe('toView', () => {
     expect(view).toMatchObject({ closed: true, closedAt: '2026-01-02T00:00:00.000Z', state: 'stopped', section: 'done', questions: [] });
   });
 
+  it('lists the app names of the record (its published app ports), none without them', () => {
+    expect(toView(record({ appPorts: { web: { '3000': 49153 }, api: {} } })).appNames).toEqual(['web', 'api']);
+    expect(toView(record({}))).not.toHaveProperty('appNames');
+    expect(toView(record({ appPorts: {} }))).not.toHaveProperty('appNames');
+  });
+
   it('section follows the live state', () => {
     expect(toView(record({ lastState: 'idle' }), { state: 'running' }).section).toBe('working');
   });

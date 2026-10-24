@@ -19,6 +19,9 @@ npm start              # http://localhost:3000
 
 No Docker at hand? `npm run start:local` runs tasks as local processes (see Local launcher).
 
+Setting up a machine for the team (WSL, Docker, your project, the UI in Docker): [docs/team-setup.md](docs/team-setup.md),
+or run `claude` in this checkout and type `/pathfinder-setup`.
+
 ## Architecture
 
 ```mermaid
@@ -294,6 +297,35 @@ prompt). The selected tab shows that session's last response, questions, reply b
 title, facts, stop and close stay task-level. The task cards show `N sessions` when there are several and
 which session asks. The route is `#/tasks/<id>?session=<name>` (or `#/repo/<name>/task/<id>?session=<name>`);
 `main` is the default and an unknown name falls back to it.
+
+## Apps
+
+A task's container can run apps (a web app, a dev server) that you start from the task view. They are
+configured in the project, not here: the `apps:` section of `.agentic/agentic.yaml` (see the
+agentic-dev-base documentation) is built into the task image as the label `agentic.apps`, and the
+bridge in the container runs them. The UI only relays.
+
+| Route | Does | Success |
+|---|---|---|
+| `GET /api/tasks/:id/apps` | The apps: `{name, state, ports, url, since, exit_code?, link}`; `state` is `running`, `preparing`, `stopped`, `exited` or `failed`, `since` unix seconds or `null`; `link` is the host URL, `null` without a published port | 200 |
+| `POST /api/tasks/:id/apps/:name/start` | Starts the app (wakes a suspended task first) | 202 app |
+| `POST /api/tasks/:id/apps/:name/stop` | Stops the app | 202 app |
+| `POST /api/tasks/:id/apps/:name/restart` | Restarts the app (wakes a suspended task first) | 202 app |
+| `GET /api/tasks/:id/apps/:name/logs?lines=N` | The last lines of the app's log: `{lines: []}` | 200 |
+
+- Docker launcher only: with `ENGINE_LAUNCHER=local` the routes answer 409. A stopped or closed task is 409 too.
+- On these routes a failed `agentic-app` run (bridge 502 `app_failed`, e.g. a failed prepare) and its timeout
+  (504 `app_timeout`) keep their status and the bridge's message (the last output lines, tokens masked).
+- A suspended task's apps cannot be listed (409); the task view then shows the app names of the task record
+  (`appNames` in the task view) with Start, which wakes the task.
+- Links point at `http://localhost:<port>` (published on 127.0.0.1 only). The host ports are random and
+  are read again on every start of the task container, so a link from before a restart of the task is stale.
+- In the compose setup the task containers are siblings of `ui`, created by the Docker engine: their ports are
+  published on the Docker host's 127.0.0.1, so the links work in a browser on the Docker host (elsewhere,
+  forward the port, for example with `ssh -L`). The socket filter allows exactly these bindings, at most 20
+  distinct ports per task; an image whose label names more starts its tasks without apps (see Deployment).
+- Start and restart can take minutes when the app prepares first (for example `npm ci`): the bridge
+  allows 11 minutes for start and 14 for restart, stop 3, and the UI waits slightly longer than each.
 
 ## Backlog
 
@@ -768,9 +800,11 @@ streams (SSE and WebSocket connections reconnect) and requests in flight. `docke
 The filter allows only what the task launcher needs, and only for task containers (name prefix
 `agentic-ui-task-`, label `agentic-ui.kind=task`, image `ENGINE_IMAGE`, network `agentic-ui`): create a task
 volume and container with exactly the launcher's settings, start (by name, or by the full container id the
-launcher gets from create), stop, inspect, copy a file out (`archive`) and remove them, list task containers, and `_ping`/`version`.
-Everything else is answered 403, including exec, attach, logs, images, networks, other containers, and every
-connection upgrade. Consequences:
+launcher gets from create), stop, inspect, copy a file out (`archive`) and remove them, list task containers,
+inspect the image `ENGINE_IMAGE` (for its apps label), and `_ping`/`version`. The apps' ports (see Apps) are
+allowed only as the launcher publishes them: at most 20 `<port>/tcp`, each bound once to `127.0.0.1` with a
+Docker-picked host port. Everything else is answered 403, including exec, attach, logs, other images, networks,
+other containers, other port bindings, and every connection upgrade. Consequences:
 
 - `ENGINE_TASK_EXTRA_BINDS` does not work: the filter allows only the task's own volume as bind, so a launch with
   extra binds fails with 403 (and the launcher removes the volume again). Use it only without the filter
@@ -813,7 +847,7 @@ daemon available and have not been run yet; `docker compose config` accepts the 
 | `npm test` | Jest unit tests: backend (`backend/test/unit/`) and frontend (`frontend/test/`, jsdom + React Testing Library) |
 | `npm run test:e2e` | Backend e2e tests (`backend/test/e2e/`, Jest + supertest; REST API with a fake launcher and a fake bridge). Needs a prior `npm run build` for the frontend tests. |
 | `npm run test:bridge` | `backend/test/bridge/`: the real `agentic-bridge` as a local process with a fake agent (`tools/fake-agent/fake-agent.mjs`; markers `ASK:`, `SLEEP:`, `CRASH`, `SHELL:`, `FAKE_WRITE:<path>` plus a fenced block writes a file in the worktree, see the file's header), driven through the bridge client, the task service and the REST API (local launcher); also the poller and the status stream (a turn, an `ASK:` question and its answer, close), with a one-second poll interval, and the workflow generator end to end. Skipped with a message on stderr where `agentic-bridge` is not on PATH. |
-| `npm run test:docker` | `backend/test/docker/`: real Docker, real task image, fake agent: start a task, reach idle, prompt and see the echo, wake it after `docker stop`, stop it (a prompt is then refused with 409 without starting it), remove, check container and volume are gone. Needs both `ENGINE_IMAGE` (the task image) and `FAKE_AGENT_DIR` (directory holding agentic-dev-base's `bridge/test/fake-agent.mjs`, mounted at `/fake`), and a reachable Docker daemon (Linux Docker or Docker Desktop); otherwise skipped with a message on stderr. The test process never connects to container IPs: bridge requests run in a helper container from `ENGINE_IMAGE` on the test network (`node` with a small built-ins-only script, `backend/test/docker/bridge-request.cjs`) and reach the task by container name, as the UI does. It creates a temporary network, the helper container and a local git repository (bound into the task and cloned from there, no GitHub needed), and removes all of them, task containers and volumes in `afterAll`, also after a failure. Example: `ENGINE_IMAGE=agentic-pathfinder-dev-ui:local FAKE_AGENT_DIR=/path/to/agentic-dev-base/bridge/test npm run test:docker` |
+| `npm run test:docker` | `backend/test/docker/`: real Docker, real task image, fake agent: start a task, reach idle, prompt and see the echo, wake it after `docker stop`, stop it (a prompt is then refused with 409 without starting it), remove, check container and volume are gone. Needs both `ENGINE_IMAGE` (the task image) and `FAKE_AGENT_DIR` (directory holding agentic-dev-base's `bridge/test/fake-agent.mjs`, mounted at `/fake`), and a reachable Docker daemon (Linux Docker or Docker Desktop); otherwise skipped with a message on stderr. The test process never connects to container IPs: bridge requests run in a helper container from `ENGINE_IMAGE` on the test network (`node` with a small built-ins-only script, `backend/test/docker/bridge-request.cjs`) and reach the task by container name, as the UI does. It creates a temporary network, the helper container and a local git repository (bound into the task and cloned from there, no GitHub needed), and removes all of them, task containers and volumes in `afterAll`, also after a failure. A second suite, `apps-docker.docker-spec.ts`, needs an `ENGINE_IMAGE` whose label `agentic.apps` has an app `web` (for example `python3 -m http.server 8080`, ports `[8080]`; skipped without it): it starts the app, GETs its published `localhost` link (200) and stops it. Example: `ENGINE_IMAGE=agentic-pathfinder-dev-ui:local FAKE_AGENT_DIR=/path/to/agentic-dev-base/bridge/test npm run test:docker` |
 | `npm run test:filter` | `socket-filter/test/`: the Docker socket filter's own suite (rules, server against a fake daemon). Also part of `npm test`. |
 | `npm run test:docker:filter` | `backend/test/docker-filter/`: real Docker; the filter on a temporary socket, `DockerTaskLauncher` through it, and forbidden requests (privileged, bind of `/`, other image, exec, foreign container, bind volume) that must answer 403 and change nothing. Needs `ENGINE_IMAGE` and a Docker daemon on a Unix socket, otherwise skipped with a message on stderr. |
 | `npm run test:ui` | Playwright (`e2e/`; includes `workflow-generation.spec.ts`). Builds and starts the app on port 3100, uses the Chromium under `PLAYWRIGHT_BROWSERS_PATH` if set. |

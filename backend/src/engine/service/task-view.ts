@@ -62,6 +62,9 @@ export interface TaskView {
   closed: boolean;
   closedAt?: string;
   cost?: TaskCost;
+  // The names of the apps whose ports the container published (the record's appPorts): what a suspended
+  // task, whose apps cannot be listed, offers to start.
+  appNames?: string[];
 }
 
 // closed or stopped: done; waiting, failed, interrupted: needs you; idle, suspended: in review; the rest is working.
@@ -153,6 +156,8 @@ export function toView(record: TaskRecord, live: Live = {}): TaskView {
   if (record.scheduleId !== undefined) view.scheduleId = record.scheduleId;
   if (record.scheduleTitle !== undefined) view.scheduleTitle = record.scheduleTitle;
   if (record.summaryLine) view.summaryLine = record.summaryLine;
+  const appNames = record.appPorts ? Object.keys(record.appPorts) : [];
+  if (appNames.length) view.appNames = appNames;
   const reason = live.reason ?? last.reason;
   if (reason !== undefined) view.reason = reason;
   const summary = live.summary ?? last.summary;

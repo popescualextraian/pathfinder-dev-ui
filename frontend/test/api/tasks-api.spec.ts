@@ -2,14 +2,19 @@ import {
   ApiError,
   addSession,
   answer,
+  appLogs,
+  listApps,
   listSessions,
   cancel,
   close,
   deleteTask,
   getTask,
   listTasks,
+  restartApp,
   sendPrompt,
+  startApp,
   startTask,
+  stopApp,
 } from '../../src/api/tasks-api';
 import { listRepositories } from '../../src/api/repositories-api';
 
@@ -106,6 +111,20 @@ describe('tasks-api', () => {
     const fn = mockFetch(200, [{ name: 'a', url: 'u', default: true }]);
     await expect(listRepositories()).resolves.toHaveLength(1);
     expect(fn).toHaveBeenCalledWith('/api/repositories', undefined);
+  });
+
+  it('app calls: list, start, stop, restart, logs', async () => {
+    const fn = mockFetch(202, { name: 'web' });
+    await listApps('T-1');
+    expect(fn).toHaveBeenLastCalledWith('/api/tasks/T-1/apps', undefined);
+    await startApp('T-1', 'web');
+    expect(fn).toHaveBeenLastCalledWith('/api/tasks/T-1/apps/web/start', { method: 'POST' });
+    await stopApp('T-1', 'web');
+    expect(fn).toHaveBeenLastCalledWith('/api/tasks/T-1/apps/web/stop', { method: 'POST' });
+    await restartApp('T-1', 'web');
+    expect(fn).toHaveBeenLastCalledWith('/api/tasks/T-1/apps/web/restart', { method: 'POST' });
+    await appLogs('T-1', 'web', 50);
+    expect(fn).toHaveBeenLastCalledWith('/api/tasks/T-1/apps/web/logs?lines=50', undefined);
   });
 });
 

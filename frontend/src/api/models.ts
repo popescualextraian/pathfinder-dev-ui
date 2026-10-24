@@ -79,6 +79,8 @@ export interface Task {
   scheduleTitle?: string;
   /** A scheduled run that ended: the first line of its result.md. */
   summaryLine?: string;
+  /** Names of the task's apps from its record: shown with Start while the task is suspended. */
+  appNames?: string[];
 }
 
 export type TaskKind = 'workflow-generator';
@@ -98,7 +100,22 @@ export interface AnswerRequest {
   session?: string;
 }
 
-export type BridgeEventType = 'state' | 'message' | 'tool' | 'plan' | 'question' | 'answer' | 'gate' | 'error';
+/** `preparing`: the app's prepare step runs; `exited`: the app ended on its own (see exit_code). */
+export type AppState = 'running' | 'preparing' | 'stopped' | 'exited' | 'failed';
+
+export interface TaskApp {
+  name: string;
+  state: AppState;
+  ports: number[];
+  url: string;
+  /** Unix seconds of the last state change, null when unknown. */
+  since?: number | null;
+  exit_code?: number | null;
+  /** http://localhost:<hostPort><url>, null without a published port. */
+  link: string | null;
+}
+
+export type BridgeEventType = 'state' | 'message' | 'tool' | 'plan' | 'question' | 'answer' | 'gate' | 'error' | 'app';
 
 export interface BridgeEvent {
   seq: number;
