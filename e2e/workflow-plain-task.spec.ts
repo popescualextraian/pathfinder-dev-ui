@@ -10,7 +10,10 @@ interface Run { id: string; itemId: string; taskId: string; state: string; kind?
 const EVIDENCE = 'reports/evidence';
 // Evidence screenshots only on request (EVIDENCE=1), so test:ui leaves the tree clean.
 const shot = async (page: Page, name: string) => {
-  if (process.env.EVIDENCE === '1') await shot(page, '${name}');
+  if (process.env.EVIDENCE !== '1') return;
+  mkdirSync(EVIDENCE, { recursive: true });
+  const body = await page.screenshot({ path: `${EVIDENCE}/${name}.png`, fullPage: true });
+  await test.info().attach(name, { body, contentType: 'image/png' });
 };
 const created: string[] = [];
 
