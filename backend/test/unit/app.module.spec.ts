@@ -2,9 +2,10 @@ import { Test } from '@nestjs/testing';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ArchitectureApiModule } from '../../src/api/architecture/architecture-api.module';
 import { BacklogApiModule } from '../../src/api/backlog/backlog-api.module';
 import { WorkflowsApiModule } from '../../src/api/workflows/workflows-api.module';
-import { AppModule, backlogModules, workflowModules } from '../../src/app.module';
+import { AppModule, architectureModules, backlogModules, workflowModules } from '../../src/app.module';
 import { BACKLOG_CONFIG } from '../../src/backlog/service/backlog-config';
 import { ENGINE_CONFIG } from '../../src/commons/engine-config';
 import { SCHEDULE_CONFIG } from '../../src/commons/schedule-config';
@@ -31,6 +32,12 @@ describe('AppModule', () => {
     expect(backlogModules({ BACKLOG_CONFIG: '/etc/backlog.yaml' })).toEqual([BacklogApiModule]);
   });
 
+  it('imports the architecture API only when ARCHITECTURE_ENABLED=1', () => {
+    expect(architectureModules({})).toEqual([]);
+    expect(architectureModules({ ARCHITECTURE_ENABLED: '0' })).toEqual([]);
+    expect(architectureModules({ ARCHITECTURE_ENABLED: '1' })).toEqual([ArchitectureApiModule]);
+  });
+
   it('decides when it is loaded', () => {
     const imports = (): unknown[] => {
       let found: unknown[] = [];
@@ -42,7 +49,13 @@ describe('AppModule', () => {
       return found.map((m) => (typeof m === 'function' ? m.name : 'dynamic'));
     };
     const saved = process.env.BACKLOG_CONFIG;
+    const savedArchitecture = process.env.ARCHITECTURE_ENABLED;
     try {
+      delete process.env.ARCHITECTURE_ENABLED;
+      expect(imports()).not.toContain('ArchitectureApiModule');
+      process.env.ARCHITECTURE_ENABLED = '1';
+      expect(imports()).toContain('ArchitectureApiModule');
+      delete process.env.ARCHITECTURE_ENABLED;
       delete process.env.BACKLOG_CONFIG;
       expect(imports()).not.toContain('BacklogApiModule');
       process.env.BACKLOG_CONFIG = '/etc/backlog.yaml';
@@ -50,6 +63,8 @@ describe('AppModule', () => {
     } finally {
       if (saved === undefined) delete process.env.BACKLOG_CONFIG;
       else process.env.BACKLOG_CONFIG = saved;
+      if (savedArchitecture === undefined) delete process.env.ARCHITECTURE_ENABLED;
+      else process.env.ARCHITECTURE_ENABLED = savedArchitecture;
     }
   });
 

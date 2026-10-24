@@ -10,6 +10,8 @@ import * as statusStream from '../../src/api/task-status-stream';
 import * as workflowsApi from '../../src/api/workflows-api';
 import * as runsStream from '../../src/api/workflow-runs-stream';
 import * as schedulesApi from '../../src/api/schedules-api';
+import * as architectureApi from '../../src/api/architecture-api';
+import { fixtureModel } from '../fixtures/architecture';
 import { makeRecord, makeResult, makeSummary } from '../fixtures/schedules';
 import { makeTask } from '../fixtures/tasks';
 import { makeRun, makeWorkflow } from '../fixtures/workflows';
@@ -23,6 +25,7 @@ jest.mock('../../src/api/task-status-stream');
 jest.mock('../../src/api/workflows-api');
 jest.mock('../../src/api/workflow-runs-stream');
 jest.mock('../../src/api/schedules-api');
+jest.mock('../../src/api/architecture-api');
 const m = (f: unknown) => f as jest.Mock;
 
 const item = {
@@ -49,6 +52,7 @@ beforeEach(() => {
   m(runsStream.openWorkflowRunsStream).mockReturnValue(() => undefined);
   m(workflowsApi.listRuns).mockResolvedValue([makeRun({ state: 'done' })]);
   m(workflowsApi.listGenerations).mockResolvedValue([]);
+  m(architectureApi.getArchitectureStatus).mockResolvedValue(null);
 });
 
 describe('App workflows wiring', () => {
@@ -382,5 +386,48 @@ describe('App schedules screen', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Schedule nope was not found');
     fireEvent.click(screen.getByRole('button', { name: /All schedules/ }));
     await waitFor(() => expect(window.location.hash).toBe('#/schedules'));
+  });
+});
+
+describe('App architect screen', () => {
+  const sha = '0123456789abcdef0123456789abcdef01234567';
+  beforeEach(() => {
+    m(workflowsApi.listWorkflows).mockResolvedValue(null);
+    m(repositoriesApi.listRepositories).mockResolvedValue([
+      { name: 'repo-a', url: 'u', default: true },
+      { name: 'shop', url: '/srv/shop.git', default: false },
+      { name: 'hidden', url: '/srv/hidden.git', default: false },
+    ]);
+    m(architectureApi.getArchitecture).mockResolvedValue({
+      repository: 'shop', branch: 'main', sha, model: fixtureModel(), fullReview: null, fullReviewError: null, pageBase: null,
+    });
+    m(architectureApi.listReviews).mockResolvedValue({ repository: 'shop', branch: 'main', sha, reviews: [], refused: [] });
+  });
+
+  it('feature off: no Architect entry, #/architect shows no page', async () => {
+    m(architectureApi.getArchitectureStatus).mockResolvedValue(null);
+    window.location.hash = '#/architect';
+    render(<App />);
+    await screen.findByRole('navigation', { name: 'Main navigation' });
+    await waitFor(() => expect(architectureApi.getArchitectureStatus).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Architect' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Current architecture' })).toBeNull();
+  });
+
+  it('feature on: the entry opens the page; the select lists the status repositories; switching drops the review', async () => {
+    m(architectureApi.getArchitectureStatus).mockResolvedValue({ repositories: ['repo-a', 'shop'] });
+    window.location.hash = '#/';
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Architect' }));
+    expect(window.location.hash).toBe('#/architect');
+    expect(await screen.findByRole('region', { name: 'Backend' })).toBeTruthy();
+    const select = screen.getByRole('combobox', { name: 'Repository' });
+    await waitFor(() => expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['repo-a', 'shop']));
+    act(() => {
+      window.location.hash = '#/architect/reviews/feature%2Fx/s';
+    });
+    fireEvent.change(select, { target: { value: 'shop' } });
+    await waitFor(() => expect(window.location.hash).toBe('#/architect?repo=shop'));
+    expect(architectureApi.getArchitecture).toHaveBeenCalledWith('shop');
   });
 });

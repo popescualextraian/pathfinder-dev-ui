@@ -16,6 +16,8 @@ RUN npm run build
 FROM node:22-slim
 ENV NODE_ENV=production
 WORKDIR /app
+# git reads the repositories of the architecture page (bare partial clones under ARCHITECTURE_DATA_DIR); CA certificates for https remotes.
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist

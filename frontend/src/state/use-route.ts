@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const MAIN_SESSION = 'main';
 
-export type View = 'tasks' | 'backlog' | 'workflows' | 'schedules';
+export type View = 'tasks' | 'backlog' | 'workflows' | 'schedules' | 'architect';
 
 export interface Route {
   repository: string | null;
@@ -22,6 +22,8 @@ export interface Route {
   scheduleEdit?: boolean;
   /** Selected board item (`#/backlog?item=<id>`); absent when none. */
   item?: string;
+  /** Architect view: the plan review shown (`#/architect/reviews/<branch>/<slug>`); the repository travels in `repository`. */
+  review?: { branch: string; slug: string };
 }
 
 /**
@@ -44,6 +46,19 @@ export function parseHash(hash: string): Route {
     return item ? { ...route, view: 'backlog', item } : { ...route, view: 'backlog' };
   }
   const wf = stripped.split('/').filter(Boolean);
+  if (wf[0] === 'architect') {
+    const out: Route = { ...route, view: 'architect' };
+    const repo = q >= 0 ? new URLSearchParams(raw.slice(q + 1)).get('repo') : null;
+    if (repo) out.repository = repo;
+    if (wf.length === 4 && wf[1] === 'reviews') {
+      try {
+        out.review = { branch: decodeURIComponent(wf[2]), slug: decodeURIComponent(wf[3]) };
+      } catch {
+        return { ...route, view: 'architect', ...(repo ? { repository: repo } : {}) };
+      }
+    }
+    return out;
+  }
   if (wf[0] === 'workflows' && wf.length <= 2) {
     const out: Route = { ...route, view: 'workflows' };
     if (wf[1]) {
@@ -92,6 +107,12 @@ export function parseHash(hash: string): Route {
 }
 
 export function buildHash(route: Route): string {
+  if (route.view === 'architect') {
+    const base = route.review
+      ? `#/architect/reviews/${encodeURIComponent(route.review.branch)}/${encodeURIComponent(route.review.slug)}`
+      : '#/architect';
+    return route.repository ? `${base}?repo=${encodeURIComponent(route.repository)}` : base;
+  }
   if (route.view === 'backlog') return route.item ? `#/backlog?item=${encodeURIComponent(route.item)}` : '#/backlog';
   if (route.view === 'workflows') {
     if (!route.workflow) return '#/workflows';
@@ -159,7 +180,8 @@ export function useRoute() {
     [navigate],
   );
   const selectRepository = useCallback(
-    (repository: string | null) => navigate({ ...parseHash(window.location.hash), repository }),
+    // A plan review belongs to its repository: another repository drops it.
+    (repository: string | null) => navigate({ ...parseHash(window.location.hash), repository, review: undefined }),
     [navigate],
   );
   const selectView = useCallback(
@@ -172,6 +194,7 @@ export function useRoute() {
         generation: undefined,
         schedule: undefined,
         scheduleEdit: undefined,
+        review: undefined,
       }),
     [navigate],
   );
@@ -198,8 +221,16 @@ export function useRoute() {
     [navigate],
   );
 
+  const selectReview = useCallback(
+    (review: { branch: string; slug: string } | null) =>
+      navigate({ ...parseHash(window.location.hash), view: 'architect', review: review ?? undefined }),
+    [navigate],
+  );
+
   return {
     ...route,
+    selectReview,
+    review: route.review ?? null,
     item: route.item ?? null,
     /** Requested session name (main by default); resolve against the task's sessions with resolveSession. */
     session: route.session ?? MAIN_SESSION,

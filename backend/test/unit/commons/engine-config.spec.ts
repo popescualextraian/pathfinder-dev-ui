@@ -247,9 +247,46 @@ describe('ENGINE_REPOS', () => {
     ['the default name with another URL', [{ name: 'repo', url: 'https://github.com/other/repo' }]],
     ['a http URL', [{ name: 'a', url: 'http://github.com/a/b' }]],
     ['a ssh URL', [{ name: 'a', url: 'git@github.com:a/b.git' }]],
-    ['a local path', [{ name: 'a', url: '/some/path' }]],
+    ['a local path (docker launcher)', [{ name: 'a', url: '/some/path' }]],
   ])('rejects %s, naming only ENGINE_REPOS', (_label, value) => {
     expect(errorOf(repos(value)).problems).toEqual([expect.stringContaining('ENGINE_REPOS')]);
+  });
+
+  describe('with the local launcher', () => {
+    const localRepos = (value: unknown): NodeJS.ProcessEnv => ({
+      ENGINE_LAUNCHER: 'local',
+      ENGINE_DATA_DIR: '/var/lib/engine',
+      ENGINE_REPO_URL: '/some/checkout',
+      ENGINE_PROJECT: 'example',
+      ENGINE_REPOS: JSON.stringify(value),
+    });
+
+    it('accepts an absolute local path, which adds no allowed host', () => {
+      const config = loadEngineConfig(localRepos([
+        { name: 'shop', url: '/srv/fixtures/shop.git' },
+        { name: 'tools', url: 'https://gitlab.com/example/tools' },
+      ]));
+      expect(config.repositories).toEqual([
+        { name: 'checkout', url: '/some/checkout', default: true },
+        { name: 'shop', url: '/srv/fixtures/shop.git', default: false },
+        { name: 'tools', url: 'https://gitlab.com/example/tools', default: false },
+      ]);
+      expect(config.allowedRepoHosts).toEqual(['gitlab.com']);
+    });
+
+    it.each([
+      ['a relative path', [{ name: 'a', url: 'some/path' }]],
+      ['a dot-relative path', [{ name: 'a', url: './some/path' }]],
+      ['a file URL', [{ name: 'a', url: 'file:///some/path' }]],
+      ['a http URL', [{ name: 'a', url: 'http://github.com/a/b' }]],
+      ['a URL with credentials', [{ name: 'a', url: 'https://user:pw@github.com/a/b' }]],
+    ])('still rejects %s', (_label, value) => {
+      expect(errorOf(localRepos(value)).problems).toEqual([expect.stringContaining('ENGINE_REPOS')]);
+    });
+  });
+
+  it('says in the message that local paths need the local launcher', () => {
+    expect(errorOf(repos([{ name: 'a', url: '/some/path' }])).problems[0]).toContain('ENGINE_LAUNCHER=local');
   });
 
   it('refuses a URL with credentials without printing them', () => {

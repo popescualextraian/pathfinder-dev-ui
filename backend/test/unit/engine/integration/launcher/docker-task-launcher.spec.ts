@@ -3,7 +3,7 @@ import { BadRequestException, Logger } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../../../src/commons/engine-config';
 import { DockerTaskLauncher } from '../../../../../src/engine/integration/launcher/docker-task-launcher';
-import { gitCredentialEnv } from '../../../../../src/engine/integration/launcher/git-credential-env';
+import { gitCredentialEnv } from '../../../../../src/commons/git-credential-env';
 import { LEDGER_MAX_BYTES, LaunchSpec, TASK_FILE_MAX_BYTES, WorktreeFileTooLargeError } from '../../../../../src/engine/service/task-launcher';
 
 const OAUTH = 'made-up-oauth-token-xxxx';

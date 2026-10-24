@@ -103,7 +103,8 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
   }
   const repositories: RepositoryEntry[] = [];
   if (repoUrl) repositories.push({ name: repoNameOf(repoUrl), url: repoUrl, default: true });
-  const listed = parseJson('ENGINE_REPOS', value('ENGINE_REPOS'), [], problems, parseRepos);
+  // An absolute local path is a test hook of the local launcher only (as ENGINE_REPO_URL's path).
+  const listed = parseJson('ENGINE_REPOS', value('ENGINE_REPOS'), [], problems, (parsed) => parseRepos(parsed, local));
   for (const entry of listed) {
     const same = repositories.find((r) => r.name === entry.name);
     if (same) {
@@ -112,6 +113,7 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
       continue;
     }
     repositories.push({ ...entry, default: false });
+    if (isLocalPath(entry.url)) continue; // a path adds no host
     const host = new URL(entry.url).hostname.toLowerCase();
     if (!allowedRepoHosts.includes(host)) allowedRepoHosts.push(host);
   }
@@ -181,14 +183,19 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
 }
 
 const SHAPES: Record<string, string> = {
-  ENGINE_REPOS: 'a JSON array of {"name", "url"} with unique names and https URLs without credentials',
+  ENGINE_REPOS: 'a JSON array of {"name", "url"} with unique names and https URLs without credentials (absolute local paths only with ENGINE_LAUNCHER=local)',
   ENGINE_TASK_EXTRA_ENV: 'a JSON object of strings',
   ENGINE_TASK_EXTRA_BINDS: 'a JSON array of "host:container[:mode]" strings',
 };
 
 const REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 
-function parseRepos(parsed: unknown): { name: string; url: string }[] | undefined {
+// No scheme, absolute: `/srv/repo.git`. (`new URL` refuses it, so it cannot also be a URL.)
+function isLocalPath(url: string): boolean {
+  return url.startsWith('/') && parseUrl(url) === undefined;
+}
+
+function parseRepos(parsed: unknown, allowLocalPaths: boolean): { name: string; url: string }[] | undefined {
   if (!Array.isArray(parsed)) return undefined;
   const names = new Set<string>();
   const entries: { name: string; url: string }[] = [];
@@ -197,6 +204,11 @@ function parseRepos(parsed: unknown): { name: string; url: string }[] | undefine
     const { name, url } = item as Record<string, unknown>;
     if (typeof name !== 'string' || !REPO_NAME.test(name) || typeof url !== 'string' || names.has(name)) return undefined;
     const u = parseUrl(url);
+    if (allowLocalPaths && isLocalPath(url)) {
+      names.add(name);
+      entries.push({ name, url });
+      continue;
+    }
     if (u?.protocol !== 'https:' || u.hostname === '' || u.username !== '' || u.password !== '') return undefined;
     names.add(name);
     entries.push({ name, url });

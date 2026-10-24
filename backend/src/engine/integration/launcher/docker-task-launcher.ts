@@ -3,7 +3,7 @@ import Docker from 'dockerode';
 import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../commons/engine-config';
 import { TaskFileName, assertTaskFileName, assertWorktreePaths } from '../../service/worktree-paths';
-import { gitCredentialEnv } from './git-credential-env';
+import { gitCredentialEnv } from '../../../commons/git-credential-env';
 import { LEDGER_MAX_BYTES, TASK_FILE_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
 
 const BRIDGE_PORT = 8765;

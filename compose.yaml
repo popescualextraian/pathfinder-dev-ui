@@ -81,6 +81,10 @@ services:
       WORKFLOWS_DATA_DIR: /data/workflows
       # Schedules are always on; their files live in the data volume (SCHEDULES_TIMEZONE and SCHEDULES_TICK_SECONDS come from the env file).
       SCHEDULES_DATA_DIR: /data/schedules
+      # Architect page (optional): ARCHITECTURE_ENABLED=1 turns it on; the clones live in the data volume.
+      ARCHITECTURE_ENABLED: ${ARCHITECTURE_ENABLED:-}
+      ARCHITECTURE_DATA_DIR: /data/architecture
+      ARCHITECTURE_FETCH_SECONDS: ${ARCHITECTURE_FETCH_SECONDS:-}
     volumes:
       - docker-filter:/run/docker-filter
       - engine-data:/data

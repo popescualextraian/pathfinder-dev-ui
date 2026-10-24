@@ -21,6 +21,7 @@ function redactRepoUrl(value) {
 // (workflows are on only with the backlog). Relative paths are made absolute against the checkout (the app wants
 // absolute ones); BACKLOG_DATA_DIR and WORKFLOWS_DATA_DIR default to folders in the data dir, wiped with it.
 // SCHEDULES_DATA_DIR defaults to <data>/schedules; SCHEDULES_TIMEZONE and SCHEDULES_TICK_SECONDS pass through (given).
+// ARCHITECTURE_DATA_DIR defaults to <data>/architecture (absolute); ARCHITECTURE_ENABLED and ARCHITECTURE_FETCH_SECONDS pass through.
 // BACKLOG_ALLOW_MEMORY_CONNECTOR=1 always: the in-memory backlog connector (no GitLab) is allowed only here.
 function buildAppEnv({ processEnv, root, projectName, port, dataDir }) {
   const given = Object.fromEntries(Object.entries(processEnv).filter(([, v]) => v !== undefined && v !== ''));
@@ -42,7 +43,8 @@ function buildAppEnv({ processEnv, root, projectName, port, dataDir }) {
   if (env.BACKLOG_CONFIG !== undefined) env.BACKLOG_DATA_DIR ??= join(dataDir, 'backlog');
   if (env.WORKFLOWS_DIR !== undefined) env.WORKFLOWS_DATA_DIR ??= join(dataDir, 'workflow-runs');
   env.SCHEDULES_DATA_DIR ??= join(dataDir, 'schedules');
-  for (const name of ['BACKLOG_CONFIG', 'BACKLOG_DATA_DIR', 'WORKFLOWS_DIR', 'WORKFLOWS_DATA_DIR', 'SCHEDULES_DATA_DIR']) absolute(name);
+  env.ARCHITECTURE_DATA_DIR ??= join(dataDir, 'architecture');
+  for (const name of ['BACKLOG_CONFIG', 'BACKLOG_DATA_DIR', 'WORKFLOWS_DIR', 'WORKFLOWS_DATA_DIR', 'SCHEDULES_DATA_DIR', 'ARCHITECTURE_DATA_DIR']) absolute(name);
   if (env.ENGINE_LOCAL_AGENT === 'fake') {
     delete env.CLAUDE_CODE_OAUTH_TOKEN;
     if (!isRepoUrl(env.ENGINE_REPO_URL)) delete env.GH_TOKEN;

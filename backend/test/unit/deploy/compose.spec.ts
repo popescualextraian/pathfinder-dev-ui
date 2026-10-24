@@ -36,6 +36,22 @@ describe('compose.yaml', () => {
     expect((ui.volumes ?? []).filter((v) => String(v).includes('/etc/pathfinder'))).toHaveLength(2);
   });
 
+  it('passes the architecture settings, its data in the data volume', () => {
+    expect(ui.environment?.ARCHITECTURE_ENABLED).toBe('${ARCHITECTURE_ENABLED:-}');
+    expect(ui.environment?.ARCHITECTURE_DATA_DIR).toBe('/data/architecture');
+    expect(ui.environment?.ARCHITECTURE_FETCH_SECONDS).toBe('${ARCHITECTURE_FETCH_SECONDS:-}');
+    expect(ui.volumes).toContain('engine-data:/data');
+  });
+
+  it('installs git and CA certificates in the final image stage as root, before USER node', () => {
+    const docker = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
+    const final = docker.slice(docker.lastIndexOf('\nFROM '));
+    const install = final.indexOf('apt-get install -y --no-install-recommends git ca-certificates');
+    expect(install).toBeGreaterThan(-1);
+    expect(install).toBeLessThan(final.indexOf('USER node'));
+    expect(final).toContain('rm -rf /var/lib/apt/lists/*');
+  });
+
   it('gives the ui no Docker group and the filtered socket instead', () => {
     expect(ui.group_add).toBeUndefined();
     expect(ui.volumes).toContain('docker-filter:/run/docker-filter');

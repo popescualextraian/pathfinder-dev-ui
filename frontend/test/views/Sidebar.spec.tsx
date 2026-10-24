@@ -18,6 +18,17 @@ function setup(over: Partial<React.ComponentProps<typeof Sidebar>> = {}) {
 }
 
 describe('Sidebar', () => {
+  it('Architect is the first entry of group Team, only when enabled', () => {
+    setup({ architectEnabled: true });
+    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['Work', 'Automate', 'Team']);
+    expect(screen.getByRole('button', { name: 'Architect' })).toBeTruthy();
+  });
+
+  it('Architect selects its view; with it off there is no Team group', () => {
+    const props = setup({ architectEnabled: true, view: 'architect' });
+    fireEvent.click(screen.getByRole('button', { name: 'Architect' }));
+    expect(props.onSelectView).toHaveBeenCalledWith('architect');
+  });
   it('groups Work then Automate, no Show or Team heading', () => {
     setup({ backlogEnabled: true, workflowsEnabled: true });
     const headings = screen.getAllByRole('heading').map((h) => h.textContent);
@@ -101,5 +112,13 @@ describe('Sidebar', () => {
     setup({ view: 'workflows', backlogEnabled: true, workflowsEnabled: true });
     expect(screen.getByRole('button', { name: 'Workflows' }).getAttribute('aria-current')).toBe('true');
     expect(screen.getByRole('button', { name: 'Tasks' }).getAttribute('aria-current')).toBeNull();
+  });
+});
+
+describe('Sidebar without architect', () => {
+  it('drops the Team group', () => {
+    setup();
+    expect(screen.queryByRole('button', { name: 'Architect' })).toBeNull();
+    expect(screen.queryByText('Team')).toBeNull();
   });
 });

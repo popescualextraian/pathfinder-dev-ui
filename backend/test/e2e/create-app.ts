@@ -2,10 +2,12 @@ import { INestApplication } from '@nestjs/common';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
+import { ArchitectureApiModule } from '../../src/api/architecture/architecture-api.module';
 import { BacklogApiModule } from '../../src/api/backlog/backlog-api.module';
 import { WorkflowsApiModule } from '../../src/api/workflows/workflows-api.module';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
+import { ENGINE_CONFIG, loadEngineConfig } from '../../src/commons/engine-config';
 import { BRIDGE_CLIENT_FACTORY } from '../../src/engine/service/bridge-client';
 import { TASK_LAUNCHER, TaskLauncher } from '../../src/engine/service/task-launcher';
 import { FakeGitlab } from '../helpers/fake-gitlab';
@@ -27,6 +29,9 @@ export interface CreateAppOptions<L extends TaskLauncher = FakeLauncher> {
   // Switches workflows on (needs `backlog`): these definition files (name -> YAML) in WORKFLOWS_DIR, runs in
   // WORKFLOWS_DATA_DIR, both under the data dir.
   workflows?: Record<string, string>;
+  // Switches the architecture page on: ARCHITECTURE_ENABLED, ARCHITECTURE_DATA_DIR (under the data dir) and these
+  // repositories (local paths; ENGINE_REPOS accepts only https URLs, so the engine config is overridden here).
+  architecture?: { repositories: { name: string; url: string }[]; fetchSeconds?: number };
 }
 
 export interface TestApp<L extends TaskLauncher = FakeLauncher> {
@@ -35,6 +40,7 @@ export interface TestApp<L extends TaskLauncher = FakeLauncher> {
   launcher: L;
 }
 
+const ARCHITECTURE_VARIABLES = ['ARCHITECTURE_ENABLED', 'ARCHITECTURE_DATA_DIR', 'ARCHITECTURE_FETCH_SECONDS'];
 const BACKLOG_VARIABLES = ['BACKLOG_CONFIG', 'BACKLOG_DATA_DIR', 'BACKLOG_TEST_TOKEN', 'WORKFLOWS_DIR', 'WORKFLOWS_DATA_DIR'];
 
 const LANES_YAML = `lanes:
@@ -51,7 +57,15 @@ export async function createApp<L extends TaskLauncher = FakeLauncher>(options: 
   delete process.env.ENGINE_REPOS;
   delete process.env.ENGINE_POLL_SECONDS;
   Object.assign(process.env, options.env);
-  for (const name of BACKLOG_VARIABLES) delete process.env[name];
+  for (const name of [...BACKLOG_VARIABLES, ...ARCHITECTURE_VARIABLES]) delete process.env[name];
+  if (options.architecture) {
+    const { fetchSeconds = 3600 } = options.architecture;
+    Object.assign(process.env, {
+      ARCHITECTURE_ENABLED: '1',
+      ARCHITECTURE_DATA_DIR: join(dataDir, 'architecture'),
+      ARCHITECTURE_FETCH_SECONDS: String(fetchSeconds),
+    });
+  }
   if (options.backlog) {
     const { gitlab, pollSeconds = 3600, lanes = LANES_YAML } = options.backlog;
     const configFile = join(dataDir, 'backlog.yaml');
@@ -73,12 +87,16 @@ ${lanes}`);
   }
   const launcher = options.launcher ?? (new FakeLauncher() as unknown as L);
   // AppModule decides at load time whether it has the backlog and workflows; tests that want them add the modules here.
-  const imports = [AppModule, ...(options.backlog ? [BacklogApiModule] : []), ...(options.workflows ? [WorkflowsApiModule] : [])];
+  const imports = [AppModule, ...(options.backlog ? [BacklogApiModule] : []), ...(options.workflows ? [WorkflowsApiModule] : []), ...(options.architecture ? [ArchitectureApiModule] : [])];
   let builder = Test.createTestingModule({ imports })
     .overrideProvider(TASK_LAUNCHER)
     .useValue(launcher);
   if (options.bridgeClientFactory) {
     builder = builder.overrideProvider(BRIDGE_CLIENT_FACTORY).useValue(options.bridgeClientFactory);
+  }
+  if (options.architecture) {
+    const repositories = options.architecture.repositories.map((r, i) => ({ ...r, default: i === 0 }));
+    builder = builder.overrideProvider(ENGINE_CONFIG).useValue({ ...loadEngineConfig(), repositories });
   }
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication({ logger: false });
@@ -89,7 +107,7 @@ ${lanes}`);
   const close = app.close.bind(app);
   app.close = async () => {
     await close();
-    for (const name of BACKLOG_VARIABLES) delete process.env[name];
+    for (const name of [...BACKLOG_VARIABLES, ...ARCHITECTURE_VARIABLES]) delete process.env[name];
     rmSync(dataDir, { recursive: true, force: true });
   };
   return { app, dataDir, launcher };

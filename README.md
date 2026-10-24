@@ -210,7 +210,7 @@ is missing or invalid, naming the variable, never printing a value.
 | `ENGINE_DOCKER_NETWORK` | `docker` only | Docker network shared by the UI and the task containers (`agentic-ui` in `compose.yaml`). |
 | `ENGINE_DATA_DIR` | yes | Absolute directory for task records (`/data` in `compose.yaml`). |
 | `ENGINE_REPO_URL` | yes | Repository tasks clone when the request gives no `repoUrl`. Must not contain credentials. |
-| `ENGINE_REPOS` | no | JSON array of `{"name", "url"}`: more repositories a task can be started in by name (`repository` in `POST /api/tasks`, listed by `GET /api/repositories`). Names are unique (letters, digits, `.`, `_`, `-`); URLs are https without credentials (a bad value is refused at start-up naming only the variable). `ENGINE_REPO_URL` stays the default, named after the last part of its URL. The host of every listed URL is an allowed repository host. Example: `[{"name":"docs","url":"https://github.com/acme/docs.git"}]` |
+| `ENGINE_REPOS` | no | JSON array of `{"name", "url"}`: more repositories a task can be started in by name (`repository` in `POST /api/tasks`, listed by `GET /api/repositories`). Names are unique (letters, digits, `.`, `_`, `-`); URLs are https without credentials; with `ENGINE_LAUNCHER=local` an entry may also be an absolute local path (no host is added; the docker launcher refuses a path). A bad value is refused at start-up naming only the variable. `ENGINE_REPO_URL` stays the default, named after the last part of its URL. The host of every listed URL is an allowed repository host. Example: `[{"name":"docs","url":"https://github.com/acme/docs.git"}]` |
 | `ENGINE_POLL_SECONDS` | no, default `15` | Seconds between two rounds of the task poller (positive integer). |
 | `ENGINE_ALLOWED_REPO_HOSTS` | no | Comma-separated hosts a request's `repoUrl` may use, in addition to the host of `ENGINE_REPO_URL` (which is always allowed). The host of a repository gets `GH_TOKEN` for the clone, so other hosts are refused with 400. |
 | `ENGINE_PROJECT` | yes | Project name passed to tasks (`AGENTIC_PROJECT`). |
@@ -221,6 +221,9 @@ is missing or invalid, naming the variable, never printing a value.
 | `GH_TOKEN` | `docker`; optional for `local` (needed only to push); secret | Passed into task containers; used for the clone and for push. |
 | `ENGINE_TASK_EXTRA_ENV` | no, test hook | JSON object of strings added to each task container's environment (keys must be valid variable names; keys the engine sets itself, such as the tokens, `GH_TOKEN`, `AGENTIC_TASK_ID`, `AGENTIC_BRANCH`, `AGENTIC_BRIDGE_HOSTS`, the four `GIT_AUTHOR_*`/`GIT_COMMITTER_*` identity variables, `GIT_CONFIG_COUNT` and `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, are refused at start-up). |
 | `ENGINE_TASK_EXTRA_BINDS` | no, test hook | JSON array of `host:container[:mode]` binds added to each task container. Does not work through the Docker socket filter of the compose setup: every launch is refused with 403 (the filter allows only the task volume as bind). |
+| `ARCHITECTURE_ENABLED` | no | `1` turns the Architect page on (routes `/api/architecture`, menu entry **Architect**); `0` or unset leaves it off, anything else is refused at start-up. See Architect. |
+| `ARCHITECTURE_DATA_DIR` | no | Absolute directory of the bare clones the Architect page reads (mode 700). Default `architecture` next to `ENGINE_DATA_DIR`; `compose.yaml` sets `/data/architecture`. |
+| `ARCHITECTURE_FETCH_SECONDS` | no, default `60` | Minimum seconds between two fetches of one repository, integer 1 to 3600. |
 
 `ENGINE_DATA_DIR`, `ENGINE_REPO_URL` and `ENGINE_PROJECT` are required for every launcher. `PORT` (default 3000) sets the HTTP port; the app listens on all interfaces. Docker itself is reached through the usual socket or
 `DOCKER_HOST` (dockerode); in the compose setup `DOCKER_HOST` points at the filtered socket (see Deployment).
@@ -257,6 +260,7 @@ All under `/api`, JSON, times are ISO 8601 UTC strings. A task view contains the
 | `GET /api/tasks/:id/events/stream?since=N&session=NAME` | The full run: the same events, then live ones, as SSE (`id` is the event `seq`; `Last-Event-ID`, which EventSource sends on reconnect, takes precedence over `since` when present) | 200 |
 | `GET /api/tasks/stream` | The status stream, SSE: `event: task` with the task view when a task is created or changed (state, questions, last message, title, closed), `event: removed` with `{"id"}` when one is deleted, and a `: ping` comment every 25 seconds. Nothing is replayed on connect: load `GET /api/tasks` first (and again after a reconnect), then apply the events. | 200 |
 | `GET /api/schedules` and the other `/api/schedules` routes | Scheduled runs (see Schedules) | |
+| `GET /api/architecture/status` and the other `/api/architecture` routes | The Architect page's data, only with `ARCHITECTURE_ENABLED=1` (see Architect) | |
 | `GET /api/health` | `{"ok":true}`; no Docker or other call, used by the compose health check | 200 |
 | `GET /api/system/info` | `{ name, version, uptimeSeconds }` | 200 |
 
@@ -589,6 +593,49 @@ Try it: `PORT=3101 SCHEDULES_TICK_SECONDS=5 npm run start:local` (passes `SCHEDU
 the fake agent answers `echo: <prompt>` and the summary appears in the detail. Tests: `e2e/schedules.spec.ts` (Playwright), `backend/test/e2e/schedules.e2e-spec.ts`,
 `backend/test/bridge/scheduled-run.bridge-spec.ts` (real bridge in scheduled mode).
 
+## Architect
+
+The **Architect** page (menu group Team, `#/architect[?repo=<name>]`, `#/architect/reviews/<branch>/<slug>`) shows a repository's architecture:
+the components in a grid (parts, layers, modules), the findings of the last full review, and the plan reviews of open branches
+as an overlay of new, changed and removed components. It is read-only and optional: set `ARCHITECTURE_ENABLED=1`, otherwise there are no routes
+and no menu entry. It covers the repositories of `ENGINE_REPO_URL` and `ENGINE_REPOS` (`GET /api/repositories`).
+
+**What it reads.** Only files in the repository's git history, never a working copy, on the default branch and on the other branches (up to 100):
+
+| File | Content |
+|---|---|
+| `docs/architecture/model.json` | Required. `version: 1`, style, parts with layers (`mayUse`) and modules, components, connections |
+| `docs/architecture/reviews/full.json` | Optional. The full review: findings with status `open`, `fixed` or `accepted` |
+| `docs/architecture/reviews/plans/<slug>.json` | Optional, any number. One plan review: title, size S/M/L, changes (`new`, `changed`, `removed`), findings, passed rules |
+
+They are written by the architect skill in a task (`/architect seed` creates `model.json`; the skill also writes the full review and the plan reviews, the latter on the
+task's branch `agentic/T-...`); commit and push the branch so the page sees it (the page reads the remote, not the task's worktree). A reader refuses another `version` than 1.
+A file that does not validate is named in the error (first problem only, for example `docs/architecture/model.json: components[2].layer: unknown layer "x"`).
+A review on a branch uses that branch's `model.json`. A plan review a branch only inherits from the default branch (same path, same content id) is listed once, on the default branch.
+
+**How.** The app keeps a bare partial clone per repository in `ARCHITECTURE_DATA_DIR/<name>.git` (`git clone --bare --filter=blob:none`; blobs are fetched when first read),
+so **`git` must be installed** where the app runs (the `Dockerfile` image installs it). It fetches at most once per `ARCHITECTURE_FETCH_SECONDS`, whatever the number of requests; when the
+fetch fails (remote down) the stale clone is served and a warning is logged; without a clone yet the answer is 502. Git commands that talk to the remote (clone, fetch, ls-remote) time out after 5 minutes, all others after 30 seconds. A private repository is read with `GH_TOKEN` through the git credential helper
+environment (the same `GIT_CONFIG_*` references as in task containers): the token is never in a URL, a file, a log line or a response, and the clone's config holds none.
+
+Routes (all `GET`, `repository` is optional and defaults to the default repository; the architecture routes do not exist when it is off):
+
+| Route | Answer |
+|---|---|
+| `/api/architecture/status` | `{"repositories":["acme-shop","docs"]}`: the repositories the page offers |
+| `/api/architecture?repository=acme-shop` | `{repository, branch, sha, model, fullReview, fullReviewError, pageBase}` of the default branch. `fullReview` is `null` when there is no full review, or when `reviews/full.json` is invalid or too large: then `fullReviewError` holds the message and the grid is still shown. `pageBase` is the web URL of `docs/architecture/` on that branch (GitHub `.../blob/<branch>/...`, other hosts `.../-/blob/<branch>/...`) or `null` |
+| `/api/architecture/reviews?repository=acme-shop` | `{repository, branch, sha, reviews, refused, truncated}`. Branches are searched default branch first, then newest commit first, at most 100 (`truncated` is `true` when more existed), at most 50 plan files per branch; a branch name that is not valid is skipped. `reviews`: `[{branch, slug, sha, title, plan, reviewedAt, size, summary, touched:[{component, change}], openFindings, findings}]`, newest `reviewedAt` first. `refused`: `[{branch, slug, file, error}]` for plan files that do not validate, whose branch has no `model.json`, or that could not be read (for example a never-read file while the remote is down); the others are still listed |
+| `/api/architecture/reviews/<branch>/<slug>?repository=acme-shop` | `{repository, branch, sha, slug, model, review, pageBase}`: the review with the model of that branch. The branch is one URL-encoded segment: `/api/architecture/reviews/feature%2Fgift-cards/2026-10-20-gift-cards` |
+
+Example: `curl localhost:3000/api/architecture/status` gives `{"repositories":["acme-shop"]}`.
+
+Errors (body `{statusCode, message, path}`): 400 for an invalid branch name, slug or repository name (checked before git is started); 404 for an unknown repository,
+a branch without `docs/architecture/model.json` (the page then shows how to run `/architect seed`) and an unknown review; 422 for a file that does not validate or is over 1 MB,
+the body also has `file` and `message` names it; 502 when the repository cannot be read: no clone and the remote is unreachable, or (for the current architecture and one review) a file that was never read and cannot be fetched while the remote is down (in the review list that file is `refused` instead); the message names the repository, never its URL.
+
+Try it: `PORT=3101 ARCHITECTURE_ENABLED=1 npm run start:local` (passes `ARCHITECTURE_*` through; data in `.local/<port>/architecture`), open `#/architect`. With the local launcher
+`ENGINE_REPOS` may name absolute local paths of (bare) repositories. Tests: `backend/test/e2e/architecture.e2e-spec.ts` (fixture repositories built by `backend/test/helpers/architecture-repo.ts`) and `e2e/architecture.spec.ts` (Playwright).
+
 ## Install
 
 ```sh
@@ -654,7 +701,8 @@ Two different images are involved:
 - The **task image** (`ENGINE_IMAGE`) is the project's agentic-dev-base image, built with
   `agentic build` (for example tagged `agentic-pathfinder-dev-ui:local`). Task containers run it.
 - The **UI image** is built from `Dockerfile` (Node 22, `npm ci`, `npm run build`, runs
-  `node dist/backend/main.js` as user `node`, port 3000). It only contains this engine.
+  `node dist/backend/main.js` as user `node`, port 3000). It only contains this engine, plus `git` and CA certificates
+  (the Architect page clones repositories with them; `ARCHITECTURE_ENABLED`, `ARCHITECTURE_FETCH_SECONDS` come from the env file, `ARCHITECTURE_DATA_DIR` is `/data/architecture`).
 
 `compose.yaml` runs two services:
 
@@ -664,7 +712,7 @@ Two different images are involved:
   `docker-filter` (`/run/docker-filter/docker.sock`). Its rules are in `socket-filter/README.md`.
 - `ui` has neither the raw socket nor the Docker group. `DOCKER_HOST=unix:///run/docker-filter/docker.sock`
   points dockerode at the filtered socket. It is published on `127.0.0.1:${UI_PORT:-3000}` only, keeps task
-  records, backlog cache and workflow runs in the named volume `engine-data` at `/data`, and waits for the
+  records, backlog cache, workflow runs, schedules and the architecture clones in the named volume `engine-data` at `/data`, and waits for the
   filter to be healthy. Both services have health checks (`GET /api/health` for the UI: `{"ok":true}`, no Docker call).
 
 `ui` and the task containers use the network `agentic-ui` (fixed name; the filter allows task
@@ -803,7 +851,7 @@ backend/
   src/
     main.ts, app.setup.ts   bootstrap; global prefix /api, pipe, interceptor, filters
     app.module.ts           imports the api modules and serves dist/frontend
-    api/<area>/             controllers (HTTP only, no business logic): system/, repositories/, tasks/, backlog/, schedules/ (+ dto/)
+    api/<area>/             controllers (HTTP only, no business logic): system/, repositories/, tasks/, backlog/, schedules/, architecture/ (+ dto/)
     service/<area>/         UI business logic: system/, repositories/
     repository/<area>/      UI storage: system/ (package.json)
     engine/                 the task engine package; others import only engine/index.ts
@@ -819,6 +867,8 @@ backend/
       service/              WorkflowRunner, generator/ (WorkflowGenerator, skill workflow-author.md), definition parser, placeholders, the WorkflowTasks and WorkItems interfaces
       repository/           definition files (YAML), run files and generation files (JSON)
     integration/workflow/   adapters of WorkflowTasks (engine) and WorkItems (backlog), wiring module
+    service/architecture/   Architect page: ArchitectureService, validator, the RepositoryFiles interface
+    integration/architecture/ git runner, GitRepositoryFiles (bare partial clones)
     schedule/               the schedule package (always on); others import only schedule/index.ts
       service/              ScheduleRunner, ScheduleService, validation, next times, the ScheduledTasks interface
       repository/           schedule-file.repository.ts (one JSON file per schedule)

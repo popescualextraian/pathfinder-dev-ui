@@ -1,0 +1,24 @@
+.picture { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.block { border: 1px solid var(--line); border-radius: var(--radius-card); padding: 12px; background: var(--paper); }
+.partName { margin: 0 0 8px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
+.grid { display: grid; grid-template-columns: max-content repeat(var(--columns, 1), minmax(0, 1fr)); gap: 6px; }
+.row,
+.rowGroup { display: contents; }
+.corner { display: block; }
+.columnName { font-size: 0.75rem; font-weight: 600; color: var(--ink-soft); text-align: center; padding: 2px 4px; }
+.layerName { font-size: 0.75rem; font-weight: 600; color: var(--ink-soft); align-self: center; padding-right: 6px; white-space: nowrap; }
+.cell { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 4px; min-height: 34px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-soft); }
+.spanning { grid-column: 2 / -1; justify-content: center; border-style: dashed; }
+
+.chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 8px; font: inherit; font-size: 0.75rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; text-align: left; }
+.chip:hover { border-color: var(--ink-soft); }
+.name { overflow-wrap: anywhere; }
+.dim { opacity: 0.45; }
+.new { border: 1px dashed var(--impact-new); background: var(--impact-new-bg); }
+.changed { border-color: var(--impact-changed); background: var(--impact-changed-bg); }
+.removed { border-color: var(--impact-removed); background: var(--impact-removed-bg); color: var(--impact-removed); }
+.linked { opacity: 1; border-color: var(--msg-red-light); box-shadow: 0 0 0 1px var(--msg-red-light); }
+.selected { opacity: 1; border-color: var(--msg-red); box-shadow: 0 0 0 2px var(--msg-red); }
+
+.open { min-width: 1.4em; padding: 0 4px; border-radius: var(--radius-pill); background: var(--msg-red); color: var(--paper); font-size: 0.7rem; font-weight: 700; text-align: center; }
+.accepted { min-width: 1.4em; padding: 0 4px; border-radius: var(--radius-pill); background: var(--state-done-bg); color: var(--ink-soft); font-size: 0.7rem; text-align: center; }
