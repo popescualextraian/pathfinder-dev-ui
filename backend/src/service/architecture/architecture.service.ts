@@ -5,12 +5,13 @@ import { FULL_REVIEW_FILE, isValidBranchName, isValidSlug, MODEL_FILE, PLANS_DIR
 import type {
   CurrentArchitecture, FullReview, Model, RefusedReview, ReviewDetail, ReviewList, ReviewSummary,
 } from './architecture-types';
-import { ArchitectureFileError, parseFullReview, parseModel, parsePlanReview } from './architecture-validator';
+import { parseFullReview, parseModel, parsePlanReview } from './architecture-validator';
 import { pageBase } from './page-url';
-import { REPOSITORY_FILES, RepositoryFileTooLargeError, RepositoryFiles } from './repository-files';
+import { REPOSITORY_FILES, RepositoryFiles } from './repository-files';
 
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_BRANCHES = 100;
+const MAX_PLANS_PER_BRANCH = 50;
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -48,20 +49,31 @@ export class ArchitectureService {
   async reviews(repository?: string): Promise<ReviewList> {
     const repo = this.resolve(repository);
     const head = await this.files.head(repo.name);
-    const all = await this.files.branches(repo.name);
-    const ordered = [
+    const all = (await this.files.branches(repo.name)).filter((b) => isValidBranchName(b.name));
+    const candidates = [
       ...all.filter((b) => b.name === head.branch),
       ...all.filter((b) => b.name !== head.branch),
-    ].slice(0, MAX_BRANCHES);
-    const defaultIds = new Map(
-      (await this.planFiles(repo.name, head.branch)).map((f) => [f.path, f.id]),
-    );
+    ];
+    const ordered = candidates.slice(0, MAX_BRANCHES);
+    const truncated = candidates.length > ordered.length;
+    const defaultIds = new Map<string, string>();
+    try {
+      for (const f of await this.planFiles(repo.name, head.branch)) defaultIds.set(f.path, f.id);
+    } catch {
+      // the default branch's own entry below reports it
+    }
     const reviews: ReviewSummary[] = [];
     const refused: RefusedReview[] = [];
     for (const branch of ordered) {
       const isDefault = branch.name === head.branch;
-      const plans = (await this.planFiles(repo.name, branch.name))
-        .filter((f) => isDefault || defaultIds.get(f.path) !== f.id);
+      let plans: { path: string; id: string }[];
+      try {
+        plans = (await this.planFiles(repo.name, branch.name)).filter((f) => isDefault || defaultIds.get(f.path) !== f.id);
+      } catch (e) {
+        refused.push({ branch: branch.name, slug: null, file: PLANS_DIR, error: message(e) });
+        continue;
+      }
+      plans = plans.slice(0, MAX_PLANS_PER_BRANCH);
       if (plans.length === 0) continue;
       let model: Model | null = null;
       let modelError = '';
@@ -94,13 +106,12 @@ export class ArchitectureService {
             findings: review.findings.length,
           });
         } catch (e) {
-          if (e instanceof ArchitectureFileError || e instanceof RepositoryFileTooLargeError) fail(message(e));
-          else throw e;
+          fail(message(e));
         }
       }
     }
     reviews.sort((a, b) => (a.reviewedAt < b.reviewedAt ? 1 : a.reviewedAt > b.reviewedAt ? -1 : 0));
-    return { repository: repo.name, branch: head.branch, sha: head.sha, reviews, refused };
+    return { repository: repo.name, branch: head.branch, sha: head.sha, reviews, refused, truncated };
   }
 
   async review(repository: string | undefined, branch: string, slug: string): Promise<ReviewDetail> {

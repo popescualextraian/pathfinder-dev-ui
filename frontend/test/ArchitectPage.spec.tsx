@@ -34,6 +34,7 @@ function reviews(repository: string): ReviewList {
             summaryOf(giftCards(), 'feature/gift-cards', '2026-10-20-gift-cards'),
           ],
     refused: [],
+    truncated: false,
   };
 }
 

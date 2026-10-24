@@ -197,6 +197,7 @@ export function ArchitectPage({ repositories, repository, review, knownTaskIds, 
               <ReviewList
                 reviews={reviews.list.reviews}
                 refused={reviews.list.refused}
+                truncated={reviews.list.truncated}
                 selected={review}
                 knownTaskIds={knownTaskIds}
                 onSelect={(branch, slug) => onSelectReview({ branch, slug })}

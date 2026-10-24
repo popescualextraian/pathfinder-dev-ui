@@ -216,13 +216,13 @@ export class GitRepositoryFiles implements RepositoryFiles {
   }
 
   private async branchList(repo: Repository): Promise<{ name: string; sha: string }[]> {
-    const out = (await this.git(repo, ['for-each-ref', '--format=%(refname:strip=2) %(objectname)', 'refs/heads/'])).toString('utf8');
+    const out = (await this.git(repo, ['for-each-ref', '--sort=-committerdate', '--format=%(refname:strip=2) %(objectname)', 'refs/heads/'])).toString('utf8');
     const branches: { name: string; sha: string }[] = [];
     for (const line of out.split('\n')) {
       const space = line.lastIndexOf(' ');
       if (space > 0) branches.push({ name: line.slice(0, space), sha: line.slice(space + 1) });
     }
-    return branches.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    return branches;
   }
 
   private async branchSha(repo: Repository, branch: string): Promise<string | undefined> {

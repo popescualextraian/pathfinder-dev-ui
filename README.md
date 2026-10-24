@@ -615,7 +615,7 @@ A review on a branch uses that branch's `model.json`. A plan review a branch onl
 
 **How.** The app keeps a bare partial clone per repository in `ARCHITECTURE_DATA_DIR/<name>.git` (`git clone --bare --filter=blob:none`; blobs are fetched when first read),
 so **`git` must be installed** where the app runs (the `Dockerfile` image installs it). It fetches at most once per `ARCHITECTURE_FETCH_SECONDS`, whatever the number of requests; when the
-fetch fails (remote down) the stale clone is served and a warning is logged; without a clone yet the answer is 502. A private repository is read with `GH_TOKEN` through the git credential helper
+fetch fails (remote down) the stale clone is served and a warning is logged; without a clone yet the answer is 502. Git commands that talk to the remote (clone, fetch, ls-remote) time out after 5 minutes, all others after 30 seconds. A private repository is read with `GH_TOKEN` through the git credential helper
 environment (the same `GIT_CONFIG_*` references as in task containers): the token is never in a URL, a file, a log line or a response, and the clone's config holds none.
 
 Routes (all `GET`, `repository` is optional and defaults to the default repository; the architecture routes do not exist when it is off):
@@ -624,14 +624,14 @@ Routes (all `GET`, `repository` is optional and defaults to the default reposito
 |---|---|
 | `/api/architecture/status` | `{"repositories":["acme-shop","docs"]}`: the repositories the page offers |
 | `/api/architecture?repository=acme-shop` | `{repository, branch, sha, model, fullReview, fullReviewError, pageBase}` of the default branch. `fullReview` is `null` when there is no full review, or when `reviews/full.json` is invalid or too large: then `fullReviewError` holds the message and the grid is still shown. `pageBase` is the web URL of `docs/architecture/` on that branch (GitHub `.../blob/<branch>/...`, other hosts `.../-/blob/<branch>/...`) or `null` |
-| `/api/architecture/reviews?repository=acme-shop` | `{repository, branch, sha, reviews, refused}`. `reviews`: `[{branch, slug, sha, title, plan, reviewedAt, size, summary, touched:[{component, change}], openFindings, findings}]`, newest `reviewedAt` first. `refused`: `[{branch, slug, file, error}]` for plan files that do not validate (or whose branch has no `model.json`); the others are still listed |
+| `/api/architecture/reviews?repository=acme-shop` | `{repository, branch, sha, reviews, refused, truncated}`. Branches are searched default branch first, then newest commit first, at most 100 (`truncated` is `true` when more existed), at most 50 plan files per branch; a branch name that is not valid is skipped. `reviews`: `[{branch, slug, sha, title, plan, reviewedAt, size, summary, touched:[{component, change}], openFindings, findings}]`, newest `reviewedAt` first. `refused`: `[{branch, slug, file, error}]` for plan files that do not validate, whose branch has no `model.json`, or that could not be read (for example a never-read file while the remote is down); the others are still listed |
 | `/api/architecture/reviews/<branch>/<slug>?repository=acme-shop` | `{repository, branch, sha, slug, model, review, pageBase}`: the review with the model of that branch. The branch is one URL-encoded segment: `/api/architecture/reviews/feature%2Fgift-cards/2026-10-20-gift-cards` |
 
 Example: `curl localhost:3000/api/architecture/status` gives `{"repositories":["acme-shop"]}`.
 
 Errors (body `{statusCode, message, path}`): 400 for an invalid branch name, slug or repository name (checked before git is started); 404 for an unknown repository,
 a branch without `docs/architecture/model.json` (the page then shows how to run `/architect seed`) and an unknown review; 422 for a file that does not validate or is over 1 MB,
-the body also has `file` and `message` names it; 502 when the repository cannot be read (no clone and the remote is unreachable; the message names the repository, never its URL).
+the body also has `file` and `message` names it; 502 when the repository cannot be read: no clone and the remote is unreachable, or (for the current architecture and one review) a file that was never read and cannot be fetched while the remote is down (in the review list that file is `refused` instead); the message names the repository, never its URL.
 
 Try it: `PORT=3101 ARCHITECTURE_ENABLED=1 npm run start:local` (passes `ARCHITECTURE_*` through; data in `.local/<port>/architecture`), open `#/architect`. With the local launcher
 `ENGINE_REPOS` may name absolute local paths of (bare) repositories. Tests: `backend/test/e2e/architecture.e2e-spec.ts` (fixture repositories built by `backend/test/helpers/architecture-repo.ts`) and `e2e/architecture.spec.ts` (Playwright).

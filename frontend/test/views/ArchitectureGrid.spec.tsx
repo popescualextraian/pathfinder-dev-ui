@@ -26,6 +26,16 @@ describe('ArchitectureGrid', () => {
     expect(screen.queryByLabelText('new component')).not.toBeInTheDocument();
   });
 
+  it('still draws a layer that has no component in any module', () => {
+    const model = fixtureModel();
+    model.components = model.components.filter((c) => c.layer !== 'integration');
+    model.connections = model.connections.filter((c) => c.from !== 'payment-gateway' && c.to !== 'payment-gateway');
+    render(<ArchitectureGrid model={model} selectedId={null} onSelect={jest.fn()} />);
+    const backend = screen.getByRole('region', { name: 'Backend' });
+    expect(within(backend).getAllByRole('rowheader').map((h) => h.textContent)).toContain('Integration');
+    expect(within(backend).getAllByRole('rowheader')).toHaveLength(5);
+  });
+
   it('draws a one-part model without modules: one block, no column headings', () => {
     render(<ArchitectureGrid model={onePartModel()} selectedId={null} onSelect={jest.fn()} />);
     const app = screen.getByRole('region', { name: 'App' });

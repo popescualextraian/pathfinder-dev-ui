@@ -6,9 +6,15 @@ export interface FakeRepo {
   branches: Record<string, { sha: string; files: Record<string, string> }>;
 }
 
-// In-memory RepositoryFiles; `calls` counts every call.
-export function fakeRepositoryFiles(repos: Record<string, FakeRepo>): RepositoryFiles & { calls: number } {
-  const self = {
+// In-memory RepositoryFiles; `calls` counts every call. Branches come in the order given (newest commit first, like
+// the real implementation). `failOn` may return an error to throw for a list/read of a branch (and path).
+export function fakeRepositoryFiles(
+  repos: Record<string, FakeRepo>,
+): RepositoryFiles & { calls: number; failOn?: (op: 'list' | 'read', branch: string, path: string) => Error | undefined } {
+  const self: RepositoryFiles & {
+    calls: number;
+    failOn?: (op: 'list' | 'read', branch: string, path: string) => Error | undefined;
+  } = {
     calls: 0,
     async head(repository: string) {
       self.calls++;
@@ -17,12 +23,12 @@ export function fakeRepositoryFiles(repos: Record<string, FakeRepo>): Repository
     },
     async branches(repository: string) {
       self.calls++;
-      return Object.entries(repos[repository].branches)
-        .map(([name, b]) => ({ name, sha: b.sha }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+      return Object.entries(repos[repository].branches).map(([name, b]) => ({ name, sha: b.sha }));
     },
     async list(repository: string, branch: string, dir: string) {
       self.calls++;
+      const err = self.failOn?.('list', branch, dir);
+      if (err) throw err;
       const files = repos[repository].branches[branch]?.files ?? {};
       return Object.entries(files)
         .filter(([p]) => p.startsWith(`${dir}/`))
@@ -30,6 +36,8 @@ export function fakeRepositoryFiles(repos: Record<string, FakeRepo>): Repository
     },
     async read(repository: string, branch: string, path: string) {
       self.calls++;
+      const err = self.failOn?.('read', branch, path);
+      if (err) throw err;
       return repos[repository].branches[branch]?.files[path] ?? null;
     },
   };

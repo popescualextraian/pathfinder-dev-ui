@@ -4,7 +4,7 @@ export const REPOSITORY_FILES = Symbol('REPOSITORY_FILES');
 export interface RepositoryFiles {
   // The remote's default branch and its commit.
   head(repository: string): Promise<{ branch: string; sha: string }>;
-  // All branches, sorted by name.
+  // All branches, newest commit first.
   branches(repository: string): Promise<{ name: string; sha: string }[]>;
   // Files below dir (recursive), [] if none or the branch is unknown; id = blob id.
   list(repository: string, branch: string, dir: string): Promise<{ path: string; id: string }[]>;

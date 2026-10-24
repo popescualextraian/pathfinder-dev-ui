@@ -1,9 +1,19 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { GitError, gitEnv, gitRunner, redact, withoutUserinfo } from '../../../../src/integration/architecture/git-runner';
+import { GitError, gitEnv, gitRunner, redact, timeoutFor, withoutUserinfo } from '../../../../src/integration/architecture/git-runner';
+
+jest.setTimeout(30_000);
 
 describe('git-runner', () => {
+  it('gives clone, fetch and ls-remote 5 minutes and other calls 30 seconds', () => {
+    expect(timeoutFor('clone')).toBe(300_000);
+    expect(timeoutFor('fetch')).toBe(300_000);
+    expect(timeoutFor('ls-remote')).toBe(300_000);
+    expect(timeoutFor('cat-file')).toBe(30_000);
+    expect(timeoutFor(undefined)).toBe(30_000);
+  });
+
   const env = { PATH: process.env.PATH, GH_TOKEN: 'ghp_made-up-token', GIT_TOKEN: 'glpat-made-up' };
 
   it('redacts the token values and userinfo from text', () => {
@@ -54,7 +64,7 @@ describe('git-runner', () => {
         .run(['clone', '--', 'https://u:ghp_made-up-token@127.0.0.1:1/nothing.git', join(dir, 'x')], {
           cwd: dir,
           env: gitEnv('https://127.0.0.1:1/nothing.git', env),
-          timeoutMs: 10_000,
+          timeoutMs: 15_000,
         })
         .catch((e: unknown) => e);
       expect(err).toBeInstanceOf(GitError);

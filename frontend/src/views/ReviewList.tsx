@@ -5,6 +5,8 @@ import styles from './ReviewList.module.css';
 interface Props {
   reviews: ReviewSummary[];
   refused: RefusedReview[];
+  /** Branches beyond the first 100 were not searched. */
+  truncated?: boolean;
   selected: { branch: string; slug: string } | null;
   /** Ids of the engine's tasks: a review on a task branch links to its task only when known. */
   knownTaskIds: string[];
@@ -24,7 +26,7 @@ function plural(n: number, word: string): string {
 }
 
 /** The plan reviews of a repository, newest first as given, plus the files that were refused. */
-export function ReviewList({ reviews, refused, selected, knownTaskIds, onSelect, onOpenTask }: Props) {
+export function ReviewList({ reviews, refused, truncated, selected, knownTaskIds, onSelect, onOpenTask }: Props) {
   const known = new Set(knownTaskIds);
   return (
     <div className={styles.list}>
@@ -69,6 +71,7 @@ export function ReviewList({ reviews, refused, selected, knownTaskIds, onSelect,
           })}
         </ul>
       )}
+      {truncated && <p className={styles.empty}>Only the 100 most recently updated branches are searched.</p>}
       {refused.length > 0 && (
         <>
           <h4 className={styles.refusedHeading}>Refused review files</h4>

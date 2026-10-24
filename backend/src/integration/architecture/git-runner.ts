@@ -2,6 +2,13 @@ import { execFile } from 'node:child_process';
 import { gitCredentialEnv } from '../../commons/git-credential-env';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const NETWORK_TIMEOUT_MS = 5 * 60_000;
+const NETWORK_COMMANDS = ['clone', 'fetch', 'ls-remote'];
+
+// Commands that talk to the remote may take long on a big repository; everything else is local.
+export function timeoutFor(subcommand: string | undefined): number {
+  return subcommand !== undefined && NETWORK_COMMANDS.includes(subcommand) ? NETWORK_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+}
 const MAX_BUFFER = 64 * 1024 * 1024;
 const TOKEN_VARIABLES = ['GH_TOKEN', 'GIT_TOKEN'] as const;
 
@@ -70,7 +77,7 @@ export const gitRunner = {
         {
           cwd: options.cwd,
           env: options.env,
-          timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          timeout: options.timeoutMs ?? timeoutFor(args[0]),
           maxBuffer: MAX_BUFFER,
           encoding: 'buffer',
           windowsHide: true,

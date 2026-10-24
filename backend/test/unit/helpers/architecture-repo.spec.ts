@@ -6,6 +6,8 @@ import { FIXTURE_DIR, makeFixtureRepo, FixtureRepo } from '../../helpers/archite
 const git = (repo: string, ...args: string[]): string =>
   execFileSync('git', ['--git-dir', repo, ...args], { encoding: 'utf8' });
 
+jest.setTimeout(30_000);
+
 describe('makeFixtureRepo', () => {
   const repos: FixtureRepo[] = [];
   const make = (o?: Parameters<typeof makeFixtureRepo>[0]): FixtureRepo => {

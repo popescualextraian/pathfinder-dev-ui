@@ -13,7 +13,7 @@ const NAMES = ['acme-shop', 'plain'] as const;
 
 function build(): void {
   if (existsSync(join(ROOT, DONE))) return;
-  rmSync(ROOT, { recursive: true, force: true }); // a half-built folder of an interrupted run
+  // ROOT only ever appears complete (by the atomic rename below), so it is never removed here.
   mkdirSync(resolve(ROOT, '..'), { recursive: true });
   const tmp = mkdtempSync(`${ROOT}.tmp-`);
   try {
@@ -23,7 +23,8 @@ function build(): void {
     try {
       renameSync(tmp, ROOT);
     } catch (e) {
-      if (!existsSync(join(ROOT, DONE))) throw e; // not someone else's finished copy
+      // The target now exists (someone else's finished copy): ours is removed below. Anything else is an error.
+      if (!existsSync(join(ROOT, DONE))) throw e;
     }
   } finally {
     rmSync(tmp, { recursive: true, force: true });

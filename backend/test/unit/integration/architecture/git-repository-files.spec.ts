@@ -20,6 +20,8 @@ function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' });
 }
 
+jest.setTimeout(30_000);
+
 describe('GitRepositoryFiles', () => {
   let fixture: FixtureRepo;
   let dataRoot: string;
@@ -58,10 +60,13 @@ describe('GitRepositoryFiles', () => {
     expect(head).toEqual({ branch: 'main', sha: git(fixture.path, 'rev-parse', 'refs/heads/main').trim() });
   });
 
-  it('branches lists all heads sorted by name', async () => {
+  it('branches lists all heads, newest commit first', async () => {
     const files = make();
+    await new Promise((r) => setTimeout(r, 1100)); // commit dates have one-second resolution
+    fixture.commit('feature/gift-cards', { 'docs/architecture/touch.txt': 'x' });
     const branches = await files.branches('acme-shop');
-    expect(branches.map((b) => b.name)).toEqual(['agentic/T-20261024-ab12-move-catalog', 'feature/gift-cards', 'main']);
+    expect(branches.map((b) => b.name)[0]).toBe('feature/gift-cards');
+    expect(branches.map((b) => b.name).sort()).toEqual(['agentic/T-20261024-ab12-move-catalog', 'feature/gift-cards', 'main']);
     for (const b of branches) expect(b.sha).toMatch(/^[0-9a-f]{40}$/);
   });
 

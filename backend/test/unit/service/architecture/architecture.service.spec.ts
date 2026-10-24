@@ -4,6 +4,7 @@ import { ArchitectureBadRequestError, ArchitectureNotFoundError } from '../../..
 import { ArchitectureService } from '../../../../src/service/architecture/architecture.service';
 import { ArchitectureFileError } from '../../../../src/service/architecture/architecture-validator';
 import { FIXTURE_DIR } from '../../../helpers/architecture-repo';
+import { RepositoryUnavailableError } from '../../../../src/service/architecture/repository-files';
 import { fakeRepositoryFiles } from '../../../helpers/fake-repository-files';
 
 const fx = (n: string): string => readFileSync(join(FIXTURE_DIR, n), 'utf8');
@@ -126,6 +127,55 @@ describe('ArchitectureService', () => {
       expect(r.refused.find((x) => x.branch === 'feature/nomodel')!.error).toBe(
         'no docs/architecture/model.json on feature/nomodel',
       );
+    });
+    it('skips remote branches whose name is not valid instead of failing', async () => {
+      const { service } = setup({
+        main,
+        'dependabot/@types/node-20': { ...main, [`${P}x.json`]: MOVE },
+        'feature/good': { ...main, [`${P}2026-10-22-move-catalog.json`]: MOVE },
+      });
+      const r = await service.reviews();
+      expect(r.reviews.map((x) => x.branch)).toEqual(['feature/good']);
+      expect(r.refused).toEqual([]);
+    });
+    it('keeps the default branch first then the given order, caps at 100 and says so', async () => {
+      const branches: Record<string, Record<string, string>> = { 'b0': { ...main } };
+      for (let i = 1; i <= 120; i++) branches[`b${i}`] = { ...main, [`${P}p${i}.json`]: MOVE };
+      branches.main = { ...main, [`${P}2026-10-20-gift-cards.json`]: GIFT };
+      const { service, files } = setup(branches);
+      const r = await service.reviews();
+      expect(r.truncated).toBe(true);
+      const seen = new Set(r.reviews.map((x) => x.branch));
+      expect(seen.has('main')).toBe(true);
+      expect(seen.has('b98')).toBe(true);
+      expect(seen.has('b99')).toBe(false);
+      expect(files.calls).toBeGreaterThan(0);
+      expect((await setup({ main }).service.reviews()).truncated).toBe(false);
+    });
+    it('a failing read or list of one branch refuses it, the rest still lists', async () => {
+      const { service, files } = setup({
+        main,
+        'feature/down': { ...main, [`${P}a.json`]: MOVE },
+        'feature/listdown': { ...main, [`${P}b.json`]: MOVE },
+        'feature/good': { ...main, [`${P}2026-10-22-move-catalog.json`]: MOVE },
+      });
+      files.failOn = (op, branch, path) =>
+        (op === 'read' && branch === 'feature/down' && path.endsWith('a.json')) ||
+        (op === 'list' && branch === 'feature/listdown')
+          ? new RepositoryUnavailableError('could not read repository default')
+          : undefined;
+      const r = await service.reviews();
+      expect(r.reviews.map((x) => x.branch)).toEqual(['feature/good']);
+      expect(r.refused.map((x) => [x.branch, x.error])).toEqual([
+        ['feature/down', 'could not read repository default'],
+        ['feature/listdown', 'could not read repository default'],
+      ]);
+    });
+    it('ignores plan files beyond 50 per branch', async () => {
+      const plans: Record<string, string> = { ...main };
+      for (let i = 0; i < 60; i++) plans[`${P}p${String(i).padStart(2, '0')}.json`] = MOVE;
+      const r = await setup({ main: plans }).service.reviews();
+      expect(r.reviews).toHaveLength(50);
     });
     it('ignores nested files', async () => {
       const { service } = setup({ main: { ...main, [`${P}sub/a.json`]: GIFT, [`${P}a.txt`]: 'x' } });

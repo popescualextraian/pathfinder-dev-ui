@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import request from 'supertest';
 import { FixtureRepo, makeFixtureRepo } from '../helpers/architecture-repo';
 import { FAKE_GH_TOKEN } from '../helpers/test-env';
+import { gitRunner } from '../../src/integration/architecture/git-runner';
 import { createApp } from './create-app';
 
 jest.setTimeout(60_000);
@@ -61,6 +62,20 @@ describe('architecture API (e2e)', () => {
       expect(other.body.fullReview).toBeNull();
       // no repository: the default (first) one
       expect((await api().get('/api/architecture').expect(200)).body.repository).toBe('acme-shop');
+    });
+
+    it('400 for a branch name that is not valid, without starting git', async () => {
+      const shop = fixture('acme-shop');
+      await start([shop]);
+      const run = jest.spyOn(gitRunner, 'run');
+      try {
+        for (const branch of ['..%2Fx', '-x', 'a..b']) {
+          await api().get(`/api/architecture/reviews/${branch}/2026-10-20-gift-cards`).expect(400);
+        }
+        expect(run).not.toHaveBeenCalled();
+      } finally {
+        run.mockRestore();
+      }
     });
 
     it('404 for an unknown repository, 400 for a malformed name, 404 without docs', async () => {

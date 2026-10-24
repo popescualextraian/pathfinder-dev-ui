@@ -415,6 +415,7 @@ export interface ReviewSummary {
 export interface RefusedReview { branch: string; slug: string | null; file: string; error: string }
 export interface ReviewList {
   repository: string; branch: string; sha: string; reviews: ReviewSummary[]; refused: RefusedReview[];
+  truncated: boolean;
 }
 export interface ReviewDetail {
   repository: string; branch: string; sha: string; slug: string; model: Model;

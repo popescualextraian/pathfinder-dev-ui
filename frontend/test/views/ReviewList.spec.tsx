@@ -29,6 +29,16 @@ describe('ReviewList', () => {
   });
   afterEach(() => jest.useRealTimers());
 
+  it('notes when branches were left out', () => {
+    setup({ truncated: true });
+    expect(screen.getByText('Only the 100 most recently updated branches are searched.')).toBeInTheDocument();
+  });
+
+  it('shows no note when nothing was left out', () => {
+    setup();
+    expect(screen.queryByText(/most recently updated branches/)).not.toBeInTheDocument();
+  });
+
   it('lists each review with title, branch, age, touched count and open findings', () => {
     setup();
     const gift = screen.getByTestId('review-main/2026-10-20-gift-cards');
