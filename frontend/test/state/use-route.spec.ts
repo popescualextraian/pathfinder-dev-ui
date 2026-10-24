@@ -361,6 +361,13 @@ describe('architect route', () => {
     act(() => route.result.current.selectView('architect'));
     expect(window.location.hash).toBe('#/architect?repo=shop');
   });
+
+  it('selectRepository on the architect view drops the review (it belongs to the other repository)', () => {
+    window.location.hash = '#/architect/reviews/feature%2Fx/s?repo=shop';
+    const route = renderHook(() => useRoute());
+    act(() => route.result.current.selectRepository('plain'));
+    expect(window.location.hash).toBe('#/architect?repo=plain');
+  });
 });
 
 describe('scheduleHref / taskHref', () => {

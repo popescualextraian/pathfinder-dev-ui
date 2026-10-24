@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { ARCHITECTURE_ENV, architectureFixtureRepositories } from './e2e/support/architecture-fixture';
 
 const PORT = 3100;
 
@@ -32,6 +33,9 @@ export default defineConfig({
       BACKLOG_CONFIG: 'e2e/fixtures/backlog.yaml', WORKFLOWS_DIR: 'e2e/fixtures/workflows',
       SCHEDULES_TICK_SECONDS: '2', SCHEDULES_TIMEZONE: 'UTC', // the scheduler looks for due schedules every 2 s
       START_LOCAL_COPY_WORKFLOWS: '1', // the editor spec writes: it gets a copy in .local/<port>/workflows
+      // Architect page over two fixture repositories (bare repos in .local/architecture-fixture/, built here once);
+      // the default repository stays this checkout.
+      ...ARCHITECTURE_ENV, ENGINE_REPOS: architectureFixtureRepositories(),
     },
     url: `http://localhost:${PORT}/api/system/info`,
     reuseExistingServer: !process.env.CI,

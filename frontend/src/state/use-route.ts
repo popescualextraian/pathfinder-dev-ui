@@ -180,7 +180,8 @@ export function useRoute() {
     [navigate],
   );
   const selectRepository = useCallback(
-    (repository: string | null) => navigate({ ...parseHash(window.location.hash), repository }),
+    // A plan review belongs to its repository: another repository drops it.
+    (repository: string | null) => navigate({ ...parseHash(window.location.hash), repository, review: undefined }),
     [navigate],
   );
   const selectView = useCallback(

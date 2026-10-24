@@ -18,6 +18,8 @@ import { WorkflowList } from './views/WorkflowList';
 import { WorkflowEditorPage } from './WorkflowEditorPage';
 import { WorkflowGenerationsSection } from './WorkflowGenerationsSection';
 import { SchedulesPage } from './SchedulesPage';
+import { ArchitectPage } from './ArchitectPage';
+import { useArchitectureStatus } from './state/use-architecture';
 
 export function App() {
   const route = useRoute();
@@ -25,6 +27,9 @@ export function App() {
   const { tasks, allTasks, loading, error, applyTask, removeTask } = useTasks(route.repository);
 
   const backlog = useBacklog();
+  const architecture = useArchitectureStatus();
+  // The configured repositories the architecture page lists (engine order).
+  const architectRepositories = repositories.filter((r) => architecture.repositories.includes(r.name));
   const workflows = useWorkflows();
   // Workflows drive backlog cards: without the board there is nothing to show them on.
   const workflowsOn = workflows.enabled && backlog.enabled;
@@ -63,10 +68,21 @@ export function App() {
             view={route.view}
             onSelectView={route.selectView}
             workflowsEnabled={workflowsOn}
+            architectEnabled={architecture.enabled}
           />
         }
         board={
-          route.view === 'schedules' ? (
+          route.view === 'architect' && architecture.enabled ? (
+            <ArchitectPage
+              repositories={architectRepositories}
+              repository={route.repository}
+              review={route.review}
+              knownTaskIds={allTasks.map((t) => t.id)}
+              onSelectRepository={route.selectRepository}
+              onSelectReview={route.selectReview}
+              onOpenTask={route.openTask}
+            />
+          ) : route.view === 'schedules' ? (
             <SchedulesPage
               schedule={route.schedule}
               edit={route.scheduleEdit}
