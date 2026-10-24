@@ -56,7 +56,7 @@ interface PlanReview { version: 1; kind: 'plan'; title; plan; baseCommit; review
 ### Task 1: Fixtures and the shared repository helper
 
 **Files:**
-- Create: `backend/test/fixtures/architecture/{model.json,full.json,2026-10-20-gift-cards.json,2026-10-22-move-catalog.json,one-part-model.json}` and `backend/test/fixtures/architecture/invalid/{plan-unknown-component.json,model-version-2.json}` (first four and the invalid two: the task's appendix JSON verbatim; `one-part-model.json`: own, a plain layered app, one part `app` with layers `ui`/`logic`/`data`, `modules: []`, 4 components, 3 connections, style `layered`)
+- ALREADY COMMITTED (do not rewrite): `backend/test/fixtures/architecture/{model.json,full.json,2026-10-20-gift-cards.json,2026-10-22-move-catalog.json,one-part-model.json}` and `backend/test/fixtures/architecture/invalid/{plan-unknown-component.json,model-version-2.json}` (first four and the invalid two: the task's appendix JSON verbatim; `one-part-model.json`: own, a plain layered app, one part `app` with layers `ui`/`logic`/`data`, `modules: []`, 4 components, 3 connections, style `layered`)
 - Create: `backend/test/helpers/architecture-repo.ts`
 - Test: `backend/test/unit/helpers/architecture-repo.spec.ts` (jest `backend` project picks `backend/test/unit/**/*.spec.ts`; check jest.config.js)
 
@@ -71,7 +71,7 @@ export function makeFixtureRepo(options?: { root?: string; name?: string; model?
 
 - [ ] **Step 1: Write the failing test** `architecture-repo.spec.ts`: `git for-each-ref refs/heads` of the bare repo lists exactly `agentic/T-20261024-ab12-move-catalog`, `feature/gift-cards`, `main`; `git show main:docs/architecture/model.json` equals the fixture file byte for byte; `feature/gift-cards` has the gift-cards plan and `main` does not; `commit('main', {'x.txt': 'a'})` adds a file, `commit('main', {'x.txt': null})` removes it; `makeFixtureRepo({model:'one-part', extraBranches:false})` has only `main`; `cleanup()` removes the root.
 - [ ] **Step 2: Run** `npx jest --selectProjects backend architecture-repo` → FAIL (module missing).
-- [ ] **Step 3: Add the fixture files verbatim, implement the helper.**
+- [ ] **Step 3: Implement the helper (the fixture files are already in place).**
 - [ ] **Step 4: Run it** → PASS. Also `npm run lint`.
 - [ ] **Step 5: Commit** `Architect: shared fixture set and repository helper`.
 
@@ -221,7 +221,7 @@ export function pageBase(repoUrl: string, branch: string): string | null;   // p
 **Files:**
 - Modify: `frontend/src/api/models.ts` (the Contract types plus the result types of Task 5, `ArchitectureStatus`), `frontend/src/state/use-route.ts` (`View` gains `'architect'`; `Route` gains `review?: { branch: string; slug: string }`; hash `#/architect[?repo=<name>]`, `#/architect/reviews/<encoded branch>/<slug>[?repo=<name>]`; `buildHash`/`parseHash`, `selectReview(review|null)`, `selectView` clears `review`; repository for this view travels in `route.repository` via `?repo=`), `frontend/src/views/Sidebar.tsx` (prop `architectEnabled`; group `Team` with entry `architect`, label "Architect", icon), `frontend/src/views/nav-icons.tsx` (icon `architect`: inline SVG, a building/columns)
 - Create: `frontend/src/api/architecture-api.ts` (`getArchitectureStatus` → `ArchitectureStatus | null` (null on 404), `getArchitecture(repository?)`, `listReviews(repository?)`, `getReview(repository, branch, slug)` with `encodeURIComponent` per segment), `frontend/src/state/use-architecture.ts` (`useArchitectureStatus()` → `{enabled, repositories, loading}`; `useArchitecture(repository)` → `{loading, error, notFound, data}`; `useArchitectureReviews(repository)` → `{loading, error, list}`; `useReviewDetail(repository, branch, slug)`)
-- Test: `frontend/test/api/architecture-api.test.ts`, `frontend/test/state/use-architecture.test.tsx`, `frontend/test/state/use-route.test.ts` (extend), `frontend/test/views/Sidebar.test.tsx` (extend: entry shown only when enabled, first entry of group Team, none when disabled and the Team group is then dropped)
+- Test: `frontend/test/api/architecture-api.spec.ts`, `frontend/test/state/use-architecture.spec.tsx`, `frontend/test/state/use-route.spec.ts` (extend), `frontend/test/views/Sidebar.spec.tsx` (extend: entry shown only when enabled, first entry of group Team, none when disabled and the Team group is then dropped)
 
 **Interfaces:**
 - Produces for Tasks 8-9: the hooks above; `Route.review`; `useRoute().selectReview(r)`.
@@ -237,7 +237,7 @@ export function pageBase(repoUrl: string, branch: string): string | null;   // p
 
 **Files:**
 - Create in `frontend/src/views/`: `ArchitectureGrid.tsx` (+`.module.css`), `ComponentPanel.tsx`, `ReviewList.tsx`, `ImpactPanel.tsx`, `FullReviewPanel.tsx` (each with a CSS module), `architecture-layout.ts` (pure: `buildGrid(model, overlay?)`)
-- Test: `frontend/test/views/architecture-layout.test.ts`, `ArchitectureGrid.test.tsx`, `ComponentPanel.test.tsx`, `ReviewList.test.tsx`, `ImpactPanel.test.tsx`, `FullReviewPanel.test.tsx`; fixtures: `frontend/test/fixtures/architecture.ts` loads the JSON files from `backend/test/fixtures/architecture/` (`fs.readFileSync` in the test; the fixture files are not duplicated)
+- Test: `frontend/test/views/architecture-layout.spec.ts`, `ArchitectureGrid.spec.tsx`, `ComponentPanel.spec.tsx`, `ReviewList.spec.tsx`, `ImpactPanel.spec.tsx`, `FullReviewPanel.spec.tsx`; fixtures: `frontend/test/fixtures/architecture.ts` loads the JSON files from `backend/test/fixtures/architecture/` (`fs.readFileSync` in the test; the fixture files are not duplicated)
 
 **Interfaces:**
 - Produces:
@@ -267,7 +267,7 @@ export function buildGrid(model: Model, changes?: PlanReview['changes']): GridBl
 **Files:**
 - Create: `frontend/src/ArchitectPage.tsx` (+ `ArchitectPage.module.css`), `e2e/architecture.spec.ts`, `e2e/support/architecture-fixture.ts` (calls `makeFixtureRepo` from `backend/test/helpers/architecture-repo.ts`; builds once into `.local/architecture-fixture/` if missing; exports `architectureFixtureRepositories()` → `ENGINE_REPOS`-style JSON string and `ARCHITECTURE_*` values)
 - Modify: `frontend/src/App.tsx` (status hook; `architectEnabled`; board slot for `view === 'architect'`), `playwright.config.ts` (webServer env `ARCHITECTURE_ENABLED: '1'`, `ARCHITECTURE_FETCH_SECONDS: '5'`, `ENGINE_REPOS` = the two fixture repositories `acme-shop` and `plain`, built by calling the support module at config load)
-- Test: `frontend/test/ArchitectPage.test.tsx` (hooks mocked or `api/architecture-api` mocked), `e2e/architecture.spec.ts` (Playwright)
+- Test: `frontend/test/ArchitectPage.spec.tsx` (hooks mocked or `api/architecture-api` mocked), `e2e/architecture.spec.ts` (Playwright)
 
 **Interfaces:**
 - `ArchitectPage` props: `{ repositories: Repository[] /* the configured ones, ENGINE order */; repository: string | null; review: {branch; slug} | null; knownTaskIds: string[]; onSelectRepository(name); onSelectReview(r | null); onOpenTask(id) }`. Header: repository `<select>` (only the names the status endpoint lists), style pill (`model.style.name`), pill "doc on <branch> @ <sha7>"; tabs "Current architecture" and "Plan reviews (n)" (n from the list; tab chosen by `review` in the route: `review` set → reviews tab). Current tab: `ArchitectureGrid` (+ finding badges from the full review) beside `FullReviewPanel`; clicking a component opens `ComponentPanel`. Reviews tab: `ReviewList` left; with a selection the grid from that branch's model with overlay (`useReviewDetail`), `ComponentPanel` and `ImpactPanel`; without a selection a hint. Empty state when `notFound`: "No architecture doc on <branch/default> of <repo>. Run the architect skill in a task: `/architect seed`, then push the branch." Loading and error states; `fullReviewError` shown as a notice above the panel. Footer line "Source: docs/architecture/ … on <branch>".
