@@ -1,0 +1,33 @@
+paths:
+  - { path: backend/src/main.ts, reason: Entry point that only starts the app. }
+  - { path: backend/src/app.module.ts, reason: Root module that only wires area modules. }
+  - { path: backend/src/app.setup.ts, reason: Registers the global pipes, filters and interceptors from commons. }
+  - { path: backend/test/, reason: Tests and helpers mirror the source tree and are not part of any component. }
+  - { path: frontend/test/, reason: Frontend tests. }
+  - { path: socket-filter/test/, reason: Socket filter tests. }
+  - { path: e2e/, reason: Playwright UI tests and their fixtures. }
+  - { path: tools/, reason: Developer and deploy scripts, including the fake agent. }
+  - { path: workflows.example/, reason: Example workflow definitions used by tests and docs. }
+  - { path: backlog.example.yaml, reason: Example configuration. }
+  - { path: docs/superpowers/, reason: Specs and plans of the development process. }
+  - { path: .agentic/, reason: Agentic container setup. }
+  - { path: .superpowers/, reason: Development process notes. }
+  - { path: .dockerignore, reason: Build configuration. }
+  - { path: .env.example, reason: Example configuration. }
+  - { path: .gitignore, reason: Repository configuration. }
+  - { path: Dockerfile, reason: Image of the UI itself. }
+  - { path: compose.yaml, reason: Deployment configuration. }
+  - { path: README.md, reason: Project documentation. }
+  - { path: package.json, reason: Root build and tooling configuration. }
+  - { path: package-lock.json, reason: Lockfile. }
+  - { path: nest-cli.json, reason: Backend build configuration. }
+  - { path: eslint.config.mjs, reason: Lint configuration. }
+  - { path: jest.config.js, reason: Test configuration. }
+  - { path: playwright.config.ts, reason: UI test configuration. }
+  - { path: backend/tsconfig.build.json, reason: Backend build configuration. }
+  - { path: backend/tsconfig.json, reason: Backend build configuration. }
+  - { path: backend/tsconfig.spec.json, reason: Backend test configuration. }
+  - { path: frontend/index.html, reason: Vite entry HTML. }
+  - { path: frontend/tsconfig.json, reason: Frontend build configuration. }
+  - { path: frontend/tsconfig.jest.json, reason: Frontend test configuration. }
+  - { path: frontend/vite.config.mts, reason: Frontend build configuration. }

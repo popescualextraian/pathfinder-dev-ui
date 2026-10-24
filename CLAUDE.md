@@ -81,3 +81,10 @@ Socket filter (`socket-filter/`, self-contained: own package.json, tsconfig, Doc
 - `ENGINE_IMAGE` is the project's agentic image (`agentic build`), not the image built from `Dockerfile` (which is the UI itself).
 - The engine has no authentication, and the compose setup's `docker-filter` service mounts the raw Docker socket (the `ui` service does not, it uses the filtered socket); don't expose it beyond a trusted network. With the backlog on, anyone who can reach the unauthenticated API can also write GitLab issues through `/api/backlog`.
 - `.worktrees/` is git-ignored (agentic task worktrees).
+
+## Architecture
+
+@docs/architecture/index.md
+
+Read a component's page in docs/architecture/components/ before changing its sources. When asked
+to review a plan, run the architect skill's plan mode on it.
