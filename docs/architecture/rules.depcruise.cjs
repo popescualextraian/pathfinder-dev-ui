@@ -22,6 +22,9 @@ module.exports = {
           "^backend/src/engine/integration/",
           "^backend/src/integration/schedule/",
           "^backend/src/integration/workflow/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -46,6 +49,9 @@ module.exports = {
           "^backend/src/schedule/repository/",
           "^backend/src/repository/system/",
           "^backend/src/workflow/repository/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -76,6 +82,9 @@ module.exports = {
           "^backend/src/api/repositories/",
           "^backend/src/api/tasks/",
           "^backend/src/api/workflows/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -100,6 +109,9 @@ module.exports = {
           "^backend/src/api/repositories/",
           "^backend/src/api/tasks/",
           "^backend/src/api/workflows/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -122,6 +134,9 @@ module.exports = {
           "^backend/src/schedule/repository/",
           "^backend/src/repository/system/",
           "^backend/src/workflow/repository/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -146,6 +161,9 @@ module.exports = {
           "^backend/src/api/repositories/",
           "^backend/src/api/tasks/",
           "^backend/src/api/workflows/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -168,6 +186,9 @@ module.exports = {
           "^backend/src/engine/integration/",
           "^backend/src/integration/schedule/",
           "^backend/src/integration/workflow/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -188,6 +209,9 @@ module.exports = {
           "^backend/src/api/repositories/",
           "^backend/src/api/tasks/",
           "^backend/src/api/workflows/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -212,6 +236,9 @@ module.exports = {
           "^backend/src/service/repositories/",
           "^backend/src/workflow/index\\.ts(/|$)",
           "^backend/src/workflow/service/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -230,6 +257,9 @@ module.exports = {
           "^backend/src/engine/integration/",
           "^backend/src/integration/schedule/",
           "^backend/src/integration/workflow/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -248,6 +278,9 @@ module.exports = {
           "^backend/src/schedule/repository/",
           "^backend/src/repository/system/",
           "^backend/src/workflow/repository/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -272,6 +305,9 @@ module.exports = {
       "to": {
         "path": [
           "^frontend/src/api/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -296,6 +332,9 @@ module.exports = {
           "^frontend/src/WorkflowGenerationsSection\\.tsx(/|$)",
           "^frontend/src/theme\\.css(/|$)",
           "^frontend/src/css\\.d\\.ts(/|$)"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -320,6 +359,9 @@ module.exports = {
           "^frontend/src/WorkflowGenerationsSection\\.tsx(/|$)",
           "^frontend/src/theme\\.css(/|$)",
           "^frontend/src/css\\.d\\.ts(/|$)"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -334,6 +376,9 @@ module.exports = {
       "to": {
         "path": [
           "^frontend/src/state/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -388,6 +433,9 @@ module.exports = {
           "^frontend/src/WorkflowGenerationsSection\\.tsx(/|$)",
           "^frontend/src/theme\\.css(/|$)",
           "^frontend/src/css\\.d\\.ts(/|$)"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -433,6 +481,9 @@ module.exports = {
         ],
         "pathNot": [
           "^socket-filter/test/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -487,6 +538,9 @@ module.exports = {
           "^backend/src/workflow/repository/",
           "^backend/src/workflow/index\\.ts(/|$)",
           "^backend/src/workflow/service/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -516,6 +570,9 @@ module.exports = {
         ],
         "pathNot": [
           "^socket-filter/test/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -561,6 +618,9 @@ module.exports = {
           "^backend/src/workflow/repository/",
           "^backend/src/workflow/index\\.ts(/|$)",
           "^backend/src/workflow/service/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -590,6 +650,9 @@ module.exports = {
           "^frontend/src/WorkflowGenerationsSection\\.tsx(/|$)",
           "^frontend/src/theme\\.css(/|$)",
           "^frontend/src/css\\.d\\.ts(/|$)"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -637,6 +700,9 @@ module.exports = {
           "^backend/src/backlog/",
           "^backend/src/workflow/",
           "^backend/src/schedule/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -654,6 +720,9 @@ module.exports = {
         ],
         "pathNot": [
           "^backend/src/engine/index\\.ts$"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -701,6 +770,9 @@ module.exports = {
           "^backend/src/backlog/",
           "^backend/src/workflow/",
           "^backend/src/schedule/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -718,6 +790,9 @@ module.exports = {
         ],
         "pathNot": [
           "^backend/src/backlog/index\\.ts$"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -765,6 +840,9 @@ module.exports = {
           "^backend/src/backlog/",
           "^backend/src/workflow/",
           "^backend/src/schedule/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -782,6 +860,9 @@ module.exports = {
         ],
         "pathNot": [
           "^backend/src/workflow/index\\.ts$"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -829,6 +910,9 @@ module.exports = {
           "^backend/src/backlog/",
           "^backend/src/workflow/",
           "^backend/src/schedule/"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     },
@@ -846,6 +930,9 @@ module.exports = {
         ],
         "pathNot": [
           "^backend/src/schedule/index\\.ts$"
+        ],
+        "dependencyTypesNot": [
+          "type-only"
         ]
       }
     }

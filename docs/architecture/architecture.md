@@ -33,7 +33,15 @@ boundaries:
   - { id: schedule, folder: backend/src/schedule, uses: [commons], entry: backend/src/schedule/index.ts }
 principles: [make-it-work, yagni, least-surprise, kiss, consistent, dry, clean-code, solid]
 patterns: [ports-and-adapters, repository, adapter]
-exceptions: []
+exceptions:
+  - id: layers/api-workflows/imports-workflow-integration
+    rule: layers:api>integration
+    component: api-workflows
+    reason: "Documented wiring exception (CLAUDE.md): the API module passes the integration module to WorkflowServiceModule.register."
+  - id: layers/api-schedules/imports-schedule-integration
+    rule: layers:api>integration
+    component: api-schedules
+    reason: "Documented wiring exception (CLAUDE.md): the API module passes the integration module to the schedule service module."
 ---
 
 # Architecture of pathfinder-dev-ui
@@ -70,6 +78,9 @@ implementation.
 - Tests mirror the source tree.
 
 ## Exceptions
+
+- `layers/api-workflows/imports-workflow-integration`: Documented wiring exception (CLAUDE.md): the API module passes the integration module to WorkflowServiceModule.register.
+- `layers/api-schedules/imports-schedule-integration`: Documented wiring exception (CLAUDE.md): the API module passes the integration module to the schedule service module.
 
 ## Where to start
 

@@ -94,7 +94,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/api/schedules/schedules-api.module.ts imports backend/src/integration/schedule/schedule-integration.module.ts",
-      "status": "open",
+      "status": "accepted",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {
@@ -104,7 +104,7 @@
       "severity": "error",
       "source": "depcruise",
       "text": "backend/src/api/workflows/workflows-api.module.ts imports backend/src/integration/workflow/workflow-integration.module.ts",
-      "status": "open",
+      "status": "accepted",
       "since": "5fc23e3e1c96b0f2873ffe67e813ee913dd41105"
     },
     {

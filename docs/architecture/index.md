@@ -11,6 +11,7 @@ Style: Modular monolith, layered.
 
 Principles, in order: make-it-work, yagni, least-surprise, kiss, consistent, dry, clean-code, solid.
 Patterns: ports-and-adapters, repository, adapter.
+Accepted exceptions: layers/api-workflows/imports-workflow-integration, layers/api-schedules/imports-schedule-integration.
 
 ## Components
 
