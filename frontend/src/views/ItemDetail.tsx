@@ -27,7 +27,7 @@ export function ItemDetail({ item, onEdit, onClose, workflows }: Props) {
       <a href={item.url} target="_blank" rel="noreferrer noopener">
         Open in source
       </a>
-      {workflows && <WorkflowControls itemId={item.id} workflows={workflows} showSteps />}
+      {workflows && <WorkflowControls item={item} workflows={workflows} showSteps />}
       <p className={styles.description}>{item.description}</p>
     </aside>
   );

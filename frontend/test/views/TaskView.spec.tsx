@@ -267,7 +267,7 @@ describe('NewTaskDialog', () => {
       target: { value: 'go' },
     });
     fireEvent.click(screen.getByText('Start task'));
-    await waitFor(() => expect(onStarted).toHaveBeenCalledWith(t));
+    await waitFor(() => expect(onStarted).toHaveBeenCalledWith('T-new'));
     expect(api.startTask).toHaveBeenCalledWith({
       prompt: 'go',
       repository: 'b',
@@ -334,6 +334,15 @@ describe('TaskView workflow line', () => {
     render(<TaskView task={idle()} onDeleted={jest.fn()} workflowRun={makeRun({ stepIndex: 1 })} />);
     const line = screen.getByTestId('task-workflow-line');
     expect(line.textContent).toContain('Workflow Plan, implement, review · step Implement');
+    expect(screen.getByRole('link', { name: '#7 on the board' }).getAttribute('href')).toBe('#/backlog?item=7');
+  });
+
+  it('shows a plain task run as Task with a link to the board item', () => {
+    const { makeRun } = jest.requireActual('../fixtures/workflows') as typeof import('../fixtures/workflows');
+    const run = makeRun({ kind: 'task', workflowId: 'task', definition: { id: 'task', title: 'Task', steps: [] } });
+    render(<TaskView task={idle()} onDeleted={jest.fn()} workflowRun={run} />);
+    const line = screen.getByTestId('task-workflow-line');
+    expect(line.textContent).toBe('Task · #7 on the board');
     expect(screen.getByRole('link', { name: '#7 on the board' }).getAttribute('href')).toBe('#/backlog?item=7');
   });
 

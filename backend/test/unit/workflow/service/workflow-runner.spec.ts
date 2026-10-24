@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -666,5 +666,115 @@ describe('WorkflowRunner', () => {
     expect(ids.slice(0, 50)).toEqual(finished.slice(0, 50).map((r) => r.id));
     expect((await runner.list('x51')).map((r) => r.id)).toEqual([finished[51].id]); // the limit applies within the item
     expect((await runner.list('x3')).map((r) => r.id)).toEqual([finished[3].id]);
+  });
+  describe('plain task (kind task)', () => {
+    it('starts the task with the given title, prompt, model and repository; no card move, no session or step', async () => {
+      const run = await runner.startTask({ itemId: '7', prompt: 'Read #7', title: 'My title', model: 'sonnet', repository: 'other' });
+      expect(tasks.starts).toEqual([{ title: 'My title', prompt: 'Read #7', model: 'sonnet', repository: 'other' }]);
+      expect(run).toMatchObject({ kind: 'task', itemId: '7', taskId: 'T-20261020-0001', state: 'running', sessions: {} });
+      expect(run.definition.title).toBe('Task');
+      expect(run.definition.steps).toEqual([]);
+      expect(items.moves).toEqual([]);
+      expect(tasks.added).toEqual([]);
+      expect(tasks.prompts).toEqual([]);
+      expect(await runner.get(run.id)).toEqual(run);
+      expect(seen.map((r) => r.kind)).toEqual(['task']);
+    });
+
+    it('title defaults to the item; model and repository are left out when not given', async () => {
+      await runner.startTask({ itemId: '7', prompt: 'Read' });
+      expect(tasks.starts).toEqual([{ title: '#7 Seven', prompt: 'Read' }]);
+    });
+
+    it('unknown item is not found and starts no task', async () => {
+      await expect(runner.startTask({ itemId: '99', prompt: 'p' })).rejects.toBeInstanceOf(WorkflowNotFoundError);
+      expect(tasks.starts).toEqual([]);
+    });
+
+    it('one active run per item, of either kind', async () => {
+      await runner.start('7', 'pir');
+      await expect(runner.startTask({ itemId: '7', prompt: 'p' })).rejects.toBeInstanceOf(WorkflowConflictError);
+      await runner.startTask({ itemId: '8', prompt: 'p' });
+      await expect(runner.start('8', 'duo')).rejects.toBeInstanceOf(WorkflowConflictError);
+      await expect(runner.startTask({ itemId: '8', prompt: 'q' })).rejects.toBeInstanceOf(WorkflowConflictError);
+      expect(tasks.starts).toHaveLength(2);
+    });
+
+    it('a workflow and a plain task started at once on one item: exactly one wins', async () => {
+      const results = await Promise.allSettled([runner.start('7', 'pir'), runner.startTask({ itemId: '7', prompt: 'p' })]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+      expect(lost.reason).toBeInstanceOf(WorkflowConflictError);
+      expect(tasks.starts).toHaveLength(1);
+    });
+
+    it('stays running after the first turn ends idle; never done by itself; sends nothing', async () => {
+      const run = await runner.startTask({ itemId: '7', prompt: 'p' });
+      const t = run.taskId;
+      tasks.setSession(t, 'main', { state: 'running' });
+      expect((await changed(t)).state).toBe('running');
+      tasks.finishTurn(t, 'main');
+      expect(await changed(t)).toMatchObject({ state: 'running', sessions: {} });
+      tasks.finishTurn(t, 'main');
+      expect((await changed(t)).state).toBe('running');
+      expect(tasks.prompts).toEqual([]);
+      expect(tasks.added).toEqual([]);
+      expect(items.moves).toEqual([]);
+    });
+
+    it('needs-you while a session has an open question or failed, running again afterwards', async () => {
+      const run = await runner.startTask({ itemId: '7', prompt: 'p' });
+      const t = run.taskId;
+      tasks.setSession(t, 'main', { state: 'waiting', openQuestions: 1 });
+      expect((await changed(t)).state).toBe('needs-you');
+      tasks.finishTurn(t, 'main');
+      expect((await changed(t)).state).toBe('running');
+      tasks.task(t).sessions.push({ name: 'extra', state: 'failed', openQuestions: 0 });
+      expect((await changed(t)).state).toBe('needs-you');
+    });
+
+    it('stop gives stopped and leaves the task; the item is free again', async () => {
+      const run = await runner.startTask({ itemId: '7', prompt: 'p' });
+      expect((await runner.stop(run.id)).state).toBe('stopped');
+      expect(tasks.closed).toEqual([]);
+      expect(tasks.task(run.taskId).state).toBe('starting');
+      await runner.startTask({ itemId: '7', prompt: 'again' });
+      expect(tasks.starts).toHaveLength(2);
+    });
+
+    it('fails when the task is gone', async () => {
+      const run = await runner.startTask({ itemId: '7', prompt: 'p' });
+      tasks.tasks.delete(run.taskId);
+      expect(await changed(run.taskId)).toMatchObject({ state: 'failed', failureReason: `task ${run.taskId} no longer exists` });
+    });
+
+    it('advance is refused with a conflict', async () => {
+      const run = await runner.startTask({ itemId: '7', prompt: 'p' });
+      await expect(runner.advance(run.id, {})).rejects.toBeInstanceOf(WorkflowConflictError);
+      await expect(runner.advance(run.id, { force: true })).rejects.toBeInstanceOf(WorkflowConflictError);
+      expect((await runner.get(run.id)).state).toBe('running');
+    });
+
+    it('resumes after a restart and follows its task', async () => {
+      const run = await runner.startTask({ itemId: '7', prompt: 'p' });
+      runner.onModuleDestroy();
+      runner = await make();
+      tasks.setSession(run.taskId, 'main', { state: 'waiting', openQuestions: 1 });
+      expect(await changed(run.taskId)).toMatchObject({ kind: 'task', state: 'needs-you' });
+    });
+  });
+
+  it('a run file saved without kind (before plain tasks) loads as a workflow run and goes on', async () => {
+    const run = await runner.start('7', 'duo');
+    const file = join(dir, `${run.id}.json`);
+    const stored = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    expect('kind' in stored).toBe(false);
+    writeFileSync(file, JSON.stringify(stored));
+    runner.onModuleDestroy();
+    runner = await make();
+    const view = await runner.get(run.id);
+    expect(view.kind).toBeUndefined();
+    tasks.finishTurn(run.taskId, 'main');
+    expect(await changed(run.taskId)).toMatchObject({ state: 'running', stepIndex: 1 });
   });
 });

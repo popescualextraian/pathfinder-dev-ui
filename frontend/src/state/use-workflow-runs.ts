@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { WorkflowRun, WorkflowRunState } from '../api/models';
-import { advanceRun, listRuns, startRun, stopRun } from '../api/workflows-api';
+import type { TaskRunInput, WorkflowRun, WorkflowRunState } from '../api/models';
+import { advanceRun, listRuns, startRun, startTask as startTaskRun, stopRun } from '../api/workflows-api';
 import { openWorkflowRunsStream } from '../api/workflow-runs-stream';
 
 const ACTIVE: readonly WorkflowRunState[] = ['running', 'needs-you', 'awaiting-approval', 'blocked'];
@@ -122,6 +122,10 @@ export function useWorkflowRuns(enabled: boolean) {
   const itemOf = (runId: string) => runsRef.current.find((r) => r.id === runId)?.itemId ?? runId;
 
   const start = useCallback((itemId: string, workflowId: string) => perform(itemId, () => startRun(itemId, workflowId)), [perform]);
+  const startTask = useCallback(
+    (itemId: string, input: TaskRunInput) => perform(itemId, () => startTaskRun(itemId, input)),
+    [perform],
+  );
   const advance = useCallback(
     (runId: string, force?: boolean) =>
       perform(itemOf(runId), () => (force === undefined ? advanceRun(runId) : advanceRun(runId, force))),
@@ -129,5 +133,5 @@ export function useWorkflowRuns(enabled: boolean) {
   );
   const stop = useCallback((runId: string) => perform(itemOf(runId), () => stopRun(runId)), [perform]);
 
-  return { runs, loading, loaded, error, runsByItem, runByTask, actionState, start, advance, stop };
+  return { runs, loading, loaded, error, runsByItem, runByTask, actionState, start, startTask, advance, stop };
 }

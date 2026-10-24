@@ -6,6 +6,7 @@ import { BridgeErrorFilter } from '../tasks/bridge-error.filter';
 import { AdvanceRunDto } from './dto/advance-run.dto';
 import { RunsQueryDto } from './dto/runs-query.dto';
 import { StartRunDto } from './dto/start-run.dto';
+import { StartTaskRunDto } from './dto/start-task-run.dto';
 import { WorkflowErrorFilter } from './workflow-error.filter';
 
 const PING_INTERVAL_MS = 25_000;
@@ -46,6 +47,12 @@ export class WorkflowRunsController {
   @Post()
   start(@Body() body: StartRunDto): Promise<WorkflowRunView> {
     return this.runner.start(body.itemId, body.workflowId);
+  }
+
+  // A plain task linked to the item (kind `task`): no workflow, no lane move. 404 unknown item, 409 item has an active run.
+  @Post('task')
+  startTask(@Body() body: StartTaskRunDto): Promise<WorkflowRunView> {
+    return this.runner.startTask(body);
   }
 
   // "Continue", or "Start anyway" with force.

@@ -5,7 +5,7 @@ import { Button } from './Button';
 import { ItemDetail } from './ItemDetail';
 import { ItemDialog } from './ItemDialog';
 import { ConfirmDialog } from './Dialog';
-import { awaitingApproval, isActiveRun, nextStep, type WorkflowBoard } from './workflow-run-view';
+import { awaitingApproval, isActiveRun, isTaskRun, nextStep, type WorkflowBoard } from './workflow-run-view';
 import styles from './BoardView.module.css';
 
 interface Props {
@@ -58,14 +58,15 @@ export function BoardView({ lanes, items, me, error, onMove, onCreate, onUpdate,
   };
 
   // A card with an active run moves only with its workflow: a drop on the next step's lane while it awaits approval
-  // asks to continue (the backend then moves the card); any other drop is refused.
+  // asks to continue (the backend then moves the card); any other drop is refused. A plain task run does not drive
+  // the lane: its card moves by hand.
   const move = (id: string, laneId: string) => {
     if (workflowsPending || (workflows && !workflows.ready)) {
       setNotice(WORKFLOWS_NOT_LOADED);
       return;
     }
     const run = workflows?.runsByItem.get(id);
-    if (!run || !isActiveRun(run)) {
+    if (!run || !isActiveRun(run) || isTaskRun(run)) {
       setNotice(null);
       onMove(id, laneId);
       return;

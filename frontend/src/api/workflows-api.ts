@@ -1,5 +1,5 @@
 import type {
-  StoredWorkflow, WorkflowDefinition, WorkflowGenerationSummary, WorkflowGenerationView, WorkflowList, WorkflowRun,
+  StoredWorkflow, TaskRunInput, WorkflowDefinition, WorkflowGenerationSummary, WorkflowGenerationView, WorkflowList, WorkflowRun,
   WorkflowValidationError,
 } from './models';
 import { ApiError, postJson, request } from './http';
@@ -22,6 +22,15 @@ export const listRuns = (itemId?: string) =>
   );
 export const startRun = (itemId: string, workflowId: string) =>
   postJson<WorkflowRun>('/api/workflow-runs', { itemId, workflowId });
+/** A plain task on the item (a run of kind `task`). Empty optional fields are left out (the backend refuses ""). */
+export const startTask = (itemId: string, input: TaskRunInput) =>
+  postJson<WorkflowRun>('/api/workflow-runs/task', {
+    itemId,
+    prompt: input.prompt,
+    ...(input.title && { title: input.title }),
+    ...(input.model && { model: input.model }),
+    ...(input.repository && { repository: input.repository }),
+  });
 export const advanceRun = (id: string, force?: boolean) =>
   postJson<WorkflowRun>(`${runUrl(id)}/advance`, force === undefined ? undefined : { force });
 export const stopRun = (id: string) => postJson<WorkflowRun>(`${runUrl(id)}/stop`);

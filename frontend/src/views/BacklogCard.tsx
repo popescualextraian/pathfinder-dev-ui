@@ -34,7 +34,7 @@ export function BacklogCard({ item, selected, onSelect, workflows }: Props) {
         {description && <span className={styles.description}>{description}</span>}
         {item.assignees.length > 0 && <span className={styles.assignees}>{item.assignees.join(', ')}</span>}
       </button>
-      {workflows && <WorkflowControls itemId={item.id} workflows={workflows} />}
+      {workflows && <WorkflowControls item={item} workflows={workflows} />}
     </div>
   );
 }

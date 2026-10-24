@@ -12,7 +12,7 @@ import { PromptBlock } from './PromptBlock';
 import { QuestionCard } from './QuestionCard';
 import { ReplyBox } from './ReplyBox';
 import { StatePill } from './StatePill';
-import { boardItemHref, currentStep } from './workflow-run-view';
+import { boardItemHref, currentStep, isTaskRun } from './workflow-run-view';
 import styles from './TaskView.module.css';
 
 interface Props {
@@ -122,7 +122,9 @@ function TaskDetail({ task, onDeleted, onTask, session, onSelectSession, workflo
       </header>
       {workflowRun && (
         <p className={styles.workflow} data-testid="task-workflow-line">
-          Workflow {workflowRun.definition.title} · step {currentStep(workflowRun)?.title ?? '?'} ·{' '}
+          {isTaskRun(workflowRun)
+            ? 'Task · '
+            : `Workflow ${workflowRun.definition.title} · step ${currentStep(workflowRun)?.title ?? '?'} · `}
           <a href={boardItemHref(workflowRun.itemId)}>#{workflowRun.itemId} on the board</a>
         </p>
       )}

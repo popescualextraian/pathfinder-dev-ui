@@ -49,6 +49,8 @@ export interface WorkflowTaskStart {
   title: string;
   prompt: string;
   model?: string;
+  /** A name from the engine's repository list; absent: the default repository. */
+  repository?: string;
   /** What the task is for; the engine records and shows it. */
   kind?: 'workflow-generator';
 }

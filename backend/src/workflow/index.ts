@@ -16,9 +16,9 @@ export { WORKFLOW_DEFINITION_REPOSITORY } from './service/workflow-definition.re
 export type { StoredWorkflow, WorkflowDefinitionRepository } from './service/workflow-definition.repository';
 export { WorkflowDefinitionFileRepository } from './repository/workflow-definition-file.repository';
 export type { WorkflowDefinitionFileOptions } from './repository/workflow-definition-file.repository';
-export { ACTIVE_STATES, isActive } from './service/workflow-run';
+export { ACTIVE_STATES, isActive, isTaskRun, TASK_RUN_DEFINITION } from './service/workflow-run';
 export { toRunView } from './service/workflow-run';
-export type { RunPhase, RunSession, RunSessionStatus, RunState, WorkflowRun, WorkflowRunView } from './service/workflow-run';
+export type { RunKind, RunPhase, RunSession, RunSessionStatus, RunState, WorkflowRun, WorkflowRunView } from './service/workflow-run';
 export { WORKFLOW_RUN_REPOSITORY } from './service/workflow-run.repository';
 export type { WorkflowRunRepository } from './service/workflow-run.repository';
 export { WorkflowRunFileRepository } from './repository/workflow-run-file.repository';
@@ -26,7 +26,7 @@ export {
   WorkflowConflictError, WorkflowFileTooLargeError, WorkflowInvalidError, WorkflowNotFoundError, WorkflowReadOnlyError,
 } from './service/workflow-errors';
 export { WORKFLOW_RETRY_DELAYS, WorkflowRunner } from './service/workflow-runner';
-export type { RetryDelays } from './service/workflow-runner';
+export type { RetryDelays, TaskRunStart } from './service/workflow-runner';
 export { WorkflowDefinitionsService } from './service/workflow-definitions.service';
 export type { WorkflowDefinitionList, WorkflowValidationError } from './service/workflow-definitions.service';
 export { WorkflowRunUpdates } from './service/workflow-run-updates';

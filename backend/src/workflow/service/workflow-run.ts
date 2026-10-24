@@ -22,8 +22,15 @@ export interface RunSession {
   sawBusy?: boolean;
 }
 
+/**
+ * `task`: a plain task linked to the item (no workflow to follow: `workflowId` is TASK_RUN_DEFINITION's id, the
+ * definition that one with no steps, `sessions` empty). Absent: a workflow run (also every run saved before task 019).
+ */
+export type RunKind = 'task';
+
 export interface WorkflowRun {
   id: string;
+  kind?: RunKind;
   workflowId: string;
   /** The definition as it was when the run started. */
   definition: WorkflowDefinition;
@@ -44,6 +51,11 @@ export interface WorkflowRun {
   updatedAt: string;
   finishedAt?: string;
 }
+
+/** The stand-in definition of a plain-task run: titled "Task", no steps. */
+export const TASK_RUN_DEFINITION: Readonly<WorkflowDefinition> = Object.freeze({ id: 'task', title: 'Task', steps: [] });
+
+export const isTaskRun = (run: Pick<WorkflowRun, 'kind'>): boolean => run.kind === 'task';
 
 export const ACTIVE_STATES: readonly RunState[] = ['running', 'needs-you', 'awaiting-approval', 'blocked'];
 export const isActive = (run: Pick<WorkflowRun, 'state'>): boolean => ACTIVE_STATES.includes(run.state);

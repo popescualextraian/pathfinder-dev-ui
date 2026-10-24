@@ -72,6 +72,29 @@ describe('App workflows wiring', () => {
     expect(screen.getByRole('complementary', { name: 'Item detail' })).toBeTruthy();
   });
 
+  it('▶ Task starts a plain task on the item and opens its task screen', async () => {
+    window.location.hash = '#/backlog';
+    m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [], refused: [], writable: true });
+    m(workflowsApi.listRuns).mockResolvedValue([]);
+    m(workflowsApi.startTask).mockResolvedValue(
+      makeRun({ id: 'R-9', kind: 'task', workflowId: 'task', definition: { id: 'task', title: 'Task', steps: [] }, taskId: 'T-9' }),
+    );
+    render(<App />);
+    const card = await screen.findByTestId('backlog-card-7');
+    fireEvent.click(await within(card).findByRole('button', { name: 'Start task on #7' }));
+    const dialog = screen.getByRole('dialog', { name: 'New task on #7' });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Start task' }));
+    });
+    expect(workflowsApi.startTask).toHaveBeenCalledWith('7', {
+      title: '#7 Fix it',
+      prompt:
+        'We plan to work on backlog item #7: Fix it\n\nhttps://x/7\n\n' +
+        'Read it and get familiar with it, then wait for my instructions. Do not change anything yet.',
+    });
+    await waitFor(() => expect(window.location.hash).toBe('#/tasks/T-9'));
+  });
+
   it('task view shows the run line of the selected task', async () => {
     window.location.hash = '#/tasks/T-1';
     m(workflowsApi.listWorkflows).mockResolvedValue({ definitions: [makeWorkflow()], refused: [], writable: true });

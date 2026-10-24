@@ -439,12 +439,22 @@ doneStage: done                  # optional: the card goes there when the workfl
 | `GET /api/workflow-runs[?itemId=]` | Active runs and the 50 most recently finished ones (of the item, if given), oldest first | 200 |
 | `GET /api/workflow-runs/:id` | One run | 200 |
 | `POST /api/workflow-runs` `{itemId, workflowId}` | Starts a run (creates the task, moves the card to the first stage). Unknown workflow or item 404; the item already has an active run 409; engine errors (cap 409, bridge 502) pass through | 201 run |
-| `POST /api/workflow-runs/:id/advance` `{force?}` | Continue; only while `awaiting-approval` or `blocked`, else 409 | 200 run |
+| `POST /api/workflow-runs/task` `{itemId, prompt, title?, model?, repository?}` | Starts a plain task on the item (a run of kind `task`, see below); `title` defaults to `#<id> <title>`, the repository to the default one. Invalid body (blank prompt, bad title/model/repository) 400; unknown item 404; the item already has an active run (workflow or task) 409; engine errors pass through | 201 run |
+| `POST /api/workflow-runs/:id/advance` `{force?}` | Continue; only while `awaiting-approval` or `blocked`, else 409 (always 409 for a run of kind `task`) | 200 run |
 | `POST /api/workflow-runs/:id/stop` | Marks the run `stopped`; 409 if not active | 200 run |
 | `GET /api/workflow-runs/stream` | SSE: `event: run` with the run after every change, `: ping` every 25 seconds. Nothing is replayed | 200 |
 
-A run: `{id, workflowId, definition (snapshot taken at start), itemId, item (snapshot), taskId, stepIndex, phase, sessions: {<name>: {status: pending|running|done}},
+A run: `{id, kind?, workflowId, definition (snapshot taken at start), itemId, item (snapshot), taskId, stepIndex, phase, sessions: {<name>: {status: pending|running|done}},
 state, warning?, failureReason?, createdAt, updatedAt, finishedAt?}`. It never contains tokens. Errors have the usual `{statusCode, message, path}` body.
+
+**Plain-task runs** (`kind: 'task'`; absent = a workflow run): a link between a work item and one ordinary task, started with
+`POST /api/workflow-runs/task`. It has no workflow to follow (`workflowId: 'task'`, a definition titled `Task` without steps): the runner never moves its card
+(not at start or stop; a user may still drag it by hand), starts no session and sends no exit prompt. Its state is `needs-you` while the task has an open question or a
+failed or interrupted session, else `running`; it never becomes `done` by itself. Stop marks it `stopped` and leaves the task as it is; a task
+that is gone makes it `failed`. One active run per item counts both kinds: a plain task blocks a workflow start and the other way round.
+In the UI a card or detail without an active run has **▶ Task** next to **▶ Workflow** (also without definitions): the New task dialog
+prefilled with the title `#<id> <title>` and a kickoff prompt from the item (editable), then the task screen of the new task. The run line
+shows `Task`, the state, **Open task** and **■ Stop**; the task view shows `Task · #<id> on the board`.
 
 Write routes answer 403 when the folder is not writable (a read-only mount); they have no login, like the rest of the API.
 A save through the editor rewrites the file as YAML: comments of a hand-written file are not kept.
