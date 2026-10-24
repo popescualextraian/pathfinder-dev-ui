@@ -16,6 +16,8 @@ interface Props {
   backlogEnabled?: boolean;
   /** The Workflows entry is shown only when workflows are on. */
   workflowsEnabled?: boolean;
+  /** The Architect entry (group Team) is shown only when the architecture page is on. */
+  architectEnabled?: boolean;
   /** Number of backlog items, shown as a badge. */
   backlogCount?: number;
   view?: View;
@@ -35,7 +37,7 @@ interface NavGroup {
 }
 
 /** New areas get one entry here, in the group that fits (Work, Automate, Team). Empty groups are dropped. */
-function navGroups({ backlogEnabled, workflowsEnabled, backlogCount, tasks }: Props): NavGroup[] {
+function navGroups({ backlogEnabled, workflowsEnabled, architectEnabled, backlogCount, tasks }: Props): NavGroup[] {
   const openTasks = tasks.filter((t) => !t.closed).length;
   const groups: NavGroup[] = [
     {
@@ -52,6 +54,10 @@ function navGroups({ backlogEnabled, workflowsEnabled, backlogCount, tasks }: Pr
         // Schedules are always on.
         { id: 'schedules' as const, label: 'Schedules', icon: 'schedules' as const },
       ],
+    },
+    {
+      label: 'Team',
+      items: architectEnabled ? [{ id: 'architect' as const, label: 'Architect', icon: 'architect' as const }] : [],
     },
   ];
   return groups.filter((g) => g.items.length > 0);

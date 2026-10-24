@@ -330,6 +330,39 @@ describe('schedules route', () => {
   });
 });
 
+describe('architect route', () => {
+  it('round trips', () => {
+    expect(parseHash('#/architect')).toMatchObject({ view: 'architect', repository: null });
+    expect(parseHash('#/architect').review).toBeUndefined();
+    expect(parseHash('#/architect?repo=shop')).toMatchObject({ view: 'architect', repository: 'shop' });
+    const h = '#/architect/reviews/feature%2Fgift-cards/slug?repo=shop';
+    expect(parseHash(h)).toMatchObject({
+      view: 'architect', repository: 'shop', review: { branch: 'feature/gift-cards', slug: 'slug' },
+    });
+    for (const x of ['#/architect', '#/architect?repo=shop', h, '#/architect/reviews/main/s']) {
+      expect(buildHash(parseHash(x))).toBe(x);
+    }
+  });
+
+  it('falls back to the plain view on malformed escapes', () => {
+    const r = parseHash('#/architect/reviews/%E0%A4%A/slug?repo=shop');
+    expect(r).toMatchObject({ view: 'architect', repository: 'shop' });
+    expect(r.review).toBeUndefined();
+  });
+
+  it('selectReview keeps the repository, selectView clears the review', () => {
+    window.location.hash = '#/architect?repo=shop';
+    const route = renderHook(() => useRoute());
+    act(() => route.result.current.selectReview({ branch: 'feature/x', slug: 's' }));
+    expect(window.location.hash).toBe('#/architect/reviews/feature%2Fx/s?repo=shop');
+    act(() => route.result.current.selectReview(null));
+    expect(window.location.hash).toBe('#/architect?repo=shop');
+    act(() => route.result.current.selectReview({ branch: 'b', slug: 's' }));
+    act(() => route.result.current.selectView('architect'));
+    expect(window.location.hash).toBe('#/architect?repo=shop');
+  });
+});
+
 describe('scheduleHref / taskHref', () => {
   it('builds links', () => {
     expect(scheduleHref('a b')).toBe('#/schedules/a%20b');
