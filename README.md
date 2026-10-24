@@ -789,6 +789,14 @@ the URL. The env file is never printed or sourced (only `ENGINE_IMAGE` and `UI_P
 Redeploying is the same command. By hand: `PATHFINDER_ENV_FILE=<file> docker compose --env-file <file> up -d --build --wait`
 (just `docker compose up -d --build --wait` with `.env` and `DOCKER_GID` in it).
 
+**Behind a TLS-intercepting proxy** (Zscaler, Netskope, ...) the images must trust its root certificate, or `npm ci` in the
+build and the Architect page's `git clone` fail with `server certificate verification failed`. Put the root as a `*.crt`
+file in `~/.agentic/ca/` (the folder agentic-dev-base uses; `PATHFINDER_CA_DIR=<folder>` names another one): `tools/deploy.sh`
+then passes it to both image builds as the build context `ca` (`compose.yaml`: `PATHFINDER_CA_CONTEXT`, empty `tools/no-ca/` by
+default). The Dockerfiles add its `*.crt` files to the system store (`update-ca-certificates`), and Node trusts that store
+(`NODE_EXTRA_CA_CERTS`) for the UI's own HTTPS calls (GitLab). Without such a folder the build is unchanged; certificates are
+never read from the repository (`tools/no-ca/*.crt` is git-ignored). By hand: `PATHFINDER_CA_CONTEXT=<folder> docker compose ... --build`.
+
 What survives a redeploy: everything in the volume `engine-data` (task records, workflow runs, the backlog
 cache), the task containers and their volumes `agentic-ui-task-<id>` (they are not compose services and keep
 running; the new UI finds them again through the records), and the host files. What does not: open browser

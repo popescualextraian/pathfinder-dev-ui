@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 
@@ -50,6 +50,35 @@ describe('compose.yaml', () => {
     expect(install).toBeGreaterThan(-1);
     expect(install).toBeLessThan(final.indexOf('USER node'));
     expect(final).toContain('rm -rf /var/lib/apt/lists/*');
+  });
+
+  it('offers the proxy CA folder as the build context `ca` to both builds, empty by default', () => {
+    const raw = parse(readFileSync(join(ROOT, 'compose.yaml'), 'utf8')) as { services: Record<string, { build: unknown }> };
+    for (const name of ['ui', 'docker-filter']) {
+      const build = raw.services[name].build as { additional_contexts?: Record<string, string> };
+      expect(build.additional_contexts?.ca).toBe('${PATHFINDER_CA_CONTEXT:-./tools/no-ca}');
+    }
+    expect(readdirSync(join(ROOT, 'tools', 'no-ca')).filter((f) => f.endsWith('.crt'))).toEqual([]);
+  });
+
+  it.each(['Dockerfile', 'socket-filter/Dockerfile'])('%s trusts certificates from the optional `ca` context in the stages that download', (file) => {
+    const docker = readFileSync(join(ROOT, file), 'utf8');
+    expect(docker).toMatch(/^FROM scratch AS ca$/m);
+    const stages = docker.split(/^FROM /m).slice(1).filter((s) => !s.startsWith('scratch'));
+    const downloading = stages.filter((s) => s.includes('RUN npm ci') || s.includes('RUN apt-get'));
+    expect(downloading.length).toBeGreaterThan(0);
+    for (const stage of downloading) {
+      expect(stage).toContain('--mount=type=bind,from=ca,target=/tmp/ca');
+      expect(stage).toContain('update-ca-certificates');
+      expect(stage.indexOf('update-ca-certificates')).toBeLessThan(stage.indexOf('RUN npm ci'));
+    }
+    expect(docker).not.toMatch(/COPY[^\n]*\.crt/);
+  });
+
+  it('points Node at the system CA bundle in the ui image (its own https calls, e.g. GitLab)', () => {
+    const docker = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
+    const final = docker.slice(docker.lastIndexOf('\nFROM '));
+    expect(final).toContain('ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt');
   });
 
   it('gives the ui no Docker group and the filtered socket instead', () => {

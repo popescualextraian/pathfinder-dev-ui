@@ -26,7 +26,10 @@ x-task-network: &task-network agentic-ui
 
 services:
   docker-filter:
-    build: ./socket-filter
+    build:
+      context: ./socket-filter
+      additional_contexts:
+        ca: ${PATHFINDER_CA_CONTEXT:-./tools/no-ca}
     environment:
       FILTER_IMAGE: *task-image
       FILTER_NETWORK: *task-network
@@ -57,7 +60,11 @@ services:
     restart: unless-stopped
 
   ui:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        # Proxy root certificates (*.crt) trusted at image build; tools/deploy.sh sets PATHFINDER_CA_CONTEXT, empty by default.
+        ca: ${PATHFINDER_CA_CONTEXT:-./tools/no-ca}
     ports:
       - "127.0.0.1:${UI_PORT:-3000}:3000"
     env_file:

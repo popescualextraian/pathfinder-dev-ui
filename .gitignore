@@ -11,3 +11,4 @@ playwright-report/
 .superpowers/
 .local/
 reports/
+tools/no-ca/*.crt

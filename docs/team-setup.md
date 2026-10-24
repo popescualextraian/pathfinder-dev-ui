@@ -123,6 +123,8 @@ downloads fail with `x509`/`certificate` errors (some hosts may pass while other
    mkdir -p ~/.agentic/ca && cp /mnt/c/Users/<windows-user>/Downloads/proxy-root.crt ~/.agentic/ca/
    ```
 
+The folder `~/.agentic/ca` is also used by `tools/deploy.sh`: the Pathfinder UI image (and the Architect page's git clones) then trusts the proxy too. Redeploy after adding a certificate.
+
 Added after the base image exists: `agentic build-base --force`. A build that prints nothing for 10 minutes hangs on a
 download: Ctrl-C and run it again (finished steps are cached).
 

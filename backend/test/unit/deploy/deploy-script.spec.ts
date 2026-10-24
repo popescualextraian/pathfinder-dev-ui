@@ -20,21 +20,32 @@ describe('tools/deploy.sh', () => {
     return r.stdout;
   };
 
+  let extraEnv: Record<string, string>;
   const run = (...args: string[]): SpawnSyncReturns<string> =>
     spawnSync('bash', [join(repo, 'tools', 'deploy.sh'), ...args], {
       cwd: repo,
       encoding: 'utf8',
-      env: { ...process.env, PATH: `${join(dir, 'bin')}:${process.env.PATH}`, STUB_LOG: dockerLog, STUB_INSPECT_FAILS: inspectFails ? '1' : '' },
+      env: {
+        ...process.env,
+        PATHFINDER_CA_DIR: '',
+        HOME: join(dir, 'home'),
+        PATH: `${join(dir, 'bin')}:${process.env.PATH}`,
+        STUB_LOG: dockerLog,
+        STUB_INSPECT_FAILS: inspectFails ? '1' : '',
+        ...extraEnv,
+      },
     });
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'deploy-test-'));
     inspectFails = false;
+    extraEnv = {};
+    mkdirSync(join(dir, 'home'));
     dockerLog = join(dir, 'docker.log');
     mkdirSync(join(dir, 'bin'));
     writeFileSync(
       join(dir, 'bin', 'docker'),
-      '#!/usr/bin/env bash\necho "$*|PEF=${PATHFINDER_ENV_FILE:-}" >> "$STUB_LOG"\n[ "$1 $2" = "image inspect" ] && [ -n "$STUB_INSPECT_FAILS" ] && exit 1\nexit 0\n',
+      '#!/usr/bin/env bash\necho "$*|PEF=${PATHFINDER_ENV_FILE:-}|CA=${PATHFINDER_CA_CONTEXT:-}" >> "$STUB_LOG"\n[ "$1 $2" = "image inspect" ] && [ -n "$STUB_INSPECT_FAILS" ] && exit 1\nexit 0\n',
     );
     chmodSync(join(dir, 'bin', 'docker'), 0o755);
     const origin = join(dir, 'origin.git');
@@ -97,5 +108,51 @@ describe('tools/deploy.sh', () => {
     expect(calls).toContain(`compose --env-file ${envFile} up -d --build --wait|PEF=${envFile}`);
     expect(r.stdout).toContain('http://127.0.0.1:3456');
     expect(r.stdout + r.stderr + calls).not.toContain(SECRET);
+  });
+
+  describe('the proxy CA folder (trusted at image build, certificates never from the repository)', () => {
+    const caDir = () => join(dir, 'ca');
+    const withCerts = (path: string) => {
+      mkdirSync(path, { recursive: true });
+      writeFileSync(join(path, 'proxy-root.crt'), 'made-up certificate\n');
+    };
+
+    it('passes nothing when there is no folder: the build is unchanged', () => {
+      const r = run(envFile);
+      expect(r.status).toBe(0);
+      expect(dockerCalls()).toContain('|CA=\n');
+    });
+
+    it('passes PATHFINDER_CA_DIR as the build context when it holds a .crt', () => {
+      withCerts(caDir());
+      extraEnv = { PATHFINDER_CA_DIR: caDir() };
+      const r = run(envFile);
+      expect(r.status).toBe(0);
+      expect(dockerCalls()).toContain(`|CA=${caDir()}\n`);
+      expect(r.stdout).toContain(caDir());
+    });
+
+    it('defaults to ~/.agentic/ca when that folder has a .crt', () => {
+      const home = join(dir, 'home', '.agentic', 'ca');
+      withCerts(home);
+      const r = run(envFile);
+      expect(r.status).toBe(0);
+      expect(dockerCalls()).toContain(`|CA=${home}\n`);
+    });
+
+    it('ignores a default folder without a .crt', () => {
+      mkdirSync(join(dir, 'home', '.agentic', 'ca'), { recursive: true });
+      writeFileSync(join(dir, 'home', '.agentic', 'ca', 'notes.txt'), 'x');
+      run(envFile);
+      expect(dockerCalls()).toContain('|CA=\n');
+    });
+
+    it('refuses an explicit PATHFINDER_CA_DIR that is not a folder with a .crt, before compose', () => {
+      extraEnv = { PATHFINDER_CA_DIR: join(dir, 'missing') };
+      const r = run(envFile);
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain('PATHFINDER_CA_DIR');
+      expect(dockerCalls()).not.toContain('compose');
+    });
   });
 });
