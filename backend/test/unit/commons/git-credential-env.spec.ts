@@ -1,4 +1,4 @@
-import { gitCredentialEnv } from '../../../../../src/engine/integration/launcher/git-credential-env';
+import { gitCredentialEnv } from '../../../src/commons/git-credential-env';
 
 // Byte-identical to the helper in agentic-dev-base's gitenv.sh (git_cred_env).
 const HELPER = '!f() { test "$1" = get && printf "username=x-access-token\\npassword=%s\\n" "${GH_TOKEN:-$GIT_TOKEN}"; }; f';
