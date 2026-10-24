@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "style": { "id": "layered", "name": "Layered" },
+  "parts": [
+    {
+      "id": "app",
+      "name": "App",
+      "layers": [
+        { "id": "ui", "name": "UI", "mayUse": ["logic"] },
+        { "id": "logic", "name": "Logic", "mayUse": ["data"] },
+        { "id": "data", "name": "Data", "mayUse": [] }
+      ],
+      "modules": []
+    }
+  ],
+  "components": [
+    { "id": "screens", "name": "Screens", "part": "app", "layer": "ui", "module": null, "parent": null, "summary": "The pages a person sees.", "page": "components/screens.md" },
+    { "id": "forms", "name": "Forms", "part": "app", "layer": "ui", "module": null, "parent": null, "summary": "Input forms and their checks.", "page": "components/forms.md" },
+    { "id": "rules", "name": "Rules", "part": "app", "layer": "logic", "module": null, "parent": null, "summary": "The business rules.", "page": "components/rules.md" },
+    { "id": "storage", "name": "Storage", "part": "app", "layer": "data", "module": null, "parent": null, "summary": "Reads and writes the database.", "page": "components/storage.md" }
+  ],
+  "connections": [
+    { "from": "screens", "to": "rules", "via": "call" },
+    { "from": "forms", "to": "rules", "via": "call" },
+    { "from": "rules", "to": "storage", "via": "call" }
+  ]
+}
