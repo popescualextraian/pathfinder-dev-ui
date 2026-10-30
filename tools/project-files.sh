@@ -5,7 +5,7 @@
 #
 # The paths are BACKLOG_CONFIG_FILE and WORKFLOWS_DIR_HOST from the env file, else
 # ${PATHFINDER_PROJECTS_DIR:-~/.agentic/projects/pathfinder-dev-ui/projects}/<env file name without .env>/{backlog.yaml,workflows}.
-# backlog.yaml is backlog.example.yaml with the GitLab host and project taken from ENGINE_REPO_URL (check its lane labels);
+# backlog.yaml is backlog.example.yaml with the GitLab host and project taken from GITLAB_PROJECT_URL (else ENGINE_REPO_URL) (check its lane labels);
 # workflows/ is a copy of workflows.example/. Messages go to stderr.
 set -euo pipefail
 
@@ -30,8 +30,9 @@ workflows="$(env_value WORKFLOWS_DIR_HOST)"
 workflows="${workflows:-$base/workflows}"
 
 if [ ! -f "$backlog" ]; then
-  repo="$(env_value ENGINE_REPO_URL)"
-  [[ "$repo" =~ ^(https?://[^/]+)/(.+)$ ]] || die "ENGINE_REPO_URL is not an http(s) URL with a path: cannot derive the GitLab project"
+  repo="$(env_value GITLAB_PROJECT_URL)"
+  repo="${repo:-$(env_value ENGINE_REPO_URL)}"
+  [[ "$repo" =~ ^(https?://[^/]+)/(.+)$ ]] || die "GITLAB_PROJECT_URL (or ENGINE_REPO_URL) is not an http(s) URL with a path: cannot derive the GitLab project"
   path="${BASH_REMATCH[2]%/}"
   path="${path%.git}"
   mkdir -p "$(dirname "$backlog")"

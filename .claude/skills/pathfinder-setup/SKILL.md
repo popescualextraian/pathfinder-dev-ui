@@ -91,8 +91,10 @@ One UI per project, with its own containers, network, data and port; the first U
 (clone the project, `agentic build` for its task image) come first, then in `~/pathfinder/pathfinder-dev-ui` (a
 current checkout: `git pull`):
 
-1. `make new` asks for name, repository https URL, git name and email (each pre-filled, Enter accepts; or
-   `make new NAME=drp REPO=<url> GIT_NAME=... GIT_EMAIL=...`). It writes `projects/<name>.env` (mode 600), the lanes file
+1. `make new` asks for name, repository https URL (the one with `.agentic/`), git name, email and the GitLab project URL of the backlog
+   (suggested: the repository without `-agentic`; each pre-filled, Enter accepts; or
+   `make new NAME=drp REPO=<url> GIT_NAME=... GIT_EMAIL=... GITLAB=<url>`). The env file gets `TASK_NETWORK=agentic-<name>`,
+   `TASK_NETWORK_EXTERNAL=true` (the network must exist) and `ARCHITECTURE_ENABLED=0`. It writes `projects/<name>.env` (mode 600), the lanes file
    `backlog.yaml` and the `workflows/` folder under `~/.agentic/projects/pathfinder-dev-ui/projects/<name>/`, and puts
    their paths into the env file. If these already exist (re-creating a project, e.g. after a repository change), it asks `b` backup
    (copy next to it) or `o` overwrite, once for all; ask the user which, and never answer for them (`NEW_PROJECT_EXISTING=backup|overwrite`

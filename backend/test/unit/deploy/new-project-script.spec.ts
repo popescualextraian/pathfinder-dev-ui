@@ -47,6 +47,24 @@ describe('tools/new-project.sh', () => {
     expect(text).toContain(`WORKFLOWS_DIR_HOST=${data}/workflows\n`);
   });
 
+  it('writes the network and Architect defaults', () => {
+    expect(run('drp', 'https://git.example.invalid/g/drp-agentic', 'A B', 'a@b.invalid').status).toBe(0);
+    const text = readFileSync(file('drp'), 'utf8');
+    expect(text).toContain('TASK_NETWORK=agentic-drp\n');
+    expect(text).toContain('TASK_NETWORK_EXTERNAL=true\n');
+    expect(text).toContain('ARCHITECTURE_ENABLED=0\n');
+  });
+
+  it('takes the GitLab project of the backlog from the repository without -agentic, or from the fifth argument', () => {
+    const lanes = (n: string) => readFileSync(join(dir, '.agentic', 'projects', 'pathfinder-dev-ui', 'projects', n, 'backlog.yaml'), 'utf8');
+    expect(run('drp', 'https://git.example.invalid/g/drp-agentic.git', 'A B', 'a@b.invalid').status).toBe(0);
+    expect(readFileSync(file('drp'), 'utf8')).toContain('GITLAB_PROJECT_URL=https://git.example.invalid/g/drp\n');
+    expect(lanes('drp')).toContain('project: g/drp\n');
+    expect(run('other', 'https://git.example.invalid/g/o-agentic', 'A B', 'a@b.invalid', 'https://git.example.invalid/board/o').status).toBe(0);
+    expect(lanes('other')).toContain('project: board/o\n');
+    expect(run('bad', 'https://git.example.invalid/g/b', 'A B', 'a@b.invalid', 'http://x.invalid/g/b').status).not.toBe(0);
+  });
+
   describe('an existing lanes file', () => {
     const data = () => join(dir, '.agentic', 'projects', 'pathfinder-dev-ui', 'projects', 'drp');
     const args = ['drp', 'https://git.example.invalid/g/new', 'A', 'a@b.invalid'];

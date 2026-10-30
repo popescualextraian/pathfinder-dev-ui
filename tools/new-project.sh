@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Writes the env file of a new Pathfinder UI for one project: projects/<name>.env (git-ignored, mode 600).
 #
-#   tools/new-project.sh [name] [repo-url] [git-name] [git-email]
+#   tools/new-project.sh [name] [repo-url] [git-name] [git-email] [gitlab-project-url]
 #
-# Anything not given is asked for. Then fill in the three tokens and run: tools/deploy.sh projects/<name>.env
+# repo-url is the project repository the tasks start in (the one with .agentic/); gitlab-project-url is the GitLab project of the
+# backlog (default: repo-url without -agentic and .git). Anything not given is asked for. Then fill in the three tokens and run: tools/deploy.sh projects/<name>.env
 # The task image is agentic-<name>:local (build it with `agentic build` in the project); change ENGINE_IMAGE if it differs.
 set -euo pipefail
 
@@ -47,13 +48,19 @@ existing() {
 DEFAULT_NAME="" DEFAULT_REPO=""
 # shellcheck source=/dev/null
 [ ! -f "$root/tools/new-project.defaults" ] || . "$root/tools/new-project.defaults"
-name="${1:-}" repo="${2:-}" git_name="${3:-}" git_email="${4:-}"
+name="${1:-}" repo="${2:-}" git_name="${3:-}" git_email="${4:-}" gitlab="${5:-}"
 ask name "Project name (letters, digits, dashes)" "$DEFAULT_NAME"
 [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "\"$name\" is not a project name: use lowercase letters, digits and dashes, at most 31 (for example drp)"
 ask repo "Repository https URL" "$DEFAULT_REPO"
 [[ "$repo" =~ ^https://[^/@[:space:]]+/[^@[:space:]]+$ ]] || die "\"$repo\" is not usable: the repository must be an https URL without credentials, like https://gitlab.example.com/group/project"
 ask git_name "Git author name for the tasks' commits" "$(git config --global user.name 2> /dev/null || true)"
 ask git_email "Git author email" "$(git config --global user.email 2> /dev/null || true)"
+gitlab_default="${repo%.git}"
+gitlab_default="${gitlab_default%-agentic}"
+# Without a terminal the suggestion is taken; asking is only for a person.
+if [ -z "$gitlab" ] && [ ! -t 0 ]; then gitlab="$gitlab_default"; fi
+ask gitlab "GitLab project URL of the backlog" "$gitlab_default"
+[[ "$gitlab" =~ ^https://[^/@[:space:]]+/[^@[:space:]]+$ ]] || die "\"$gitlab\" is not usable: the GitLab project must be an https URL without credentials, like https://gitlab.example.com/group/project"
 
 file="$root/projects/$name.env"
 existing "$file" "the env file (it holds the tokens)"
@@ -71,9 +78,13 @@ COMPOSE_PROJECT_NAME=pathfinder-$name
 ENGINE_IMAGE=agentic-$name:local
 ENGINE_REPO_URL=$repo
 ENGINE_PROJECT=$name
+GITLAB_PROJECT_URL=$gitlab
 ENGINE_GIT_NAME=$git_name
 ENGINE_GIT_EMAIL=$git_email
 UI_PORT=$port
+TASK_NETWORK=agentic-$name
+TASK_NETWORK_EXTERNAL=true
+ARCHITECTURE_ENABLED=0
 # Tokens: fill in with an editor, not in a chat.
 # Claude Code login of the agent (claude setup-token)
 CLAUDE_CODE_OAUTH_TOKEN=

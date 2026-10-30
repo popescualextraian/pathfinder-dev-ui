@@ -1,3 +1,3 @@
 # Suggested answers of tools/new-project.sh (pre-filled, Enter accepts, editable). Team defaults for now; delete a line for no suggestion.
 DEFAULT_NAME=drp
-DEFAULT_REPO=https://gitlab.zt.msg.team/vans-ai-rallye/digital-rotation-planning
+DEFAULT_REPO=https://gitlab.zt.msg.team/vans-ai-rallye/digital-rotation-planning-agentic
