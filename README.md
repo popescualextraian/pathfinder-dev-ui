@@ -788,13 +788,14 @@ make up                        # tools/deploy.sh projects/<name>.env; also: make
 ```
 
 The suggested name and repository come from `tools/new-project.defaults`; the git name and email default to `git config --global`.
+If the env file, `backlog.yaml` or `workflows/` of that name already exist (from an earlier run), `make new` shows it (a lanes file with its GitLab project) and asks once: `b` copies each next to itself as `<name>.bak-<date>` and writes a new one, `o` overwrites. Without a terminal it stops unless `NEW_PROJECT_EXISTING=backup|overwrite` is set. Backup copies of the env file keep its tokens and mode, and do not end in `.env`, so `make` ignores them.
 `make new NAME=... REPO=... GIT_NAME=... GIT_EMAIL=...` skips the questions for what you give (only command-line values count, the shell's own `NAME` is ignored).
 `make destroy` (`tools/destroy.sh`) removes the project's task containers (the ones on its network) and their volumes, the UI and filter containers and the data volume; it keeps the env file, the lanes file and workflows, and the images, and refuses the default UI. `make up` needs only the env file: no git checks, no pull (`git pull` yourself to update). Behind `make` are `tools/new-project.sh` (the env file; arguments instead of questions: `tools/new-project.sh <name> <repo-url> <git-name> <git-email>`)
 and `tools/compose.sh <env-file> <docker compose arguments>`, which `deploy.sh` uses: it passes the file both ways
 (`--env-file` and `PATHFINDER_ENV_FILE`) and, when the file has `COMPOSE_PROJECT_NAME` ("project mode"), fills in what it leaves out: the
 network `TASK_NETWORK` is the project name (external when a network of that name exists that compose did not create),
 `DOCKER_GID` comes from the socket, the Architect page is on, and with `GITLAB_TOKEN` set the backlog and workflows are on too. Their files are made by
-`make new` (`tools/project-files.sh`, once, existing ones kept) in `~/.agentic/projects/pathfinder-dev-ui/projects/<name>/`
+`make new` (`tools/project-files.sh`) in `~/.agentic/projects/pathfinder-dev-ui/projects/<name>/`
 (`PATHFINDER_PROJECTS_DIR` changes the base): `backlog.yaml` (from `backlog.example.yaml`, GitLab host and project taken from the repository URL:
 check its lane labels) and `workflows/` (from `workflows.example/`; the editor needs the folder writable by uid 1000). Their paths are written into the env file as
 `BACKLOG_CONFIG_FILE` and `WORKFLOWS_DIR_HOST`; change them there to use other files. Without `GITLAB_TOKEN` both are ignored (the backlog could not start). It stops with the

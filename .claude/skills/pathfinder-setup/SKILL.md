@@ -94,7 +94,10 @@ current checkout: `git pull`):
 1. `make new` asks for name, repository https URL, git name and email (each pre-filled, Enter accepts; or
    `make new NAME=drp REPO=<url> GIT_NAME=... GIT_EMAIL=...`). It writes `projects/<name>.env` (mode 600), the lanes file
    `backlog.yaml` and the `workflows/` folder under `~/.agentic/projects/pathfinder-dev-ui/projects/<name>/`, and puts
-   their paths into the env file. The task image is expected as `agentic-<name>:local`: change `ENGINE_IMAGE` if it differs.
+   their paths into the env file. If these already exist (re-creating a project, e.g. after a repository change), it asks `b` backup
+   (copy next to it) or `o` overwrite, once for all; ask the user which, and never answer for them (`NEW_PROJECT_EXISTING=backup|overwrite`
+   only for a script, backup by default). A kept old `backlog.yaml` still points at the old GitLab project and shows an empty board.
+   The task image is expected as `agentic-<name>:local`: change `ENGINE_IMAGE` if it differs.
 2. The user fills in `CLAUDE_CODE_OAUTH_TOKEN`, `GH_TOKEN` and optionally `GITLAB_TOKEN` (turns backlog and workflows on)
    with an editor, never in the chat. Check by counting (`grep -c '^GH_TOKEN=.\+' FILE`). Check the `status::` labels in
    `backlog.yaml` against the project's GitLab board.

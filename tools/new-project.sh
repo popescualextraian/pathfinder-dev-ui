@@ -25,6 +25,25 @@ ask() { # ask <variable> <question> [default]
   printf -v "$1" '%s' "$value"
 }
 
+# existing <path> <what>: a path left from an earlier run is backed up (copy next to it) or removed, as asked; NEW_PROJECT_EXISTING=backup|overwrite answers for scripts.
+# One answer covers every existing file of this run.
+choice="${NEW_PROJECT_EXISTING:-}"
+existing() {
+  [ -e "$1" ] || return 0
+  echo "new-project: $2 exists already: $1" >&2
+  [ ! -f "$1" ] || grep -E '^  (baseUrl|project):' "$1" >&2 || true # a lanes file shows its GitLab project
+  if [ -z "$choice" ]; then
+    [ -t 0 ] || die "no terminal to ask what to do with it (set NEW_PROJECT_EXISTING=backup or overwrite)"
+    read -r -p "  [b] backup (keep a copy, write a new one)   [o] overwrite: " choice
+  fi
+  case "$choice" in
+    b | backup) cp -a "$1" "$1.bak-$(date +%Y%m%d-%H%M%S)" && echo "new-project: copy saved as $1.bak-..." >&2 ;;
+    o | overwrite) ;;
+    *) die "\"$choice\" is not an option: answer b (backup) or o (overwrite)" ;;
+  esac
+  rm -rf "$1"
+}
+
 DEFAULT_NAME="" DEFAULT_REPO=""
 # shellcheck source=/dev/null
 [ ! -f "$root/tools/new-project.defaults" ] || . "$root/tools/new-project.defaults"
@@ -37,7 +56,7 @@ ask git_name "Git author name for the tasks' commits" "$(git config --global use
 ask git_email "Git author email" "$(git config --global user.email 2> /dev/null || true)"
 
 file="$root/projects/$name.env"
-[ ! -e "$file" ] || die "$file exists already"
+existing "$file" "the env file (it holds the tokens)"
 
 # First port from 3001 that no other project file uses and nothing listens on.
 used="$(grep -hE '^UI_PORT=' "$root"/projects/*.env 2> /dev/null | cut -d= -f2 || true)"
@@ -64,6 +83,10 @@ GH_TOKEN=
 GITLAB_TOKEN=
 EOF2
 chmod 600 "$file"
+# The lanes file and the workflows folder of an earlier project of this name would be kept as they are and may point at another GitLab project.
+data="${PATHFINDER_PROJECTS_DIR:-${HOME:?HOME is not set}/.agentic/projects/pathfinder-dev-ui/projects}/$name"
+existing "$data/backlog.yaml" "the lanes file"
+existing "$data/workflows" "the workflows folder"
 echo "new-project: preparing the lanes file and the workflows folder..."
 # The lanes file and the workflows folder, made now so the lanes can be edited before the first deploy; the paths go into the env file.
 {
