@@ -12,3 +12,4 @@ playwright-report/
 .local/
 reports/
 tools/no-ca/*.crt
+projects/

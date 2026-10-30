@@ -6,7 +6,7 @@
 # 1. refuses when the checkout has local changes or is not on main
 # 2. git pull --ff-only
 # 3. checks that the task image (ENGINE_IMAGE in the env file) exists locally
-# 4. docker compose --env-file <env-file> up -d --build --wait
+# 4. tools/compose.sh <env-file> up -d --build --wait (docker compose --env-file ... up; see compose.sh for the project mode)
 # 5. prints the URL
 # Behind a TLS-intercepting proxy the images trust its root certificates: the folder PATHFINDER_CA_DIR (default
 # ~/.agentic/ca when it holds *.crt) is passed to the builds as the context `ca`; without it nothing changes.
@@ -62,8 +62,7 @@ if [ -n "$ca_dir" ]; then
   echo "deploy: trusting the proxy certificates in $ca_dir at image build"
 fi
 
-# compose reads the ui's env_file from this variable; the same file feeds the ${...} interpolation.
-export PATHFINDER_ENV_FILE="$env_file"
-docker compose --env-file "$env_file" up -d --build --wait
+# compose.sh passes the env file both ways and fills in the project-mode defaults.
+"$root/tools/compose.sh" "$env_file" up -d --build --wait
 
 echo "deploy: up at http://127.0.0.1:${port}"

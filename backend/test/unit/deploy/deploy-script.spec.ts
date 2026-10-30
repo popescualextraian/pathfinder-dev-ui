@@ -1,7 +1,7 @@
 import { spawnSync, SpawnSyncReturns } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const SCRIPT = join(__dirname, '..', '..', '..', '..', 'tools', 'deploy.sh');
 const SECRET = 'made-up-secret-do-not-print';
@@ -55,12 +55,13 @@ describe('tools/deploy.sh', () => {
     git(repo, 'checkout', '-q', '-b', 'main');
     mkdirSync(join(repo, 'tools'));
     copyFileSync(SCRIPT, join(repo, 'tools', 'deploy.sh'));
+    copyFileSync(join(dirname(SCRIPT), 'compose.sh'), join(repo, 'tools', 'compose.sh'));
     writeFileSync(join(repo, 'file.txt'), 'x\n');
     git(repo, 'add', '-A');
     git(repo, 'commit', '-q', '-m', 'init');
     git(repo, 'push', '-q', '-u', 'origin', 'main');
     envFile = join(dir, 'prod.env');
-    writeFileSync(envFile, `GH_TOKEN=${SECRET}\nENGINE_IMAGE="task-image:1"\nUI_PORT=3456\n`);
+    writeFileSync(envFile, `GH_TOKEN=${SECRET}\nCLAUDE_CODE_OAUTH_TOKEN=${SECRET}\nENGINE_IMAGE="task-image:1"\nENGINE_REPO_URL=https://h.invalid/g/r\nENGINE_PROJECT=p\nENGINE_GIT_NAME=A\nENGINE_GIT_EMAIL=a@b.invalid\nUI_PORT=3456\n`);
   });
 
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
