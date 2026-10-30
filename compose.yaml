@@ -124,3 +124,5 @@ volumes:
 networks:
   agentic-ui:
     name: ${TASK_NETWORK:-agentic-ui}
+    # TASK_NETWORK_EXTERNAL=true: the network already exists (made by another stack or `docker network create`); compose then does not create or label it.
+    external: ${TASK_NETWORK_EXTERNAL:-false}

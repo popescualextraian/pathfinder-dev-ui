@@ -747,7 +747,7 @@ Two different images are involved:
   records, backlog cache, workflow runs, schedules and the architecture clones in the named volume `engine-data` at `/data`, and waits for the
   filter to be healthy. Both services have health checks (`GET /api/health` for the UI: `{"ok":true}`, no Docker call).
 
-`ui` and the task containers use the network `agentic-ui` (default name, set `TASK_NETWORK` to change it; the filter allows task
+`ui` and the task containers use the network `agentic-ui` (default name, set `TASK_NETWORK` to change it, and `TASK_NETWORK_EXTERNAL=true` when that network already exists and compose did not create it; the filter allows task
 containers only on it), so the UI reaches each bridge by container name. `docker-filter` has `network_mode: none`:
 it is reached only through its socket and must not be attached to `agentic-ui`. `compose.yaml` sets
 `ENGINE_LAUNCHER=docker`, `ENGINE_DOCKER_NETWORK=agentic-ui`, `ENGINE_DATA_DIR=/data` and the container paths of
