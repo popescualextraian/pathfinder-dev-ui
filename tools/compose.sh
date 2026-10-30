@@ -10,6 +10,7 @@
 #   backlog + workflows on when GITLAB_TOKEN is set (their files: BACKLOG_CONFIG_FILE and WORKFLOWS_DIR_HOST from the
 #   file, else made by tools/project-files.sh under ~/.agentic/projects/pathfinder-dev-ui/projects/<name>/)
 #   the Architect page on unless ARCHITECTURE_ENABLED is set
+#   ENGINE_REPOS from the `add workspace` lines of the repository's .agentic/agentic.yaml when the file lacks it (tools/workspace-repos.sh, on up)
 # DOCKER_GID is read from the Docker socket when the file lacks it. The env file is never printed or sourced.
 set -euo pipefail
 
@@ -56,6 +57,11 @@ if [ -n "$project" ]; then
   fi
 
   [ -n "$(env_value ARCHITECTURE_ENABLED)" ] || export ARCHITECTURE_ENABLED=1
+
+  if [ "$1" = up ] && [ -z "$(env_value ENGINE_REPOS)" ]; then
+    repos="$("$root/tools/workspace-repos.sh" "$env_file")" # warns on stderr, never fails
+    [ -z "$repos" ] || export ENGINE_REPOS="${repos#ENGINE_REPOS=}"
+  fi
 
   if [ -z "$(env_value GITLAB_TOKEN)" ]; then
     # Without the token the backlog could not start: off, whatever the file says.

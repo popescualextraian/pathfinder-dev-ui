@@ -794,7 +794,7 @@ If the env file, `backlog.yaml` or `workflows/` of that name already exist (from
 and `tools/compose.sh <env-file> <docker compose arguments>`, which `deploy.sh` uses: it passes the file both ways
 (`--env-file` and `PATHFINDER_ENV_FILE`) and, when the file has `COMPOSE_PROJECT_NAME` ("project mode"), fills in what it leaves out: the
 network `TASK_NETWORK` is the project name (external when a network of that name exists that compose did not create),
-`DOCKER_GID` comes from the socket, the Architect page is on, and with `GITLAB_TOKEN` set the backlog and workflows are on too. Their files are made by
+`DOCKER_GID` comes from the socket, the Architect page is on, `ENGINE_REPOS` is filled on `up` from the `add workspace` lines of `.agentic/agentic.yaml` in `ENGINE_REPO_URL` (`tools/workspace-repos.sh`: a shallow clone with `GH_TOKEN` passed through git's environment only; skipped when the file sets `ENGINE_REPOS`, and a read failure only warns) so a task can be started in each workspace repository, and with `GITLAB_TOKEN` set the backlog and workflows are on too. Their files are made by
 `make new` (`tools/project-files.sh`) in `~/.agentic/projects/pathfinder-dev-ui/projects/<name>/`
 (`PATHFINDER_PROJECTS_DIR` changes the base): `backlog.yaml` (from `backlog.example.yaml`, GitLab host and project taken from the repository URL:
 check its lane labels) and `workflows/` (from `workflows.example/`; the editor needs the folder writable by uid 1000). Their paths are written into the env file as

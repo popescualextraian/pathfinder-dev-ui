@@ -79,6 +79,8 @@ services:
       ENGINE_DOCKER_NETWORK: *task-network
       ENGINE_DATA_DIR: /data
       ENGINE_MAX_RUNNING: ${ENGINE_MAX_RUNNING:-2}
+      # More repositories to start tasks in (JSON); tools/compose.sh fills it from the workspace lines of .agentic/agentic.yaml when the env file lacks it.
+      ENGINE_REPOS: ${ENGINE_REPOS:-}
       # Backlog board (optional): set BACKLOG_CONFIG_FILE to the host path of the lanes YAML to turn it on.
       # The token variable named by gitlab.tokenEnv (GITLAB_TOKEN) comes from the env file.
       BACKLOG_CONFIG: ${BACKLOG_CONFIG_FILE:+/etc/pathfinder/backlog.yaml}

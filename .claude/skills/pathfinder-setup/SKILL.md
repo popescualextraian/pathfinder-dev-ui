@@ -99,6 +99,8 @@ current checkout: `git pull`):
    their paths into the env file. If these already exist (re-creating a project, e.g. after a repository change), it asks `b` backup
    (copy next to it) or `o` overwrite, once for all; ask the user which, and never answer for them (`NEW_PROJECT_EXISTING=backup|overwrite`
    only for a script, backup by default). A kept old `backlog.yaml` still points at the old GitLab project and shows an empty board.
+   The env file names only the root repository; `make up` adds the repositories of its `add workspace` lines to the repository
+   picker by itself (needs `GH_TOKEN`; else set `ENGINE_REPOS` by hand).
    The task image is expected as `agentic-<name>:local`: change `ENGINE_IMAGE` if it differs.
 2. The user fills in `CLAUDE_CODE_OAUTH_TOKEN`, `GH_TOKEN` and optionally `GITLAB_TOKEN` (turns backlog and workflows on)
    with an editor, never in the chat. Check by counting (`grep -c '^GH_TOKEN=.\+' FILE`). Check the `status::` labels in
