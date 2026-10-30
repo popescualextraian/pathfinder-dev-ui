@@ -9,7 +9,7 @@
   min-height: 0;
 }
 .sidebar {
-  width: 230px;
+  width: 280px;
   flex: none;
   background: var(--ink);
   color: var(--paper);
