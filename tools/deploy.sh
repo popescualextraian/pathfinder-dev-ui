@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# Deploys (or redeploys) the UI with its Docker socket filter from the main branch of this checkout.
+# Deploys (or redeploys) the UI with its Docker socket filter from this checkout, as it is (no git checks or pull: update it yourself with git pull).
 #
 #   tools/deploy.sh <env-file>
 #
-# 1. refuses when the checkout has local changes or is not on main
-# 2. git pull --ff-only
-# 3. checks that the task image (ENGINE_IMAGE in the env file) exists locally
-# 4. tools/compose.sh <env-file> up -d --build --wait (docker compose --env-file ... up; see compose.sh for the project mode)
-# 5. prints the URL
+# 1. checks that the task image (ENGINE_IMAGE in the env file) exists locally
+# 2. tools/compose.sh <env-file> up -d --build --wait (docker compose --env-file ... up; see compose.sh for the project mode)
+# 3. prints the URL
 # Behind a TLS-intercepting proxy the images trust its root certificates: the folder PATHFINDER_CA_DIR (default
 # ~/.agentic/ca when it holds *.crt) is passed to the builds as the context `ca`; without it nothing changes.
 # The env file holds secrets: it is never printed and never sourced; only ENGINE_IMAGE and UI_PORT are
@@ -31,12 +29,6 @@ cd "$root"
 env_value() {
   grep -E "^[[:space:]]*$1=" "$env_file" | tail -n 1 | sed -E "s/^[[:space:]]*$1=//; s/\r$//; s/^\"(.*)\"\$/\\1/; s/^'(.*)'\$/\\1/" || true
 }
-
-[ -z "$(git status --porcelain)" ] || die "the checkout has local changes; commit or discard them first"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-[ "$branch" = "main" ] || die "the checkout is on '$branch', not main"
-
-git pull --ff-only
 
 image="$(env_value ENGINE_IMAGE)"
 [ -n "$image" ] || die "ENGINE_IMAGE is not set in the env file"

@@ -804,10 +804,9 @@ names of missing settings (never values). The task image `agentic-<name>:local` 
 tools/deploy.sh /path/to/env-file
 ```
 
-The script refuses to run when the checkout has local changes or is not on `main`, runs
-`git pull --ff-only`, checks that the task image (`ENGINE_IMAGE` in the env file) exists locally (otherwise it
-stops and tells you to run `agentic build`), runs `docker compose --env-file <file> up -d --build --wait` and prints
-the URL. The env file is never printed or sourced (only `ENGINE_IMAGE` and `UI_PORT` are read from it).
+The script builds what is in the checkout (no git checks and no pull: `git pull` yourself first), checks that the task image
+(`ENGINE_IMAGE` in the env file) exists locally (otherwise it stops and tells you to run `agentic build`), runs
+`tools/compose.sh <file> up -d --build --wait` and prints the URL. The env file is never printed or sourced.
 Redeploying is the same command. By hand: `PATHFINDER_ENV_FILE=<file> docker compose --env-file <file> up -d --build --wait`
 (just `docker compose up -d --build --wait` with `.env` and `DOCKER_GID` in it).
 

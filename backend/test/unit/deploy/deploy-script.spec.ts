@@ -77,20 +77,12 @@ describe('tools/deploy.sh', () => {
     expect(dockerCalls()).toBe('');
   });
 
-  it('refuses a dirty checkout', () => {
+  it('does not mind local changes or another branch, and never pulls', () => {
     writeFileSync(join(repo, 'file.txt'), 'changed\n');
-    const r = run(envFile);
-    expect(r.status).not.toBe(0);
-    expect(r.stderr).toContain('local changes');
-    expect(dockerCalls()).toBe('');
-  });
-
-  it('refuses another branch than main', () => {
     git(repo, 'checkout', '-q', '-b', 'feature');
     const r = run(envFile);
-    expect(r.status).not.toBe(0);
-    expect(r.stderr).toContain("not main");
-    expect(dockerCalls()).toBe('');
+    expect(r.status).toBe(0);
+    expect(r.stdout + r.stderr).not.toContain('Already up to date');
   });
 
   it('stops with a hint when the task image is missing, before compose', () => {

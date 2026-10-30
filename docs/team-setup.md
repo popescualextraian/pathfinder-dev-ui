@@ -219,7 +219,7 @@ cd ~/pathfinder/pathfinder-dev-ui
 tools/deploy.sh ~/pathfinder/pathfinder.env
 ```
 
-It needs the checkout on `main` with no local changes, and both tokens in the settings file (without them the UI
+It builds the checkout as it is (update it with `git pull` first) and needs both tokens in the settings file (without them the UI
 container keeps restarting with `... is required`). It builds the UI image, starts the UI and its Docker socket
 filter, waits until both are healthy and prints the URL: open **http://localhost:3000** in your Windows browser. Start a task: write a prompt, pick the repository,
 **Start**. The task clones the project, works on branch `agentic/<task id>` and pushes it when you allow it.
