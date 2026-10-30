@@ -87,6 +87,22 @@ Windows), how to update (guide step 6 table), and anything left undone.
 
 ## Adding another project
 
-Steps 6 and 7 for the new project, then either a second UI (another folder with its own settings file, compose
-project name and `UI_PORT`) or more repositories in one UI with `ENGINE_REPOS` (they share one task image, so only
-for projects built from the same `.agentic/`). Ask which they want.
+One UI per project, with its own containers, network, data and port; the first UI stays untouched. Steps 6 and 7
+(clone the project, `agentic build` for its task image) come first, then in `~/pathfinder/pathfinder-dev-ui` (a
+current checkout: `git pull`):
+
+1. `make new` asks for name, repository https URL, git name and email (each pre-filled, Enter accepts; or
+   `make new NAME=drp REPO=<url> GIT_NAME=... GIT_EMAIL=...`). It writes `projects/<name>.env` (mode 600), the lanes file
+   `backlog.yaml` and the `workflows/` folder under `~/.agentic/projects/pathfinder-dev-ui/projects/<name>/`, and puts
+   their paths into the env file. The task image is expected as `agentic-<name>:local`: change `ENGINE_IMAGE` if it differs.
+2. The user fills in `CLAUDE_CODE_OAUTH_TOKEN`, `GH_TOKEN` and optionally `GITLAB_TOKEN` (turns backlog and workflows on)
+   with an editor, never in the chat. Check by counting (`grep -c '^GH_TOKEN=.\+' FILE`). Check the `status::` labels in
+   `backlog.yaml` against the project's GitLab board.
+3. `make up` (several files in `projects/`: `make up ENV=projects/<name>.env`; also `make ps|logs|down`). It names missing
+   settings, derives the network (`pathfinder-<name>`, external when it already exists), `DOCKER_GID` and the Architect page, and
+   needs no `-p`, no `PATHFINDER_ENV_FILE`. Never run `tools/deploy.sh` with the first UI's env file for a second project.
+4. Check as step 8 with the new `UI_PORT`: health 200; backlog and workflows 200 only with `GITLAB_TOKEN`; the Architect page
+   404 means no `docs/architecture/model.json` in the repository yet.
+
+More repositories in one UI instead: `ENGINE_REPOS` (they share one task image, so only for projects built from the
+same `.agentic/`). Ask which they want.

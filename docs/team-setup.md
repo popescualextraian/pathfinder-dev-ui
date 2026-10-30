@@ -210,6 +210,7 @@ Then fill in the two tokens with an editor (`nano ~/pathfinder/pathfinder.env`):
 | `SCHEDULES_TIMEZONE` | your IANA time zone for scheduled runs (Automate, Schedules), for example `Europe/Bucharest` |
 | `DOCKER_GID` | group of the Docker socket, written by the `stat` line above |
 
+A second UI for another project (own port, network and data): `make new`, fill in the tokens, `make up` (pathfinder-dev-ui README, One UI per project).
 More repositories in one UI: `ENGINE_REPOS` (pathfinder-dev-ui README, Configuration).
 
 ## 6. Start the UI in Docker

@@ -782,12 +782,14 @@ The quick way to run a UI for one more project (each with its own containers, ne
 is untouched):
 
 ```sh
-make new                       # asks for name, repository https URL, git name and email; writes projects/<name>.env (git-ignored)
+make new                       # asks for name, repository https URL, git name and email (pre-filled, Enter accepts); writes projects/<name>.env (git-ignored)
 $EDITOR projects/<name>.env    # fill in CLAUDE_CODE_OAUTH_TOKEN, GH_TOKEN and optionally GITLAB_TOKEN
-make up                        # tools/deploy.sh projects/<name>.env; also: make ps | logs | down  (ENV=projects/<name>.env with several files)
+make up                        # tools/deploy.sh projects/<name>.env; also: make restart | ps | logs | down  (ENV=projects/<name>.env with several files)
 ```
 
-Behind `make` are `tools/new-project.sh` (the env file; arguments instead of questions: `tools/new-project.sh <name> <repo-url> <git-name> <git-email>`)
+The suggested name and repository come from `tools/new-project.defaults`; the git name and email default to `git config --global`.
+`make new NAME=... REPO=... GIT_NAME=... GIT_EMAIL=...` skips the questions for what you give (only command-line values count, the shell's own `NAME` is ignored).
+`make up` needs only the env file: no git checks, no pull (`git pull` yourself to update). Behind `make` are `tools/new-project.sh` (the env file; arguments instead of questions: `tools/new-project.sh <name> <repo-url> <git-name> <git-email>`)
 and `tools/compose.sh <env-file> <docker compose arguments>`, which `deploy.sh` uses: it passes the file both ways
 (`--env-file` and `PATHFINDER_ENV_FILE`) and, when the file has `COMPOSE_PROJECT_NAME` ("project mode"), fills in what it leaves out: the
 network `TASK_NETWORK` is the project name (external when a network of that name exists that compose did not create),
@@ -955,6 +957,7 @@ e2e/                        Playwright tests (whole app)
 package.json                one, at the root
 socket-filter/              the Docker socket filter, self-contained (own package.json, tsconfig, Dockerfile, tests; imports nothing from backend/)
 tools/deploy.sh             deploys or redeploys the compose setup (see Deployment)
+tools/compose.sh            docker compose for one env file (project-mode defaults); new-project.sh, project-files.sh, new-project.defaults and the Makefile (make new/up/ps/logs/down) set up one UI per project
 Dockerfile, compose.yaml    the UI image and its compose setup (see Deployment)
 backlog.example.yaml        lanes config of the backlog (BACKLOG_CONFIG)
 workflows.example/          example workflow definitions (WORKFLOWS_DIR)
