@@ -17,6 +17,7 @@ export function RepositoryList({ repositories, tasks, selected, onSelect }: Prop
         type="button"
         className={`${styles.item} ${selected === value ? styles.selected : ''}`}
         aria-current={selected === value ? 'true' : undefined}
+        title={label}
         onClick={() => onSelect(value)}
       >
         <span className={styles.name}>{label}</span>
