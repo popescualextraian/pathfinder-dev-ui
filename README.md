@@ -210,7 +210,7 @@ is missing or invalid, naming the variable, never printing a value.
 | `ENGINE_LAUNCHER` | no, default `docker` | Which launcher runs tasks: `docker` or `local` (see Local launcher). An unknown value is refused when the launcher is created. |
 | `ENGINE_LOCAL_AGENT` | no, default `fake`; `local` only | `fake` (scripted fake agent) or `claude` (the bridge's default agent, Claude Code). Anything else is refused at start-up. |
 | `ENGINE_IMAGE` | `docker` only | Task image that runs `agentic-bridge`: the project's agentic image built with `agentic build`, for example `agentic-pathfinder-dev-ui:local`. Not the image of `Dockerfile`. |
-| `ENGINE_DOCKER_NETWORK` | `docker` only | Docker network shared by the UI and the task containers (`agentic-ui` in `compose.yaml`). |
+| `ENGINE_DOCKER_NETWORK` | `docker` only | Docker network shared by the UI and the task containers (`agentic-ui` in `compose.yaml`, or `TASK_NETWORK`). |
 | `ENGINE_DATA_DIR` | yes | Absolute directory for task records (`/data` in `compose.yaml`). |
 | `ENGINE_REPO_URL` | yes | Repository tasks clone when the request gives no `repoUrl`. Must not contain credentials. |
 | `ENGINE_REPOS` | no | JSON array of `{"name", "url"}`: more repositories a task can be started in by name (`repository` in `POST /api/tasks`, listed by `GET /api/repositories`). Names are unique (letters, digits, `.`, `_`, `-`); URLs are https without credentials; with `ENGINE_LAUNCHER=local` an entry may also be an absolute local path (no host is added; the docker launcher refuses a path). A bad value is refused at start-up naming only the variable. `ENGINE_REPO_URL` stays the default, named after the last part of its URL. The host of every listed URL is an allowed repository host. Example: `[{"name":"docs","url":"https://github.com/acme/docs.git"}]` |
@@ -747,7 +747,7 @@ Two different images are involved:
   records, backlog cache, workflow runs, schedules and the architecture clones in the named volume `engine-data` at `/data`, and waits for the
   filter to be healthy. Both services have health checks (`GET /api/health` for the UI: `{"ok":true}`, no Docker call).
 
-`ui` and the task containers use the network `agentic-ui` (fixed name; the filter allows task
+`ui` and the task containers use the network `agentic-ui` (default name, set `TASK_NETWORK` to change it; the filter allows task
 containers only on it), so the UI reaches each bridge by container name. `docker-filter` has `network_mode: none`:
 it is reached only through its socket and must not be attached to `agentic-ui`. `compose.yaml` sets
 `ENGINE_LAUNCHER=docker`, `ENGINE_DOCKER_NETWORK=agentic-ui`, `ENGINE_DATA_DIR=/data` and the container paths of

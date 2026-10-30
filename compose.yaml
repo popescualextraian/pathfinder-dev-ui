@@ -22,7 +22,7 @@ name: agentic-pathfinder-dev-ui
 
 # Values the filter and the ui must agree on: the task image and the network.
 x-task-image: &task-image ${ENGINE_IMAGE:-agentic-pathfinder-dev-ui:local}
-x-task-network: &task-network agentic-ui
+x-task-network: &task-network ${TASK_NETWORK:-agentic-ui}
 
 services:
   docker-filter:
@@ -123,4 +123,4 @@ volumes:
 
 networks:
   agentic-ui:
-    name: agentic-ui
+    name: ${TASK_NETWORK:-agentic-ui}
