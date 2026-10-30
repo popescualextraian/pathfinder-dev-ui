@@ -18,18 +18,21 @@ ask() { # ask <variable> <question> [default]
   local value="${!1:-}"
   if [ -z "$value" ]; then
     [ -t 0 ] || die "$2 missing and no terminal to ask (usage: tools/new-project.sh <name> <repo-url> <git-name> <git-email>)"
-    read -r -p "$2${3:+ [$3]}: " value
-    value="${value:-${3:-}}"
+    # -e -i: the default is pre-filled and editable; Enter accepts it
+    read -e -r -i "${3:-}" -p "$2${3:+ (Enter accepts the suggestion)}: " value
   fi
   [ -n "$value" ] || die "$2 is required"
   printf -v "$1" '%s' "$value"
 }
 
+DEFAULT_NAME="" DEFAULT_REPO=""
+# shellcheck source=/dev/null
+[ ! -f "$root/tools/new-project.defaults" ] || . "$root/tools/new-project.defaults"
 name="${1:-}" repo="${2:-}" git_name="${3:-}" git_email="${4:-}"
-ask name "Project name (letters, digits, dashes, for example drp)"
-[[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "the name must be lowercase letters, digits and dashes (at most 31)"
-ask repo "Repository https URL"
-[[ "$repo" =~ ^https://[^/@[:space:]]+/[^@[:space:]]+$ ]] || die "the repository must be an https URL without credentials"
+ask name "Project name (letters, digits, dashes)" "$DEFAULT_NAME"
+[[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "\"$name\" is not a project name: use lowercase letters, digits and dashes, at most 31 (for example drp)"
+ask repo "Repository https URL" "$DEFAULT_REPO"
+[[ "$repo" =~ ^https://[^/@[:space:]]+/[^@[:space:]]+$ ]] || die "\"$repo\" is not usable: the repository must be an https URL without credentials, like https://gitlab.example.com/group/project"
 ask git_name "Git author name for the tasks' commits" "$(git config --global user.name 2> /dev/null || true)"
 ask git_email "Git author email" "$(git config --global user.email 2> /dev/null || true)"
 
@@ -39,7 +42,8 @@ file="$root/projects/$name.env"
 # First port from 3001 that no other project file uses and nothing listens on.
 used="$(grep -hE '^UI_PORT=' "$root"/projects/*.env 2> /dev/null | cut -d= -f2 || true)"
 port=3001
-while grep -qx "$port" <<< "$used" || (echo > "/dev/tcp/127.0.0.1/$port") 2> /dev/null; do port=$((port + 1)); done
+echo "new-project: looking for a free port..."
+while grep -qx "$port" <<< "$used" || timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/$port" 2> /dev/null; do port=$((port + 1)); done
 
 mkdir -p "$root/projects"
 umask 077
@@ -60,10 +64,27 @@ GH_TOKEN=
 GITLAB_TOKEN=
 EOF2
 chmod 600 "$file"
+echo "new-project: preparing the lanes file and the workflows folder..."
 # The lanes file and the workflows folder, made now so the lanes can be edited before the first deploy; the paths go into the env file.
 {
   echo "# Backlog lanes and workflow definitions (used when GITLAB_TOKEN is set); change the paths if you like"
   "$root/tools/project-files.sh" "$file"
 } >> "$file"
-echo "new-project: wrote $file (UI port $port)"
-echo "next: fill in the tokens, then run  tools/deploy.sh projects/$name.env"
+cat << EOF2
+
+Done: project "$name" is ready (UI port $port).
+
+  Env file:   $file
+  Lanes file: $(sed -n 's/^BACKLOG_CONFIG_FILE=//p' "$file")   (check the status:: labels)
+
+Next steps
+  1. Open the env file and fill in the tokens (an editor, never a chat):
+       CLAUDE_CODE_OAUTH_TOKEN   run: claude setup-token
+       GH_TOKEN                  token of the repository (clone and push)
+       GITLAB_TOKEN              optional: project access token (Developer, scope api); turns backlog + workflows on
+       ${EDITOR:-nano} $file
+  2. Build the project's task image if it does not exist yet:  agentic build   (in the project, gives agentic-$name:local)
+  3. Start it:  make up        (or: tools/deploy.sh projects/$name.env)
+  4. Open http://localhost:$port
+
+EOF2
