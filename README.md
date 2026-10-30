@@ -784,12 +784,12 @@ is untouched):
 ```sh
 make new                       # asks for name, repository https URL, git name and email (pre-filled, Enter accepts); writes projects/<name>.env (git-ignored)
 $EDITOR projects/<name>.env    # fill in CLAUDE_CODE_OAUTH_TOKEN, GH_TOKEN and optionally GITLAB_TOKEN
-make up                        # tools/deploy.sh projects/<name>.env; also: make restart | ps | logs | down  (ENV=projects/<name>.env with several files)
+make up                        # tools/deploy.sh projects/<name>.env; also: make restart | ps | logs | down (stops, keeps data) | destroy (removes everything of the project, asks first)  (ENV=projects/<name>.env with several files)
 ```
 
 The suggested name and repository come from `tools/new-project.defaults`; the git name and email default to `git config --global`.
 `make new NAME=... REPO=... GIT_NAME=... GIT_EMAIL=...` skips the questions for what you give (only command-line values count, the shell's own `NAME` is ignored).
-`make up` needs only the env file: no git checks, no pull (`git pull` yourself to update). Behind `make` are `tools/new-project.sh` (the env file; arguments instead of questions: `tools/new-project.sh <name> <repo-url> <git-name> <git-email>`)
+`make destroy` (`tools/destroy.sh`) removes the project's task containers (the ones on its network) and their volumes, the UI and filter containers and the data volume; it keeps the env file, the lanes file and workflows, and the images, and refuses the default UI. `make up` needs only the env file: no git checks, no pull (`git pull` yourself to update). Behind `make` are `tools/new-project.sh` (the env file; arguments instead of questions: `tools/new-project.sh <name> <repo-url> <git-name> <git-email>`)
 and `tools/compose.sh <env-file> <docker compose arguments>`, which `deploy.sh` uses: it passes the file both ways
 (`--env-file` and `PATHFINDER_ENV_FILE`) and, when the file has `COMPOSE_PROJECT_NAME` ("project mode"), fills in what it leaves out: the
 network `TASK_NETWORK` is the project name (external when a network of that name exists that compose did not create),

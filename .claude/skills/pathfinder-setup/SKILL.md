@@ -101,7 +101,8 @@ current checkout: `git pull`):
 3. `make up` (several files in `projects/`: `make up ENV=projects/<name>.env`; also `make ps|logs|down`). It names missing
    settings, derives the network (`pathfinder-<name>`, external when it already exists), `DOCKER_GID` and the Architect page, and
    needs no `-p`, no `PATHFINDER_ENV_FILE`. Never run `tools/deploy.sh` with the first UI's env file for a second project.
-4. Check as step 8 with the new `UI_PORT`: health 200; backlog and workflows 200 only with `GITLAB_TOKEN`; the Architect page
+4. Tear down: `make down` stops it and keeps the data; `make destroy` (ask first, it deletes the task records and the task containers on the project's network) removes it all but keeps the env file, lanes file, workflows and images.
+5. Check as step 8 with the new `UI_PORT`: health 200; backlog and workflows 200 only with `GITLAB_TOKEN`; the Architect page
    404 means no `docs/architecture/model.json` in the repository yet.
 
 More repositories in one UI instead: `ENGINE_REPOS` (they share one task image, so only for projects built from the
