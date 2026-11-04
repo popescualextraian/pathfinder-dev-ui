@@ -252,6 +252,7 @@ All under `/api`, JSON, times are ISO 8601 UTC strings. A task view contains the
 | `GET /api/tasks` | All tasks, newest `createdAt` first, closed ones included, as last recorded (no bridge call) | 200 |
 | `GET /api/tasks/:id` | Task with live bridge status (state, reason, open questions, summary, branch); a closed task is read from its record | 200 |
 | `POST /api/tasks/:id/prompt` `{text, session?}` | Sends a prompt (to `session`, default `main`); wakes a container that is not running first; 409 for a closed or stopped task | 202 task |
+| `POST /api/tasks/:id/resume` | Starts the container of a suspended task and waits for its bridge, sends nothing; 409 for a closed or stopped task, or at `ENGINE_MAX_RUNNING` | 202 task |
 | `POST /api/tasks/:id/answer` `{text, question?}` | Answers a question; default is the oldest open one; wakes like prompt; 409 for a closed or stopped task, or without an open question | 202 task |
 | `POST /api/tasks/:id/cancel` `{session?}` | Cancels the running turn (of `session`, default `main`); 409 for a closed task | 202 task |
 | `POST /api/tasks/:id/close` | Stops the task if it runs, removes container and volume, keeps the record with `closed: true`. Closing a closed task is 202 as well | 202 task |

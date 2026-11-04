@@ -64,6 +64,14 @@ describe('TaskView header', () => {
     view(makeTask({ state: 'stopped', section: 'done', sessions: [makeSession({ state: 'running' })] }));
     expect(screen.queryByText('Cancel turn')).toBeNull();
   });
+  it('suspended: Start container calls resume; not shown otherwise', async () => {
+    m(api.resume).mockResolvedValue(makeTask());
+    view(makeTask({ state: 'suspended', section: 'in-review' }));
+    fireEvent.click(screen.getByText('Start container'));
+    await waitFor(() => expect(api.resume).toHaveBeenCalledWith('T-1'));
+    view(idle());
+    expect(screen.getAllByText('Start container')).toHaveLength(1);
+  });
   it('close: pending, error', async () => {
     m(api.close).mockRejectedValue(new ApiError(500, 'boom'));
     view(idle());

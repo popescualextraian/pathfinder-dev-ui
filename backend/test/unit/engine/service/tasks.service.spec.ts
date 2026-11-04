@@ -266,6 +266,13 @@ describe('TasksService verbs', () => {
     expect(launcher.start.mock.invocationCallOrder[0]).toBeLessThan(bridge.status.mock.invocationCallOrder[0]);
   });
 
+  it('resume wakes a stopped container and sends no prompt', async () => {
+    const { service, bridge, launcher } = setup({ launcher: notRunning });
+    await service.resume(ID);
+    expect(launcher.start).toHaveBeenCalledWith(ID);
+    expect(bridge.prompt).not.toHaveBeenCalled();
+  });
+
   it('prompt does not wake beyond the cap', async () => {
     const { service, launcher } = setup({ launcher: { ...notRunning, countRunning: jest.fn(async () => 2) } });
     await expect(service.prompt(ID, 'x')).rejects.toBeInstanceOf(ConflictException);

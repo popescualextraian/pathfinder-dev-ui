@@ -61,9 +61,10 @@ export function useTaskActions(id: string, onTask?: (task: Task) => void, sessio
   const addSession = useAction(
     useCallback((body: AddSessionRequest) => report(api.addSession(id, body)), [id, report]),
   );
+  const resume = useAction(useCallback(() => report(api.resume(id)), [id, report]));
   const close = useAction(useCallback(() => report(api.close(id)), [id, report]));
   const remove = useAction(useCallback(() => api.deleteTask(id), [id]));
-  return { prompt, answer, cancel, addSession, close, remove };
+  return { prompt, answer, cancel, addSession, resume, close, remove };
 }
 
 export type { Task };

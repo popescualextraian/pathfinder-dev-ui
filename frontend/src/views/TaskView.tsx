@@ -85,7 +85,7 @@ function TaskDetail({ task, onDeleted, onTask, session, onSelectSession, workflo
   const selected = resolveSession(session, sessions);
   const done = task.closed || task.state === 'stopped';
   const closed = task.closed;
-  const headerError = actions.close.error ?? actions.remove.error;
+  const headerError = actions.resume.error ?? actions.close.error ?? actions.remove.error;
   const select = (name: string) => onSelectSession?.(name === MAIN_SESSION ? null : name);
 
   const remove = async () => {
@@ -100,6 +100,11 @@ function TaskDetail({ task, onDeleted, onTask, session, onSelectSession, workflo
         {task.scheduleId && <ScheduleChip id={task.scheduleId} title={task.scheduleTitle} testId="task-schedule" />}
         <StatePill state={task.state} section={task.section} label={closed ? 'closed' : undefined} />
         <div className={styles.actions}>
+          {task.state === 'suspended' && !closed && (
+            <Button disabled={actions.resume.pending} onClick={() => void actions.resume.run()}>
+              Start container
+            </Button>
+          )}
           {task.section !== 'working' && !closed && (
             <Button disabled={actions.close.pending} onClick={() => void actions.close.run()}>
               Close task

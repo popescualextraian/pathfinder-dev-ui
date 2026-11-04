@@ -179,6 +179,13 @@ export class TasksService {
     return this.observe(record, await (session === undefined ? client.prompt(text) : client.prompt(text, session)));
   }
 
+  // Starts the container of a suspended task without sending anything; same refusals as prompt.
+  async resume(id: string): Promise<TaskView> {
+    const record = await this.wake(id);
+    this.updates.markActed(id);
+    return this.observe(record, await this.bridgeFor(record).status());
+  }
+
   // A new session in the task; wakes the task like prompt does.
   async addSession(id: string, input: AddSessionInput): Promise<TaskView> {
     const record = await this.wake(id);

@@ -75,6 +75,12 @@ export class TasksController {
     return this.tasks.prompt(id, body.text, body.session ?? undefined);
   }
 
+  @Post(':id/resume')
+  @HttpCode(202)
+  resume(@Param('id') id: string): Promise<TaskView> {
+    return this.tasks.resume(id);
+  }
+
   @Post(':id/answer')
   @HttpCode(202)
   answer(@Param('id') id: string, @Body() body: AnswerDto): Promise<TaskView> {
