@@ -47,8 +47,8 @@ describe('task apps REST API (e2e)', () => {
     const res = await call('get', `/api/tasks/${id}/apps`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual([
-      { ...bridge.apps[0], link: 'http://localhost:49153/ui' },
-      { ...bridge.apps[1], link: null },
+      { ...bridge.apps[0], link: 'http://localhost:49153/ui', links: ['http://localhost:49153/ui'] },
+      { ...bridge.apps[1], link: null, links: [] },
     ]);
   });
 
@@ -63,7 +63,7 @@ describe('task apps REST API (e2e)', () => {
     const id = await startTask();
     const stopped = await call('post', `/api/tasks/${id}/apps/web/stop`);
     expect(stopped.status).toBe(202);
-    expect(stopped.body).toMatchObject({ name: 'web', state: 'stopped', link: 'http://localhost:49153/ui' });
+    expect(stopped.body).toMatchObject({ name: 'web', state: 'stopped', link: 'http://localhost:49153/ui', links: ['http://localhost:49153/ui'] });
     const started = await call('post', `/api/tasks/${id}/apps/web/start`);
     expect(started.status).toBe(202);
     expect(started.body.state).toBe('running');

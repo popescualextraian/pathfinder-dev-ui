@@ -76,11 +76,11 @@ export function AppsSection({ taskId, taskState, appNames = [] }: Props) {
             <div className={styles.row}>
               <span className={styles.name}>{app.name}</span>
               <StatePill state="running" section={SECTION[app.state] ?? 'working'} label={app.state} />
-              {app.link && (
-                <a className={styles.link} href={app.link} target="_blank" rel="noopener noreferrer">
-                  {linkLabel(app.link)}
+              {app.links.map((link) => (
+                <a key={link} className={styles.link} href={link} target="_blank" rel="noopener noreferrer">
+                  Open {linkLabel(link)} ↗
                 </a>
-              )}
+              ))}
               {ended && typeof app.exit_code === 'number' && <span className={styles.note}>exit code {app.exit_code}</span>}
               <span className={styles.actions}>
                 <Button disabled={!!working} onClick={() => void toggleLogs(app.name)}>
