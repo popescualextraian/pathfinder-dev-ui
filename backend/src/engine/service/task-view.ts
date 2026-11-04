@@ -173,7 +173,7 @@ function sessionViews(record: TaskRecord, view: TaskView, live: Live): SessionVi
   const alive = ['starting', 'running', 'waiting', 'idle'].includes(view.state);
   const stateOf = (s: SessionRecord): string => {
     if (view.closed) return 'stopped';
-    return !alive && ['starting', 'running', 'waiting'].includes(s.state) ? view.state : s.state;
+    return !alive && ['starting', 'running', 'waiting', 'idle'].includes(s.state) ? view.state : s.state;
   };
   const from = (s: SessionRecord): SessionView => {
     const v: SessionView = { name: s.name, state: stateOf(s), createdAt: s.createdAt, questions: count(s.name) };

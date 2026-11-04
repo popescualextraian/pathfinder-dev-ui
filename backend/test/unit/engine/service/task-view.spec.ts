@@ -146,7 +146,7 @@ describe('toView sessions', () => {
     expect(view.sessions.map((s) => s.state)).toEqual(['running', 'waiting']);
   });
 
-  it('a stopped task shows no running or waiting session', () => {
+  it('a stopped task shows no running, waiting or idle session', () => {
     const view = toView(record({
       lastState: 'stopped',
       sessions: [
@@ -155,6 +155,6 @@ describe('toView sessions', () => {
         { name: 'old', state: 'idle', createdAt: '2026-01-01T00:06:00.000Z' },
       ],
     }));
-    expect(view.sessions.map((s) => s.state)).toEqual(['stopped', 'stopped', 'idle']);
+    expect(view.sessions.map((s) => s.state)).toEqual(['stopped', 'stopped', 'stopped']);
   });
 });

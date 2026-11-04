@@ -140,9 +140,16 @@ export class TasksService {
   }
 
   async list(): Promise<TaskView[]> {
-    return (await this.records.list())
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
-      .map((record) => toView(record));
+    const records = (await this.records.list())
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+    // An idle task is not polled, so its record cannot know that its container was stopped: ask the launcher.
+    return Promise.all(records.map(async (record) => {
+      if (record.closed || record.lastState !== 'idle') return toView(record);
+      const inspection = await this.launcher.inspect(record.id).catch(() => undefined);
+      return inspection?.exists && !inspection.running
+        ? toView(record, { state: 'suspended', reason: 'container is not running' })
+        : toView(record);
+    }));
   }
 
   // A scheduled run recorded as live whose container (or bridge process) no longer runs has ended: its end is
