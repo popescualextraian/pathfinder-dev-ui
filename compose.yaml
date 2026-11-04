@@ -94,6 +94,8 @@ services:
       ARCHITECTURE_ENABLED: ${ARCHITECTURE_ENABLED:-}
       ARCHITECTURE_DATA_DIR: /data/architecture
       ARCHITECTURE_FETCH_SECONDS: ${ARCHITECTURE_FETCH_SECONDS:-}
+      # Variables passed into every task container (optional): TASK_ENV_FILE_HOST is the host path of a NAME=value file.
+      TASK_ENV_FILE: ${TASK_ENV_FILE_HOST:+/etc/pathfinder/task.env}
     volumes:
       - docker-filter:/run/docker-filter
       - engine-data:/data
@@ -102,6 +104,8 @@ services:
       # Workflow definitions, writable: the editor saves into them (the ui runs as uid 1000, the host folder must be writable by it;
       # otherwise the editor is read-only). Without WORKFLOWS_DIR_HOST the example is mounted and workflows stay off.
       - ${WORKFLOWS_DIR_HOST:-./workflows.example}:/etc/pathfinder/workflows
+      # Read-only task variables file; without TASK_ENV_FILE_HOST an empty file is mounted and nothing is passed.
+      - ${TASK_ENV_FILE_HOST:-./tools/no-task.env}:/etc/pathfinder/task.env:ro
     depends_on:
       docker-filter:
         condition: service_healthy

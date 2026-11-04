@@ -85,6 +85,8 @@ UI_PORT=$port
 TASK_NETWORK=agentic-$name
 TASK_NETWORK_EXTERNAL=true
 ARCHITECTURE_ENABLED=0
+# The variables of this file also go into every task container (the agents see them). Another file or empty: no pass-through.
+TASK_ENV_FILE_HOST=$file
 # Tokens: fill in with an editor, not in a chat.
 # Claude Code login of the agent (claude setup-token)
 CLAUDE_CODE_OAUTH_TOKEN=

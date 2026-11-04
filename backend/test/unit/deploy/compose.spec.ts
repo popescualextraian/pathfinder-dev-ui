@@ -33,7 +33,9 @@ describe('compose.yaml', () => {
     const vol = (target: string) => (ui.volumes ?? []).map(String).find((v) => v.includes(`:${target}`));
     expect(vol('/etc/pathfinder/workflows')).toMatch(/^\$\{WORKFLOWS_DIR_HOST:-\.\/workflows\.example\}:\/etc\/pathfinder\/workflows$/);
     expect(vol('/etc/pathfinder/backlog.yaml')).toMatch(/:ro$/);
-    expect((ui.volumes ?? []).filter((v) => String(v).includes('/etc/pathfinder'))).toHaveLength(2);
+    expect(vol('/etc/pathfinder/task.env')).toBe('${TASK_ENV_FILE_HOST:-./tools/no-task.env}:/etc/pathfinder/task.env:ro');
+    expect(ui.environment?.TASK_ENV_FILE).toBe('${TASK_ENV_FILE_HOST:+/etc/pathfinder/task.env}');
+    expect((ui.volumes ?? []).filter((v) => String(v).includes('/etc/pathfinder'))).toHaveLength(3);
   });
 
   it('passes the architecture settings, its data in the data volume', () => {

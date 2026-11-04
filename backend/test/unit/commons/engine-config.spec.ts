@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { EngineConfigError, loadEngineConfig } from '../../../src/commons/engine-config';
 
 const TOKEN = 'made-up-oauth-token-123';
@@ -25,6 +28,26 @@ function errorOf(env: NodeJS.ProcessEnv): EngineConfigError {
   }
   throw new Error('expected loadEngineConfig to throw');
 }
+
+describe('TASK_ENV_FILE', () => {
+  const write = (text: string): string => {
+    const file = join(mkdtempSync(join(tmpdir(), 'cfg-')), 'task.env');
+    writeFileSync(file, text);
+    return file;
+  };
+  it('is optional, and kept as the path when valid', () => {
+    expect(loadEngineConfig(validEnv()).taskEnvFile).toBeUndefined();
+    const file = write('JIRA_TOKEN=made-up\n');
+    expect(loadEngineConfig({ ...validEnv(), TASK_ENV_FILE: file }).taskEnvFile).toBe(file);
+  });
+  it('is refused when relative, unreadable or setting a variable the engine manages, naming no value', () => {
+    expect(errorOf({ ...validEnv(), TASK_ENV_FILE: 'rel.env' }).problems).toContain('TASK_ENV_FILE must be an absolute path');
+    expect(errorOf({ ...validEnv(), TASK_ENV_FILE: '/nonexistent/x.env' }).message).toContain('cannot be used');
+    const bad = errorOf({ ...validEnv(), TASK_ENV_FILE: write('AGENTIC_TASK_TOKEN=made-up-secret\n') });
+    expect(bad.problems).toEqual(['TASK_ENV_FILE must not set AGENTIC_TASK_TOKEN; the engine manages it']);
+    expect(bad.message).not.toContain('made-up-secret');
+  });
+});
 
 describe('loadEngineConfig', () => {
   it('reads a valid config and applies defaults', () => {

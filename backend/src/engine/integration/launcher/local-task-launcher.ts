@@ -8,10 +8,11 @@ import { EngineConfig } from '../../../commons/engine-config';
 import { LEDGER_MAX_BYTES, TASK_FILE_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
 import { TaskFileName, assertTaskFileName, assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from '../../../commons/git-credential-env';
+import { mergeTaskEnv, readTaskEnvFile } from '../../../commons/task-env-file';
 
 type LauncherConfig = Pick<
   EngineConfig,
-  'dataDir' | 'project' | 'localAgent' | 'claudeCodeOauthToken' | 'ghToken' | 'gitName' | 'gitEmail'
+  'dataDir' | 'project' | 'localAgent' | 'taskEnvFile' | 'claudeCodeOauthToken' | 'ghToken' | 'gitName' | 'gitEmail'
 >;
 
 const FAKE_AGENT_RELATIVE = join('tools', 'fake-agent', 'fake-agent.mjs');
@@ -47,7 +48,12 @@ export interface BridgeEnvInput {
 // (the task and agent tokens are the bridge's own, not credentials of anything else). Claude:
 // the OAuth token, and for a URL repository the push token with the git credential helper
 // settings and the commit identity, as in a Docker task.
-export function bridgeEnv({ config, spec, taskDir, workDir, port, path, fakeAgent }: BridgeEnvInput): Record<string, string> {
+export function bridgeEnv(input: BridgeEnvInput): Record<string, string> {
+  const env = engineBridgeEnv(input);
+  return input.config.taskEnvFile ? mergeTaskEnv(env, readTaskEnvFile(input.config.taskEnvFile)) : env;
+}
+
+function engineBridgeEnv({ config, spec, taskDir, workDir, port, path, fakeAgent }: BridgeEnvInput): Record<string, string> {
   const env: Record<string, string> = {
     ...(path ? { PATH: path } : {}),
     HOME: taskDir,

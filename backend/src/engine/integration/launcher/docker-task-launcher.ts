@@ -4,6 +4,7 @@ import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../commons/engine-config';
 import { TaskFileName, assertTaskFileName, assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from '../../../commons/git-credential-env';
+import { mergeTaskEnv, readTaskEnvFile } from '../../../commons/task-env-file';
 import {
   AppPorts,
   LEDGER_MAX_BYTES,
@@ -53,7 +54,7 @@ function parseAppsLabel(label: string): Record<string, number[]> | undefined {
 
 type LauncherConfig = Pick<
   EngineConfig,
-  'image' | 'dockerNetwork' | 'project' | 'claudeCodeOauthToken' | 'ghToken' | 'gitName' | 'gitEmail' | 'taskExtraEnv' | 'taskExtraBinds'
+  'image' | 'dockerNetwork' | 'project' | 'claudeCodeOauthToken' | 'ghToken' | 'gitName' | 'gitEmail' | 'taskEnvFile' | 'taskExtraEnv' | 'taskExtraBinds'
 >;
 
 function hasStatus(error: unknown, ...codes: number[]): boolean {
@@ -334,8 +335,8 @@ export class DockerTaskLauncher implements TaskLauncher {
       GIT_COMMITTER_NAME: this.config.gitName,
       GIT_COMMITTER_EMAIL: this.config.gitEmail,
       ...gitCredentialEnv(spec.repoUrl),
-      ...this.config.taskExtraEnv,
     };
-    return Object.entries(env).map(([key, value]) => `${key}=${value}`);
+    const merged = this.config.taskEnvFile ? mergeTaskEnv(env, readTaskEnvFile(this.config.taskEnvFile)) : env;
+    return Object.entries({ ...merged, ...this.config.taskExtraEnv }).map(([key, value]) => `${key}=${value}`);
   }
 }

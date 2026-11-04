@@ -1,5 +1,8 @@
 import Docker from 'dockerode';
 import { BadRequestException, Logger } from '@nestjs/common';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../../../src/commons/engine-config';
 import { DockerTaskLauncher } from '../../../../../src/engine/integration/launcher/docker-task-launcher';
@@ -125,6 +128,20 @@ describe('DockerTaskLauncher.launch', () => {
       GIT_COMMITTER_EMAIL: 'made-up-bot@example.invalid',
       ...gitCredentialEnv('https://github.com/o/r.git'),
     });
+  });
+
+  it('adds the variables of TASK_ENV_FILE, which win over the config but not over the engine\'s AGENTIC_* ones', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'task-env-'));
+    const file = join(dir, 'task.env');
+    writeFileSync(file, 'JIRA_TOKEN=made-up-jira\nGH_TOKEN=made-up-file-gh\nAGENTIC_TASK_ID=other\n');
+    try {
+      const { launcher, docker } = setup({ taskEnvFile: file });
+      await launcher.launch(spec);
+      const env = envOf(docker.createContainer.mock.calls[0][0]);
+      expect(env).toMatchObject({ JIRA_TOKEN: 'made-up-jira', GH_TOKEN: 'made-up-file-gh', AGENTIC_TASK_ID: 'T-20261016-ab12' });
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
   });
 
   it('sets the git credential config for the host of the task repository, with the token only by reference', async () => {

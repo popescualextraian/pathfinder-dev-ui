@@ -53,6 +53,7 @@ describe('tools/new-project.sh', () => {
     expect(text).toContain('TASK_NETWORK=agentic-drp\n');
     expect(text).toContain('TASK_NETWORK_EXTERNAL=true\n');
     expect(text).toContain('ARCHITECTURE_ENABLED=0\n');
+    expect(text).toMatch(/^TASK_ENV_FILE_HOST=\/.*\/drp\.env$/m);
   });
 
   it('takes the GitLab project of the backlog from the repository without -agentic, or from the fifth argument', () => {

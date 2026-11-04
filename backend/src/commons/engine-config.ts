@@ -1,5 +1,6 @@
 import { isAbsolute } from 'node:path';
 import { repoNameOf } from './repo-name';
+import { readTaskEnvFile } from './task-env-file';
 
 // Injection token of the validated engine configuration.
 export const ENGINE_CONFIG = Symbol('ENGINE_CONFIG');
@@ -32,6 +33,8 @@ export interface EngineConfig {
   gitName: string;
   gitEmail: string;
   // Test hooks: extra environment variables and binds for task containers.
+  // Absolute path of a file of NAME=value lines passed into every task container (see task-env-file.ts).
+  taskEnvFile?: string;
   taskExtraEnv: Record<string, string>;
   taskExtraBinds: string[];
 }
@@ -172,6 +175,19 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
     if (!ENV_KEY.test(key)) problems.push('ENGINE_TASK_EXTRA_ENV has a key that is not a valid variable name');
     else if (MANAGED_ENV.has(key) || MANAGED_ENV_PATTERN.test(key)) problems.push(`ENGINE_TASK_EXTRA_ENV must not set ${key}; the engine manages it`);
   }
+  const taskEnvFile = value('TASK_ENV_FILE');
+  if (taskEnvFile !== undefined) {
+    if (!isAbsolute(taskEnvFile)) problems.push('TASK_ENV_FILE must be an absolute path');
+    else {
+      try {
+        for (const key of Object.keys(readTaskEnvFile(taskEnvFile))) {
+          if (key.startsWith('AGENTIC_') && MANAGED_ENV.has(key)) problems.push(`TASK_ENV_FILE must not set ${key}; the engine manages it`);
+        }
+      } catch (error) {
+        problems.push((error as Error).message);
+      }
+    }
+  }
   const taskExtraBinds = parseJson('ENGINE_TASK_EXTRA_BINDS', value('ENGINE_TASK_EXTRA_BINDS'), [], problems, (parsed) =>
     Array.isArray(parsed) && parsed.every((v) => typeof v === 'string' && BIND.test(v))
       ? (parsed as string[])
@@ -179,7 +195,7 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv = process.env): EngineCo
   );
 
   if (problems.length > 0) throw new EngineConfigError(problems);
-  return { launcher, localAgent, image, dockerNetwork, dataDir, repoUrl, allowedRepoHosts, repositories, project, maxRunning, pollSeconds, claudeCodeOauthToken, ghToken, gitName, gitEmail, taskExtraEnv, taskExtraBinds };
+  return { launcher, localAgent, image, dockerNetwork, dataDir, repoUrl, allowedRepoHosts, repositories, project, maxRunning, pollSeconds, claudeCodeOauthToken, ghToken, gitName, gitEmail, ...(taskEnvFile ? { taskEnvFile } : {}), taskExtraEnv, taskExtraBinds };
 }
 
 const SHAPES: Record<string, string> = {
