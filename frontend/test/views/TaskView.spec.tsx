@@ -230,6 +230,17 @@ describe('TaskView body', () => {
   });
 });
 
+describe('FactsPanel target', () => {
+  it('names the target repository of a multi-repository task, and shows no row for a single one', () => {
+    const { unmount } = render(<FactsPanel task={idle({ target: 'webapp' })} />);
+    expect(screen.getByText('Target')).toBeTruthy();
+    expect(screen.getByText('webapp')).toBeTruthy();
+    unmount();
+    render(<FactsPanel task={idle()} />);
+    expect(screen.queryByText('Target')).toBeNull();
+  });
+});
+
 describe('FactsPanel', () => {
   it('lists the facts', () => {
     render(<FactsPanel task={idle({ model: 'opus' })} />);

@@ -610,3 +610,51 @@ describe('DockerTaskLauncher app ports', () => {
     warn.mockRestore();
   });
 });
+
+describe('DockerTaskLauncher multi-repository projects', () => {
+  const labels = (over: Record<string, string> = {}) => ({ 'agentic.layout': 'multi', 'agentic.target': 'webapp', 'agentic.workspaces': 'webapp,api', ...over });
+
+  it('sets AGENTIC_LAYOUT, AGENTIC_WORK and AGENTIC_TARGET for a task with a target, and none for a single one', async () => {
+    const { launcher, docker } = setup();
+    await launcher.launch({ ...spec, target: 'api' });
+    expect(envOf(docker.createContainer.mock.calls[0][0])).toMatchObject({
+      AGENTIC_LAYOUT: 'multi', AGENTIC_WORK: '/work/api', AGENTIC_TARGET: 'api', AGENTIC_REPO_URL: spec.repoUrl,
+    });
+    await launcher.launch(spec);
+    const single = envOf(docker.createContainer.mock.calls[1][0]);
+    for (const key of ['AGENTIC_LAYOUT', 'AGENTIC_WORK', 'AGENTIC_TARGET']) expect(single).not.toHaveProperty(key);
+  });
+
+  it('refuses a target that is not a plain folder name before touching docker', async () => {
+    const { launcher, docker } = setup();
+    await expect(launcher.launch({ ...spec, target: '../etc' })).rejects.toThrow(BadRequestException);
+    expect(docker.createVolume).not.toHaveBeenCalled();
+  });
+
+  it('reads files below the target folder when given one, and below the task root otherwise', async () => {
+    const { launcher, container } = setup();
+    container.getArchive.mockImplementation(async () => Readable.from([Buffer.alloc(512)]));
+    await launcher.hasFiles('T-1', ['plans/7.md'], 'webapp');
+    expect(container.getArchive).toHaveBeenLastCalledWith({ path: '/work/.worktrees/T-1/webapp/plans/7.md' });
+    await launcher.hasFiles('T-1', ['plans/7.md']);
+    expect(container.getArchive).toHaveBeenLastCalledWith({ path: '/work/.worktrees/T-1/plans/7.md' });
+    container.getArchive.mockRejectedValue(dockerError(404));
+    await launcher.readFile('T-1', 'a.md', 10, 'webapp');
+    expect(container.getArchive).toHaveBeenLastCalledWith({ path: '/work/.worktrees/T-1/webapp/a.md' });
+  });
+
+  it('project(): single without the labels, multi with them', async () => {
+    const { launcher, image } = setup();
+    await expect(launcher.project()).resolves.toEqual({ layout: 'single', workspaces: [] });
+    image.inspect.mockResolvedValue({ Config: { Labels: labels() } });
+    await expect(launcher.project()).resolves.toEqual({ layout: 'multi', target: 'webapp', workspaces: ['webapp', 'api'] });
+  });
+
+  it('project(): refuses labels that name no valid target, instead of running in the root', async () => {
+    const { launcher, image } = setup();
+    for (const bad of [{ 'agentic.target': 'other' }, { 'agentic.target': '' }, { 'agentic.workspaces': 'webapp,../x' }]) {
+      image.inspect.mockResolvedValue({ Config: { Labels: labels(bad) } });
+      await expect(launcher.project()).rejects.toThrow(/agentic\.(layout|target|workspaces)/);
+    }
+  });
+});

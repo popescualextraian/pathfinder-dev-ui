@@ -60,6 +60,7 @@ export function fakeLauncher(over: Partial<Record<keyof TaskLauncher, unknown>> 
     remove: jest.fn(async () => undefined),
     inspect: jest.fn(async () => ({ exists: true, running: true, bridgeUrl: 'http://bridge:8765' })),
     countRunning: jest.fn(async () => 0),
+    project: jest.fn(async () => ({ layout: 'single', workspaces: [] })),
     hasFiles: jest.fn(async (): Promise<Record<string, boolean>> => ({})),
     readFile: jest.fn(async (): Promise<string | null> => null),
     readLedger: jest.fn(async (): Promise<string | undefined> => undefined),

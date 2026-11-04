@@ -2,7 +2,7 @@ import { Logger } from '@nestjs/common';
 import Docker from 'dockerode';
 import { Readable } from 'node:stream';
 import { EngineConfig } from '../../../commons/engine-config';
-import { TaskFileName, assertTaskFileName, assertWorktreePaths } from '../../service/worktree-paths';
+import { TARGET_NAME, TaskFileName, assertTargetName, assertTaskFileName, assertWorktreePaths, worktreeDir } from '../../service/worktree-paths';
 import { gitCredentialEnv } from '../../../commons/git-credential-env';
 import { mergeTaskEnv, readTaskEnvFile } from '../../../commons/task-env-file';
 import {
@@ -11,6 +11,7 @@ import {
   TASK_FILE_MAX_BYTES,
   LaunchResult,
   LaunchSpec,
+  ProjectLayout,
   TASK_GRANTS,
   TaskInspection,
   TaskLauncher,
@@ -21,6 +22,10 @@ const BRIDGE_PORT = 8765;
 const STOP_TIMEOUT_SECONDS = 10;
 const KIND_LABEL = 'agentic-ui.kind=task';
 const APPS_LABEL = 'agentic.apps';
+// The image's project labels: agentic.layout (multi|single), agentic.target, agentic.workspaces (comma separated folder names).
+const LAYOUT_LABEL = 'agentic.layout';
+const TARGET_LABEL = 'agentic.target';
+const WORKSPACES_LABEL = 'agentic.workspaces';
 
 // The image's apps label: base64 of JSON {name: {ports: [int], url, autostart}}. Only names and ports are used here.
 // undefined when it is malformed (the caller logs once, without the value).
@@ -94,6 +99,7 @@ export class DockerTaskLauncher implements TaskLauncher {
   ) {}
 
   async launch(spec: LaunchSpec): Promise<LaunchResult> {
+    if (spec.target !== undefined) assertTargetName(spec.target);
     const name = this.name(spec.taskId);
     const apps = await this.apps();
     const containerPorts = [...new Set(Object.values(apps).flat())];
@@ -180,6 +186,23 @@ export class DockerTaskLauncher implements TaskLauncher {
     }
   }
 
+  async project(): Promise<ProjectLayout> {
+    let labels: Record<string, string> | undefined;
+    try {
+      labels = (await this.docker.getImage(this.config.image).inspect()).Config?.Labels;
+    } catch {
+      return { layout: 'single', workspaces: [] }; // apps() warns once about an image that cannot be read
+    }
+    if (labels?.[LAYOUT_LABEL] !== 'multi') return { layout: 'single', workspaces: [] };
+    const workspaces = (labels[WORKSPACES_LABEL] ?? '').split(',');
+    const target = labels[TARGET_LABEL] ?? '';
+    // A broken multi image must not start tasks in the root by accident.
+    if (!workspaces.every((w) => TARGET_NAME.test(w)) || !workspaces.includes(target)) {
+      throw new Error(`The image labels ${LAYOUT_LABEL}, ${TARGET_LABEL} and ${WORKSPACES_LABEL} do not name a valid target among valid workspaces`);
+    }
+    return { layout: 'multi', target, workspaces };
+  }
+
   async countRunning(): Promise<number> {
     const running = await this.docker.listContainers({ filters: { label: [KIND_LABEL], status: ['running'] } });
     return running.length;
@@ -204,13 +227,14 @@ export class DockerTaskLauncher implements TaskLauncher {
 
   // The agent works in the task's own worktree, which the bridge (AGENTIC_WORKTREE=1) makes at /work/.worktrees/<task id>
   // (the image's task/worktree.sh); /work is only the clone. A 404 from the archive API means the path is absent.
-  async hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>> {
+  async hasFiles(taskId: string, paths: string[], target?: string): Promise<Record<string, boolean>> {
     assertWorktreePaths(paths);
+    if (target !== undefined) assertTargetName(target);
     const container = this.docker.getContainer(this.name(taskId));
     const result: Record<string, boolean> = {};
     for (const path of paths) {
       try {
-        const stream = (await container.getArchive({ path: `/work/.worktrees/${taskId}/${path}` })) as unknown as Readable;
+        const stream = (await container.getArchive({ path: `${worktreeDir(taskId, target)}/${path}` })) as unknown as Readable;
         stream.destroy();
         result[path] = true;
       } catch (error) {
@@ -221,11 +245,12 @@ export class DockerTaskLauncher implements TaskLauncher {
     return result;
   }
 
-  async readFile(taskId: string, path: string, maxBytes: number): Promise<string | null> {
+  async readFile(taskId: string, path: string, maxBytes: number, target?: string): Promise<string | null> {
     assertWorktreePaths([path]);
+    if (target !== undefined) assertTargetName(target);
     let file: Buffer | 'too-large';
     try {
-      const stream = (await this.docker.getContainer(this.name(taskId)).getArchive({ path: `/work/.worktrees/${taskId}/${path}` })) as unknown as Readable;
+      const stream = (await this.docker.getContainer(this.name(taskId)).getArchive({ path: `${worktreeDir(taskId, target)}/${path}` })) as unknown as Readable;
       file = await firstTarFile(stream, maxBytes);
     } catch (error) {
       if (hasStatus(error, 404)) return null;
@@ -326,6 +351,7 @@ export class DockerTaskLauncher implements TaskLauncher {
       AGENTIC_ALLOWED_ACTIONS: TASK_GRANTS,
       AGENTIC_WORKTREE: '1',
       AGENTIC_BRANCH: spec.branch,
+      ...(spec.target ? { AGENTIC_LAYOUT: 'multi', AGENTIC_WORK: `/work/${spec.target}`, AGENTIC_TARGET: spec.target } : {}),
       AGENTIC_BRIDGE_HOSTS: name,
       ...(spec.scheduled ? { AGENTIC_SCHEDULED: '1', AGENTIC_RUN_TIMEOUT: String(spec.scheduled.runTimeoutSeconds) } : {}),
       CLAUDE_CODE_OAUTH_TOKEN: this.config.claudeCodeOauthToken,

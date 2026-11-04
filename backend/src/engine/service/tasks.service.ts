@@ -99,14 +99,23 @@ export class TasksService {
     if (input.repoUrl !== undefined && input.repository !== undefined) {
       throw new BadRequestException('Give either repository or repoUrl, not both');
     }
+    const project = await this.launcher.project();
     let repoUrl = input.repoUrl;
-    if (input.repository !== undefined) {
+    let target: string | undefined;
+    if (project.layout === 'multi') {
+      // The repository of a task is the folder the agent works in; the project's own repository means its default one.
+      if (input.repoUrl !== undefined) throw new BadRequestException('A multi-repository project starts at its root: give a repository (the target), not a repoUrl');
+      const named = input.repository === undefined || input.repository === this.config.repositories.find((r) => r.default)?.name ? project.target : input.repository;
+      if (named === undefined || !project.workspaces.includes(named)) throw new BadRequestException(`Unknown repository ${input.repository}; the project has ${project.workspaces.join(', ')}`);
+      target = named;
+      repoUrl = this.config.repoUrl;
+    } else if (input.repository !== undefined) {
       repoUrl = this.config.repositories.find((r) => r.name === input.repository)?.url;
       if (repoUrl === undefined) throw new BadRequestException(`Unknown repository ${input.repository}`);
     } else if (repoUrl !== undefined) {
       this.checkRepoHost(repoUrl);
     }
-    const created = await this.exclusive(() => this.launchNew({ ...input, repoUrl }));
+    const created = await this.exclusive(() => this.launchNew({ ...input, repoUrl }, target));
     // If the bridge never answers we keep record and container (so the user can stop and remove
     // the task) and report 502; the task then shows up in the list as 'starting'.
     let status: BridgeStatus;
@@ -355,7 +364,7 @@ export class TasksService {
   }
 
   // Under the launch lock: cap check, record, container. Does not wait for the bridge.
-  private async launchNew(input: StartTaskInput): Promise<TaskRecord> {
+  private async launchNew(input: StartTaskInput, target?: string): Promise<TaskRecord> {
     if ((await this.launcher.countRunning()) >= this.config.maxRunning) {
       throw new ConflictException(`At most ${this.config.maxRunning} tasks can run at once`);
     }
@@ -366,11 +375,12 @@ export class TasksService {
     const now = new Date().toISOString();
     const branch = `agentic/${id}`;
     const repoUrl = input.repoUrl ?? this.config.repoUrl;
-    const repository = this.config.repositories.find((r) => r.url === repoUrl)?.name ?? repoNameOf(repoUrl);
+    const repository = target ?? this.config.repositories.find((r) => r.url === repoUrl)?.name ?? repoNameOf(repoUrl);
     const record: TaskRecord = {
       id, title: titleFrom(input.prompt, input.title), prompt: input.prompt, repository, repoUrl, branch, containerName: `agentic-ui-task-${id}`,
       taskToken, agentToken, createdAt: now, updatedAt: now, lastState: 'starting',
     };
+    if (target !== undefined) record.target = target;
     if (input.repoRef !== undefined) record.repoRef = input.repoRef;
     if (input.model !== undefined) record.model = input.model;
     if (input.kind !== undefined) record.kind = input.kind;
@@ -383,6 +393,7 @@ export class TasksService {
     try {
       const { bridgeUrl, appPorts } = await this.launcher.launch({
         taskId: id, taskToken, agentToken, prompt: input.prompt, repoUrl, repoRef: input.repoRef, model: input.model, branch,
+        ...(target ? { target } : {}),
         ...(record.scheduled ? { scheduled: record.scheduled } : {}),
       });
       const launched = await this.records.update(id, appPorts ? { bridgeUrl, appPorts } : { bridgeUrl });
@@ -514,14 +525,14 @@ export class TasksService {
   async hasFiles(id: string, paths: string[]): Promise<Record<string, boolean>> {
     assertWorktreePaths(paths);
     const record = await this.require(id);
-    return this.launcher.hasFiles(record.id, paths);
+    return this.launcher.hasFiles(record.id, paths, ...(record.target ? [record.target] : []));
   }
 
   // Text of one worktree file or null when missing; larger than maxBytes (default 64 KB) is an error. Works on a stopped task.
   async readFile(id: string, path: string, maxBytes: number = WORKTREE_FILE_MAX_BYTES): Promise<string | null> {
     assertWorktreePaths([path]);
     const record = await this.require(id);
-    return this.launcher.readFile(record.id, path, maxBytes);
+    return this.launcher.readFile(record.id, path, maxBytes, ...(record.target ? [record.target] : []));
   }
 
   // Text of result.md or state.json in the task's /task folder, or null when missing; works on a stopped task

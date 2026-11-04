@@ -31,6 +31,8 @@ Implements `TaskLauncher` and `BridgeClient`; the launcher only returns a bridge
 
 Git push credentials come from `GIT_CONFIG_*` env, never a token value.
 
+The Docker launcher reads the image labels `agentic.layout`/`agentic.target`/`agentic.workspaces` and, for a target, sets `AGENTIC_LAYOUT`/`AGENTIC_WORK`/`AGENTIC_TARGET` and reads files below `/work/.worktrees/<id>/<target>`. The local launcher is never multi and refuses a target.
+
 ## Pitfalls
 
 The local launcher has no isolation and is development only.
