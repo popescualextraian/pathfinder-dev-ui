@@ -69,8 +69,8 @@ describe('TaskView header', () => {
     view(makeTask({ state: 'suspended', section: 'in-review' }));
     fireEvent.click(screen.getByText('Start container'));
     await waitFor(() => expect(api.resume).toHaveBeenCalledWith('T-1'));
-    view(idle());
-    expect(screen.getAllByText('Start container')).toHaveLength(1);
+    view(makeTask({ state: 'stopped', section: 'done' }));
+    expect(screen.queryAllByText('Start container')).toHaveLength(1);
   });
   it('close: pending, error', async () => {
     m(api.close).mockRejectedValue(new ApiError(500, 'boom'));

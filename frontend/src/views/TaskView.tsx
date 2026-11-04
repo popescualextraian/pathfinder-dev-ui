@@ -100,7 +100,7 @@ function TaskDetail({ task, onDeleted, onTask, session, onSelectSession, workflo
         {task.scheduleId && <ScheduleChip id={task.scheduleId} title={task.scheduleTitle} testId="task-schedule" />}
         <StatePill state={task.state} section={task.section} label={closed ? 'closed' : undefined} />
         <div className={styles.actions}>
-          {task.state === 'suspended' && !closed && (
+          {(task.state === 'suspended' || task.state === 'idle') && !closed && (
             <Button disabled={actions.resume.pending} onClick={() => void actions.resume.run()}>
               Start container
             </Button>
