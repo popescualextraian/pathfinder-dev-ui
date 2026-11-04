@@ -970,11 +970,16 @@ describe('TasksService multi-repository projects', () => {
     expect(specOf(launcher)).toMatchObject({ target: 'webapp', repoUrl: config.repoUrl });
   });
 
-  it('takes a workspace name as the target, and the root repository name as the default target', async () => {
+  it('takes a workspace name as the target', async () => {
     const { service, launcher } = setup({ records: [], launcher: multi });
     expect(await service.start({ prompt: 'p', repository: 'api' })).toMatchObject({ target: 'api', repository: 'api' });
     expect(specOf(launcher).target).toBe('api');
-    expect(await service.start({ prompt: 'p', repository: 'default' })).toMatchObject({ target: 'webapp' });
+  });
+
+  it('takes the root repository name as a task in the root itself: target ".", the root as its repository', async () => {
+    const { service, launcher } = setup({ records: [], launcher: multi });
+    expect(await service.start({ prompt: 'p', repository: 'default' })).toMatchObject({ target: '.', repository: 'default', repoUrl: config.repoUrl });
+    expect(specOf(launcher)).toMatchObject({ target: '.', repoUrl: config.repoUrl });
   });
 
   it('refuses an unknown target and a repoUrl (400)', async () => {

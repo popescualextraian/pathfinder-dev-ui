@@ -308,8 +308,10 @@ it. The Docker launcher reads the labels (a malformed set fails the start with a
 A task then starts at the project root (`ENGINE_REPO_URL`) with `AGENTIC_LAYOUT=multi`, `AGENTIC_WORK=/work/<target>` and
 `AGENTIC_TARGET=<target>`; the bridge makes `/work/.worktrees/<task id>/<repo>` for every repository on the task branch and
 the agent works in the target's. In the API the task's `repository` is the target: `POST /api/tasks` takes a workspace name
-as `repository` (absent, or the project's own repository, means the default target; `repoUrl` is refused) and the task
-carries `target`. File reads for workflows (`requires`, the generator's draft) are relative to the target's folder, as the
+as `repository` (absent means the default target; `repoUrl` is refused) and the task carries `target`. The project's own
+repository (the root, `ENGINE_REPO_URL`) as `repository` is a task in the root itself: `target` is `.`, the container gets
+`AGENTIC_WORK=/work/.` and `AGENTIC_TARGET=.`, and the agent works in the task root with every repository beside it (the
+task view shows the target as "project root"). File reads for workflows (`requires`, the generator's draft) are relative to the target's folder, as the
 agent sees it. `GET /apps` lists every app of the project whatever the target. A repository the bridge could not give a
 worktree shows as an `error` event in the full run. The pull requests are the agent's (one per changed repository).
 The local launcher never runs a multi project (its task folder cannot hold the repositories side by side) and refuses a target.

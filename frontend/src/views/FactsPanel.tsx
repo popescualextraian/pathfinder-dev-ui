@@ -8,7 +8,7 @@ export function FactsPanel({ task }: { task: Task | null }) {
   const rows: [string, string, boolean?][] = [
     ['State', task.closed ? `${task.state} (closed)` : task.state],
     ['Repository', task.repository],
-    ...(task.target ? [['Target', task.target] as [string, string]] : []),
+    ...(task.target ? [['Target', task.target === '.' ? 'project root' : task.target] as [string, string]] : []),
     ['Branch', task.branch, true],
     ['Task id', task.id, true],
     ['Model', task.model ?? 'default'],

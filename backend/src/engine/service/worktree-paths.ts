@@ -10,14 +10,18 @@ export function assertTaskFileName(name: string): asserts name is TaskFileName {
 
 // A repository folder of a multi project (/work/<name>): one plain path segment.
 export const TARGET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+// The target of a multi task in the project root itself: the agent works in the task root, beside every repository.
+export const ROOT_TARGET = '.';
 
 export function assertTargetName(target: string): void {
+  if (target === ROOT_TARGET) return;
   if (!TARGET_NAME.test(target) || target.includes('..')) throw new BadRequestException(`${JSON.stringify(target)} is not a repository folder name`);
 }
 
-// The folder the agent works in: the task's worktree, below it the target repository of a multi project.
+// The folder the agent works in: the task's worktree, below it the target repository of a multi project
+// (the task root itself for ROOT_TARGET).
 export function worktreeDir(taskId: string, target?: string): string {
-  return `/work/.worktrees/${taskId}${target === undefined ? '' : `/${target}`}`;
+  return `/work/.worktrees/${taskId}${target === undefined || target === ROOT_TARGET ? '' : `/${target}`}`;
 }
 
 // Paths into a task's worktree: relative, non-empty, no NUL, no `..` segment (either separator),

@@ -1,5 +1,5 @@
 import { BadGatewayException, BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { assertWorktreePaths } from './worktree-paths';
+import { ROOT_TARGET, assertWorktreePaths } from './worktree-paths';
 import { randomBytes, randomInt } from 'node:crypto';
 import { ENGINE_CONFIG, EngineConfig } from '../../commons/engine-config';
 import {
@@ -103,10 +103,12 @@ export class TasksService {
     let repoUrl = input.repoUrl;
     let target: string | undefined;
     if (project.layout === 'multi') {
-      // The repository of a task is the folder the agent works in; the project's own repository means its default one.
+      // The repository of a task is the folder the agent works in: absent means the default target, the project's
+      // own repository (the root) a task in the root itself (ROOT_TARGET), beside every repository.
       if (input.repoUrl !== undefined) throw new BadRequestException('A multi-repository project starts at its root: give a repository (the target), not a repoUrl');
-      const named = input.repository === undefined || input.repository === this.config.repositories.find((r) => r.default)?.name ? project.target : input.repository;
-      if (named === undefined || !project.workspaces.includes(named)) throw new BadRequestException(`Unknown repository ${input.repository}; the project has ${project.workspaces.join(', ')}`);
+      const named = input.repository === undefined ? project.target
+        : input.repository === this.config.repositories.find((r) => r.default)?.name ? ROOT_TARGET : input.repository;
+      if (named === undefined || (named !== ROOT_TARGET && !project.workspaces.includes(named))) throw new BadRequestException(`Unknown repository ${input.repository}; the project has ${project.workspaces.join(', ')}`);
       target = named;
       repoUrl = this.config.repoUrl;
     } else if (input.repository !== undefined) {
@@ -375,7 +377,7 @@ export class TasksService {
     const now = new Date().toISOString();
     const branch = `agentic/${id}`;
     const repoUrl = input.repoUrl ?? this.config.repoUrl;
-    const repository = target ?? this.config.repositories.find((r) => r.url === repoUrl)?.name ?? repoNameOf(repoUrl);
+    const repository = (target !== ROOT_TARGET ? target : undefined) ?? this.config.repositories.find((r) => r.url === repoUrl)?.name ?? repoNameOf(repoUrl);
     const record: TaskRecord = {
       id, title: titleFrom(input.prompt, input.title), prompt: input.prompt, repository, repoUrl, branch, containerName: `agentic-ui-task-${id}`,
       taskToken, agentToken, createdAt: now, updatedAt: now, lastState: 'starting',

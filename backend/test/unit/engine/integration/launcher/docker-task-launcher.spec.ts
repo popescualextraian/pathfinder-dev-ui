@@ -625,6 +625,15 @@ describe('DockerTaskLauncher multi-repository projects', () => {
     for (const key of ['AGENTIC_LAYOUT', 'AGENTIC_WORK', 'AGENTIC_TARGET']) expect(single).not.toHaveProperty(key);
   });
 
+  it('starts a task in the root itself (target ".") with AGENTIC_WORK /work/. and reads files from the task root', async () => {
+    const { launcher, docker, container } = setup();
+    await launcher.launch({ ...spec, target: '.' });
+    expect(envOf(docker.createContainer.mock.calls[0][0])).toMatchObject({ AGENTIC_LAYOUT: 'multi', AGENTIC_WORK: '/work/.', AGENTIC_TARGET: '.' });
+    container.getArchive.mockImplementation(async () => Readable.from([Buffer.alloc(512)]));
+    await launcher.hasFiles('T-1', ['plans/7.md'], '.');
+    expect(container.getArchive).toHaveBeenLastCalledWith({ path: '/work/.worktrees/T-1/plans/7.md' });
+  });
+
   it('refuses a target that is not a plain folder name before touching docker', async () => {
     const { launcher, docker } = setup();
     await expect(launcher.launch({ ...spec, target: '../etc' })).rejects.toThrow(BadRequestException);
@@ -652,7 +661,7 @@ describe('DockerTaskLauncher multi-repository projects', () => {
 
   it('project(): refuses labels that name no valid target, instead of running in the root', async () => {
     const { launcher, image } = setup();
-    for (const bad of [{ 'agentic.target': 'other' }, { 'agentic.target': '' }, { 'agentic.workspaces': 'webapp,../x' }]) {
+    for (const bad of [{ 'agentic.target': 'other' }, { 'agentic.target': '' }, { 'agentic.workspaces': 'webapp,../x' }] as Record<string, string>[]) {
       image.inspect.mockResolvedValue({ Config: { Labels: labels(bad) } });
       await expect(launcher.project()).rejects.toThrow(/agentic\.(layout|target|workspaces)/);
     }
