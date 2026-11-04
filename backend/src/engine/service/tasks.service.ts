@@ -19,9 +19,11 @@ import { hasSession, Live, MAIN_SESSION, mergeSessions, titleFrom, toView, TaskV
 export type { TaskView } from './task-view';
 export type { TaskKind } from '../repository/task-record.repository';
 
-// An app of a task as the API shows it; `link` is the host URL of the first port, null without a host port.
+// An app of a task as the API shows it; `link` is the host URL of the first port, null without a host port,
+// `links` the host URLs of every published port in port order (only the first carries the app's url path).
 export interface AppView extends BridgeApp {
   link: string | null;
+  links: string[];
 }
 
 export interface StartTaskInput {
@@ -540,21 +542,24 @@ export class TasksService {
 }
 
 function toAppView(record: TaskRecord, app: BridgeApp): AppView {
-  const view: AppView = { name: app.name, state: app.state, ports: app.ports, url: app.url, since: app.since, link: null };
+  const view: AppView = { name: app.name, state: app.state, ports: app.ports, url: app.url, since: app.since, link: null, links: [] };
   if (app.exit_code !== undefined) view.exit_code = app.exit_code;
   const ports = record.appPorts && Object.hasOwn(record.appPorts, app.name) ? record.appPorts[app.name] : undefined;
-  const first = app.ports.length ? String(app.ports[0]) : undefined;
-  const hostPort = ports && first !== undefined && Object.hasOwn(ports, first) ? ports[first] : undefined;
-  if (hostPort === undefined) return view;
   // The bridge's url is only a path: anything else (userinfo, another host, a protocol-relative url) falls back to "/".
-  const path = /^\/[^\s\\]*$/.test(app.url) && !app.url.startsWith('//') ? app.url : '/';
-  const origin = `http://localhost:${hostPort}`;
-  try {
-    const link = new URL(path, origin);
-    if (link.origin === origin) view.link = link.href;
-  } catch {
-    // no link
-  }
+  const appPath = /^\/[^\s\\]*$/.test(app.url) && !app.url.startsWith('//') ? app.url : '/';
+  app.ports.forEach((port, i) => {
+    const hostPort = ports && Object.hasOwn(ports, String(port)) ? ports[String(port)] : undefined;
+    if (hostPort === undefined) return;
+    const origin = `http://localhost:${hostPort}`;
+    try {
+      const link = new URL(i === 0 ? appPath : '/', origin);
+      if (link.origin !== origin) return;
+      view.links.push(link.href);
+      if (i === 0) view.link = link.href;
+    } catch {
+      // no link
+    }
+  });
   return view;
 }
 

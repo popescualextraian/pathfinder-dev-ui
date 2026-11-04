@@ -16,6 +16,7 @@ const app = (over: Partial<TaskApp> = {}): TaskApp => ({
   ports: [3000],
   url: '/',
   link: 'http://localhost:49153/',
+  links: ['http://localhost:49153/'],
   ...over,
 });
 
@@ -38,7 +39,7 @@ describe('AppsSection', () => {
     expect(await screen.findByText('web')).toBeTruthy();
     expect(screen.getByText('running')).toBeTruthy();
     const link = screen.getByRole('link') as HTMLAnchorElement;
-    expect(link.textContent).toBe('localhost:49153');
+    expect(link.textContent).toBe('Open localhost:49153 ↗');
     expect(link.getAttribute('href')).toBe('http://localhost:49153/');
     expect(link.target).toBe('_blank');
     expect(link.rel).toBe('noopener noreferrer');
@@ -49,7 +50,7 @@ describe('AppsSection', () => {
   });
 
   it('shows a stopped app with Start and no link text when there is no link', async () => {
-    m(api.listApps).mockResolvedValue([app({ state: 'stopped', link: null })]);
+    m(api.listApps).mockResolvedValue([app({ state: 'stopped', link: null, links: [] })]);
     render(<AppsSection taskId="T-1" taskState="running" />);
     expect(await screen.findByText('Start')).toBeTruthy();
     expect(screen.queryByText('Stop')).toBeNull();
@@ -65,7 +66,7 @@ describe('AppsSection', () => {
   });
 
   it('start is busy while it runs, then the app is updated', async () => {
-    m(api.listApps).mockResolvedValue([app({ state: 'stopped', link: null })]);
+    m(api.listApps).mockResolvedValue([app({ state: 'stopped', link: null, links: [] })]);
     let resolve!: (a: TaskApp) => void;
     m(api.startApp).mockReturnValue(new Promise((r) => (resolve = r)));
     render(<AppsSection taskId="T-1" taskState="running" />);
@@ -177,7 +178,7 @@ describe('AppsSection: preparing, exited, errors that stay, a suspended task', (
   });
 
   it('a failed action keeps its message through a refresh, until the next action', async () => {
-    m(api.listApps).mockResolvedValue([app({ state: 'stopped', link: null })]);
+    m(api.listApps).mockResolvedValue([app({ state: 'stopped', link: null, links: [] })]);
     m(api.startApp).mockRejectedValueOnce(new ApiError(502, 'agentic-app: prepare of web failed (exit 1)'));
     render(<AppsSection taskId="T-1" taskState="running" />);
     fireEvent.click(await screen.findByText('Start'));

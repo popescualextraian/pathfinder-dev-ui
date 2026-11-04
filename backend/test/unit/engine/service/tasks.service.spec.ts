@@ -822,7 +822,7 @@ describe('TasksService apps', () => {
 
   it('lists the apps with the link of the first port', async () => {
     const { service } = withApps();
-    expect(await service.apps(ID)).toEqual([{ ...web, link: 'http://localhost:49153/ui' }]);
+    expect(await service.apps(ID)).toEqual([{ ...web, link: 'http://localhost:49153/ui', links: ['http://localhost:49153/ui'] }]);
   });
 
   it('has no link without a recorded host port (a task from before the change)', async () => {
@@ -892,7 +892,17 @@ describe('TasksService apps: links and waking', () => {
       records: [record({ appPorts: { web: { '3000': 49153 } } })],
       bridge: { apps: jest.fn(async () => [{ ...base, url: '/', extra: 'x' }]) },
     });
-    expect(Object.keys((await service.apps(ID))[0]).sort()).toEqual(['link', 'name', 'ports', 'since', 'state', 'url']);
+    expect(Object.keys((await service.apps(ID))[0]).sort()).toEqual(['link', 'links', 'name', 'ports', 'since', 'state', 'url']);
+  });
+
+  it('lists a link for every published port, the path only on the first', async () => {
+    const { service } = setup({
+      records: [record({ appPorts: { web: { '3000': 49153, '4000': 49154 } } })],
+      bridge: { apps: jest.fn(async () => [{ ...base, ports: [3000, 4000, 5000], url: '/ui' }]) },
+    });
+    const [app] = await service.apps(ID);
+    expect(app.links).toEqual(['http://localhost:49153/ui', 'http://localhost:49154/']);
+    expect(app.link).toBe('http://localhost:49153/ui');
   });
 
   it('ignores inherited names in appPorts', async () => {

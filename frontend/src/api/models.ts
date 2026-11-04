@@ -113,6 +113,8 @@ export interface TaskApp {
   exit_code?: number | null;
   /** http://localhost:<hostPort><url>, null without a published port. */
   link: string | null;
+  /** The host URLs of every published port, in port order. */
+  links: string[];
 }
 
 export type BridgeEventType = 'state' | 'message' | 'tool' | 'plan' | 'question' | 'answer' | 'gate' | 'error' | 'app';

@@ -307,7 +307,7 @@ bridge in the container runs them. The UI only relays.
 
 | Route | Does | Success |
 |---|---|---|
-| `GET /api/tasks/:id/apps` | The apps: `{name, state, ports, url, since, exit_code?, link}`; `state` is `running`, `preparing`, `stopped`, `exited` or `failed`, `since` unix seconds or `null`; `link` is the host URL, `null` without a published port | 200 |
+| `GET /api/tasks/:id/apps` | The apps: `{name, state, ports, url, since, exit_code?, link, links}`; `state` is `running`, `preparing`, `stopped`, `exited` or `failed`, `since` unix seconds or `null`; `link` is the host URL of the first port, `null` without a published port; `links` the host URLs of all published ports | 200 |
 | `POST /api/tasks/:id/apps/:name/start` | Starts the app (wakes a suspended task first) | 202 app |
 | `POST /api/tasks/:id/apps/:name/stop` | Stops the app | 202 app |
 | `POST /api/tasks/:id/apps/:name/restart` | Restarts the app (wakes a suspended task first) | 202 app |
