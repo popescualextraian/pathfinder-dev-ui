@@ -79,6 +79,14 @@ describe('findFakeAgent', () => {
   });
 });
 
+describe('LocalTaskLauncher multi-repository projects', () => {
+  it('is never multi and refuses a launch with a target, saying why', async () => {
+    const l = new LocalTaskLauncher({ ...base, dataDir: join(tmpdir(), 'unused'), localAgent: 'fake' }, { agenticDir: NO_IMAGE });
+    await expect(l.project()).resolves.toEqual({ layout: 'single', workspaces: [] });
+    await expect(l.launch({ taskId: 'T-1', taskToken: 'a', agentToken: 'b', prompt: 'p', repoUrl: 'x', branch: 'b', target: 'webapp' })).rejects.toThrow(/does not run multi-repository projects/);
+  });
+});
+
 describe('LocalTaskLauncher', () => {
   let tmp: string;
   let origin: string;

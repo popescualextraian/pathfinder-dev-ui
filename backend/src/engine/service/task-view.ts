@@ -35,6 +35,7 @@ export interface TaskView {
   prompt: string;
   repository: string;
   repoUrl: string;
+  target?: string;
   repoRef?: string;
   model?: string;
   kind?: TaskKind;
@@ -150,6 +151,7 @@ export function toView(record: TaskRecord, live: Live = {}): TaskView {
   if (record.cost !== undefined) view.cost = record.cost;
   if (record.lastMessage !== undefined) view.lastMessage = record.lastMessage;
   if (record.lastMessageAt !== undefined) view.lastMessageAt = record.lastMessageAt;
+  if (record.target !== undefined) view.target = record.target;
   if (record.repoRef !== undefined) view.repoRef = record.repoRef;
   if (record.model !== undefined) view.model = record.model;
   if (record.kind !== undefined) view.kind = record.kind;

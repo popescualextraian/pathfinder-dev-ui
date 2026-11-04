@@ -300,6 +300,21 @@ title, facts, stop and close stay task-level. The task cards show `N sessions` w
 which session asks. The route is `#/tasks/<id>?session=<name>` (or `#/repo/<name>/task/<id>?session=<name>`);
 `main` is the default and an unknown name falls back to it.
 
+## Multi-repository projects
+
+An image whose labels say `agentic.layout=multi` (plus `agentic.target`, the default repository, and `agentic.workspaces`,
+the comma-separated repository folder names under `/work`) is a project with several repositories, as `agentic run` treats
+it. The Docker launcher reads the labels (a malformed set fails the start with a message instead of running in the root).
+A task then starts at the project root (`ENGINE_REPO_URL`) with `AGENTIC_LAYOUT=multi`, `AGENTIC_WORK=/work/<target>` and
+`AGENTIC_TARGET=<target>`; the bridge makes `/work/.worktrees/<task id>/<repo>` for every repository on the task branch and
+the agent works in the target's. In the API the task's `repository` is the target: `POST /api/tasks` takes a workspace name
+as `repository` (absent, or the project's own repository, means the default target; `repoUrl` is refused) and the task
+carries `target`. File reads for workflows (`requires`, the generator's draft) are relative to the target's folder, as the
+agent sees it. `GET /apps` lists every app of the project whatever the target. A repository the bridge could not give a
+worktree shows as an `error` event in the full run. The pull requests are the agent's (one per changed repository).
+The local launcher never runs a multi project (its task folder cannot hold the repositories side by side) and refuses a target.
+A project without the labels is single and behaves as before.
+
 ## Apps
 
 A task's container can run apps (a web app, a dev server) that you start from the task view. They are

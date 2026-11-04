@@ -1,4 +1,4 @@
-import { AppPorts, LaunchResult, LaunchSpec, TaskInspection, TASK_FILE_MAX_BYTES, TaskFileName, TaskLauncher, WorktreeFileTooLargeError } from '../../src/engine/service/task-launcher';
+import { AppPorts, ProjectLayout, LaunchResult, LaunchSpec, TaskInspection, TASK_FILE_MAX_BYTES, TaskFileName, TaskLauncher, WorktreeFileTooLargeError } from '../../src/engine/service/task-launcher';
 import { assertTaskFileName, assertWorktreePaths } from '../../src/engine/service/worktree-paths';
 
 // In-memory TaskLauncher: "containers" are map entries; every task's bridge is at `bridgeUrl`.
@@ -31,6 +31,11 @@ export class FakeLauncher implements TaskLauncher {
   async inspect(taskId: string): Promise<TaskInspection> {
     const c = this.containers.get(taskId);
     return { exists: c !== undefined, running: c?.running ?? false, bridgeUrl: this.bridgeUrl };
+  }
+  // The project the "image" is for; tests set a multi one.
+  layout: ProjectLayout = { layout: 'single', workspaces: [] };
+  async project(): Promise<ProjectLayout> {
+    return this.layout;
   }
   async countRunning(): Promise<number> {
     return [...this.containers.values()].filter((c) => c.running).length;

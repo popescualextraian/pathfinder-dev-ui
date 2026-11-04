@@ -41,6 +41,8 @@ export interface TaskRecord {
   // Name of the repository; absent in older records: derived from repoUrl.
   repository?: string;
   repoUrl: string;
+  // Multi project: the repository folder the agent works in (repoUrl is then the project root); absent in a single one.
+  target?: string;
   repoRef?: string;
   model?: string;
   // What the task is for; absent for ordinary tasks.

@@ -33,6 +33,8 @@ Lifecycle in `tasks.service.ts`, polling in `task-poller.ts`, end reasons in `ta
 
 `ENGINE_MAX_RUNNING` caps running containers (409); a task stopped via `/stop` is final; records never leak tokens.
 
+Multi-repository projects: `TaskLauncher.project()` decides whether `repository` is a target; a single project sends no target anywhere (pinned by tests).
+
 ## Pitfalls
 
 Do not import launcher classes here; `TasksServiceModule` is the only wiring point.

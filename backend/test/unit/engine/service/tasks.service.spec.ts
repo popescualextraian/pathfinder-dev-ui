@@ -957,3 +957,48 @@ describe('TasksService apps: links and waking', () => {
     expect(launcher.start).not.toHaveBeenCalled();
   });
 });
+
+describe('TasksService multi-repository projects', () => {
+  const multi = { project: jest.fn(async () => ({ layout: 'multi', target: 'webapp', workspaces: ['webapp', 'api'] })) };
+  type Spec = { repoUrl: string; target?: string };
+  const specOf = (launcher: { launch: jest.Mock }) => (launcher.launch.mock.calls[0] as unknown as [Spec])[0];
+
+  it('starts in the root repository with the default target, which names the repository of the task', async () => {
+    const { service, launcher } = setup({ records: [], launcher: multi });
+    const view = await service.start({ prompt: 'p' });
+    expect(view).toMatchObject({ target: 'webapp', repository: 'webapp', repoUrl: config.repoUrl });
+    expect(specOf(launcher)).toMatchObject({ target: 'webapp', repoUrl: config.repoUrl });
+  });
+
+  it('takes a workspace name as the target, and the root repository name as the default target', async () => {
+    const { service, launcher } = setup({ records: [], launcher: multi });
+    expect(await service.start({ prompt: 'p', repository: 'api' })).toMatchObject({ target: 'api', repository: 'api' });
+    expect(specOf(launcher).target).toBe('api');
+    expect(await service.start({ prompt: 'p', repository: 'default' })).toMatchObject({ target: 'webapp' });
+  });
+
+  it('refuses an unknown target and a repoUrl (400)', async () => {
+    const { service, launcher } = setup({ records: [], launcher: multi });
+    await expect(service.start({ prompt: 'p', repository: 'nope' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.start({ prompt: 'p', repoUrl: 'https://github.com/x/y' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(launcher.launch).not.toHaveBeenCalled();
+  });
+
+  it('reads files below the target of the task; a single task passes no target', async () => {
+    const hasFiles = jest.fn(async () => ({}));
+    const { service } = setup({ records: [record({ target: 'webapp' }), record({ id: 'T-20260101-zzzz' })], launcher: { hasFiles } });
+    await service.hasFiles(ID, ['a']);
+    expect(hasFiles).toHaveBeenLastCalledWith(ID, ['a'], 'webapp');
+    await service.hasFiles('T-20260101-zzzz', ['a']);
+    expect(hasFiles).toHaveBeenLastCalledWith('T-20260101-zzzz', ['a']);
+  });
+
+  it('keeps a single project as before: no target in the spec, the record or the view', async () => {
+    const { service, launcher, records } = setup({ records: [] });
+    const view = await service.start({ prompt: 'p', repository: 'docs' });
+    expect(view).not.toHaveProperty('target');
+    expect(records.map.get(view.id)).not.toHaveProperty('target');
+    expect(specOf(launcher)).not.toHaveProperty('target');
+    expect(specOf(launcher).repoUrl).toBe('https://gitlab.com/acme/docs.git');
+  });
+});

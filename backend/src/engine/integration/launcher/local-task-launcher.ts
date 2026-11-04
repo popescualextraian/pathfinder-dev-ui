@@ -5,7 +5,7 @@ import { lstat, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { EngineConfig } from '../../../commons/engine-config';
-import { LEDGER_MAX_BYTES, TASK_FILE_MAX_BYTES, LaunchResult, LaunchSpec, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
+import { LEDGER_MAX_BYTES, TASK_FILE_MAX_BYTES, LaunchResult, LaunchSpec, ProjectLayout, TASK_GRANTS, TaskInspection, TaskLauncher, WorktreeFileTooLargeError } from '../../service/task-launcher';
 import { TaskFileName, assertTaskFileName, assertWorktreePaths } from '../../service/worktree-paths';
 import { gitCredentialEnv } from '../../../commons/git-credential-env';
 import { mergeTaskEnv, readTaskEnvFile } from '../../../commons/task-env-file';
@@ -183,6 +183,7 @@ export class LocalTaskLauncher implements TaskLauncher {
   }
 
   async launch(spec: LaunchSpec): Promise<LaunchResult> {
+    if (spec.target !== undefined) throw new Error('The local launcher does not run multi-repository projects: the repositories cannot sit beside each other in its task folder; use ENGINE_LAUNCHER=docker');
     // Never a real agent without the gate: refused before anything is made.
     this.command();
     const dir = join(this.root, spec.taskId);
@@ -252,6 +253,11 @@ export class LocalTaskLauncher implements TaskLauncher {
   async inspect(taskId: string): Promise<TaskInspection> {
     const task = this.tasks.get(taskId);
     return { exists: task !== undefined, running: task !== undefined && this.alive(task), bridgeUrl: task && task.port ? this.bridgeUrl(task) : '' };
+  }
+
+  // A local task has its one clone and no sibling repositories, so no project is multi here.
+  async project(): Promise<ProjectLayout> {
+    return { layout: 'single', workspaces: [] };
   }
 
   async countRunning(): Promise<number> {

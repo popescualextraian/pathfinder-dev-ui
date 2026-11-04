@@ -56,6 +56,8 @@ export interface Task {
   prompt: string;
   repository: string;
   repoUrl: string;
+  /** Multi-repository project: the repository the agent works in (`repoUrl` is the project root). */
+  target?: string;
   repoRef?: string;
   model?: string;
   /** What the task is for; absent for ordinary tasks. */

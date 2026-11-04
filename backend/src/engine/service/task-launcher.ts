@@ -16,8 +16,18 @@ export interface LaunchSpec {
   repoRef?: string;
   model?: string;
   branch: string;
+  // Multi project: the repository the agent works in (the others sit beside it); repoUrl is then the project root.
+  target?: string;
   // A scheduled run: the bridge ends the task itself after its summary or at the timeout (AGENTIC_SCHEDULED, AGENTIC_RUN_TIMEOUT).
   scheduled?: { runTimeoutSeconds: number };
+}
+
+// The project the image is for. Multi: a root folder with several repositories (`workspaces`, folder names under /work),
+// `target` the default one for a task.
+export interface ProjectLayout {
+  layout: 'single' | 'multi';
+  target?: string;
+  workspaces: string[];
 }
 
 // App ports of a task: {app name: {container port: host port}}.
@@ -63,6 +73,8 @@ export interface TaskLauncher {
   // Removes container and volume; does nothing when they are gone.
   remove(taskId: string): Promise<void>;
   inspect(taskId: string): Promise<TaskInspection>;
+  // The project the tasks run in (from the image); single when it says nothing.
+  project(): Promise<ProjectLayout>;
   // Number of running task containers, for the ENGINE_MAX_RUNNING cap.
   countRunning(): Promise<number>;
   // Raw text of the task's cost ledger (ledger.jsonl in the task dir); works on a stopped task.
@@ -73,9 +85,10 @@ export interface TaskLauncher {
   readTaskFile(taskId: string, name: TaskFileName): Promise<string | null>;
   // Whether each path (relative to the task's worktree, where the agent works: /work/.worktrees/<task id>) exists, file or directory.
   // Works on a stopped task. Refuses bad paths itself (BadRequestException, see assertWorktreePaths).
-  hasFiles(taskId: string, paths: string[]): Promise<Record<string, boolean>>;
+  // `target`: the repository folder of a multi task; paths are then relative to it (the agent's directory).
+  hasFiles(taskId: string, paths: string[], target?: string): Promise<Record<string, boolean>>;
   // Text of one file in the task's worktree, or null when it is missing (also when the task folder is gone).
   // Works on a stopped task. Refuses a bad path itself (BadRequestException, see assertWorktreePaths);
   // throws WorktreeFileTooLargeError when the file is larger than maxBytes.
-  readFile(taskId: string, path: string, maxBytes: number): Promise<string | null>;
+  readFile(taskId: string, path: string, maxBytes: number, target?: string): Promise<string | null>;
 }
